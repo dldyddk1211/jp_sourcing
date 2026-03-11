@@ -653,7 +653,7 @@ async def scrape_detail_page(page, url: str) -> dict:
             cnt = await imgs.count()
             if cnt > 1:
                 urls = []
-                for i in range(min(cnt, 6)):
+                for i in range(min(cnt, 8)):
                     src = (await imgs.nth(i).get_attribute("src") or
                            await imgs.nth(i).get_attribute("data-src") or "")
                     if src and "placeholder" not in src:
@@ -665,6 +665,35 @@ async def scrape_detail_page(page, url: str) -> dict:
 
     except Exception as e:
         logger.debug(f"상세 수집 오류: {e}")
+
+    # ── 스펙 항목 전체 수집 (브랜드·품번 백업용) ────
+    try:
+        specs = {}
+        titles = page.locator("span[class*='title']")
+        cnt = await titles.count()
+        for i in range(cnt):
+            title_txt = (await titles.nth(i).inner_text()).strip()
+            if not title_txt:
+                continue
+            parent = titles.nth(i).locator("xpath=..")
+            desc_el = parent.locator("span[class*='description']").first
+            if await desc_el.count() > 0:
+                desc_txt = (await desc_el.inner_text()).strip()
+                if desc_txt:
+                    specs[title_txt] = desc_txt
+        if specs:
+            detail["specs"] = specs
+            # 브랜드 백업 (목록 카드에서 추출 실패 시 사용)
+            if "ブランド" in specs and not detail.get("brand"):
+                detail["brand"] = specs["ブランド"]
+            # 품번 백업
+            if not detail.get("product_code"):
+                for key in ["メーカー品番", "品番", "商品コード"]:
+                    if key in specs and specs[key]:
+                        detail["product_code"] = specs[key]
+                        break
+    except Exception as e:
+        logger.debug(f"스펙 수집 오류: {e}")
 
     # ── 상세 설명 번역 ──────────────────────────
     if detail.get("description"):

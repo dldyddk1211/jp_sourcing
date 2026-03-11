@@ -1,3 +1,6 @@
+import os
+import platform
+
 # =============================================
 # 전체 프로젝트 설정값
 # =============================================
@@ -35,6 +38,9 @@ JP_PLATFORM_FEE_RATE       = 0.03   # 일본 업체 수수료 3%
 JP_INTL_SHIPPING           = 1500   # 국제 배송비 (엔)
 EXCHANGE_RATE_MARKUP       = 1.015  # 송금 환율 마진 1.5%
 
+# ── Claude API 설정 ───────────────────────
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")  # 환경변수 또는 직접 입력
+
 # ── 네이버 카페 설정 ──────────────────────
 CAFE_URL       = "https://cafe.naver.com/sohosupport"
 CAFE_ID        = "28938799"        # 카페 고유 ID
@@ -46,7 +52,6 @@ NAVER_COOKIE_PATH = "naver_cookies.json"   # 쿠키 저장 경로
 NAVER_LOGIN_TIMEOUT = 120                   # 수동 로그인 대기 시간 (초)
 
 # ── 로그인 설정 ──────────────────────────
-import platform
 APP_ENV = "production" if platform.system() == "Darwin" else "test"
 
 LOGIN_USERS = {

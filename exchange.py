@@ -3,6 +3,7 @@ exchange.py
 구글 검색에서 엔화 → 원화 환율 스크래핑 (완전 무료)
 """
 
+import math
 import re
 import requests
 import logging
@@ -21,19 +22,44 @@ logger = logging.getLogger(__name__)
 _cache = {"rate": None, "time": None}
 CACHE_MINUTES = 120
 
-# 대시보드에서 동적으로 변경 가능한 마진율
-_current_margin = MARGIN_RATE
+# ── 가격 계산 변수 (대시보드에서 변경 가능) ──────────────
+_jp_fee_rate       = JP_PLATFORM_FEE_RATE  # 일본 수수료율 (기본 0.03 = 3%)
+_exchange_buy_markup = 0.02                # 환율 추가 마진 (기본 0.02 = 2%)
+_margin_pct        = 0.10                  # 구매대행 마진율 (기본 0.10 = 10%)
+_intl_shipping_krw = 15000                 # 국제배송비 원화 (기본 15,000원)
 
 
+def set_price_config(jp_fee=None, buy_markup=None, margin=None, shipping=None):
+    """대시보드에서 가격 계산 변수 일괄 변경"""
+    global _jp_fee_rate, _exchange_buy_markup, _margin_pct, _intl_shipping_krw
+    if jp_fee is not None:
+        _jp_fee_rate = jp_fee
+    if buy_markup is not None:
+        _exchange_buy_markup = buy_markup
+    if margin is not None:
+        _margin_pct = margin
+    if shipping is not None:
+        _intl_shipping_krw = int(shipping)
+    logger.info(f"가격 설정 변경: 수수료={_jp_fee_rate*100:.1f}% 환율추가={_exchange_buy_markup*100:.1f}% 마진={_margin_pct*100:.1f}% 배송={_intl_shipping_krw}원")
+
+
+def get_price_config() -> dict:
+    return {
+        "jp_fee_pct"      : round(_jp_fee_rate * 100, 1),
+        "buy_markup_pct"  : round(_exchange_buy_markup * 100, 1),
+        "margin_pct"      : round(_margin_pct * 100, 1),
+        "intl_shipping_krw": _intl_shipping_krw,
+    }
+
+
+# 하위 호환성 유지
 def set_margin_rate(rate: float):
-    """대시보드에서 마진율 변경"""
-    global _current_margin
-    _current_margin = rate
-    logger.info(f"마진율 변경: {rate} ({(rate-1)*100:.0f}%)")
-
+    global _margin_pct
+    _margin_pct = rate - 1  # 1.1 → 0.1
+    logger.info(f"마진율 변경: {_margin_pct*100:.0f}%")
 
 def get_margin_rate() -> float:
-    return _current_margin
+    return 1 + _margin_pct
 
 
 def get_jpy_to_krw_rate() -> float:
@@ -108,54 +134,28 @@ def get_cached_rate() -> float:
 
 def calc_buying_price(price_jpy: int, rate: float = None, margin: float = None) -> dict:
     """
-    구매대행 가격 계산 (정확한 원가 공식)
+    구매대행 가격 계산 (무료배송 기준)
 
-    [일본 원가 계산 - 엔화]
-    1. 일본 내 배송료: 상품가 3980엔 이상 무료 / 이하 550엔
-    2. 일본 업체 수수료: 3%
-    3. 국제 배송비: 1500엔 고정
-    → 일본 총 원가 (엔)
-
-    [환율 적용]
-    실시간 환율 × 1.5% (송금 시 환율 손실 반영)
-
-    [판매가]
-    원화 원가 × 마진율
+    공식: price_jpy × (1+수수료) × 환율 × (1+환율추가) × (1+마진율) + 국제배송비
+    백원 단위 올림
     """
     if rate is None:
         rate = get_jpy_to_krw_rate()
-    if margin is None:
-        margin = _current_margin
 
-    # ── 1. 일본 내 배송료 ──────────────────────
-    domestic_shipping = 0 if price_jpy >= JP_FREE_SHIPPING_THRESHOLD else JP_DOMESTIC_SHIPPING
-
-    # ── 2. 일본 업체 수수료 (3%) ───────────────
-    platform_fee = int(price_jpy * JP_PLATFORM_FEE_RATE)
-
-    # ── 3. 일본 총 원가 (엔화) ─────────────────
-    total_jpy = price_jpy + domestic_shipping + platform_fee + JP_INTL_SHIPPING
-
-    # ── 4. 송금 환율 적용 (실시간 + 1.5%) ──────
-    remit_rate = rate * EXCHANGE_RATE_MARKUP
-
-    # ── 5. 원화 원가 ───────────────────────────
-    cost_krw = int(total_jpy * remit_rate)
-
-    # ── 6. 판매가 (마진 적용) ──────────────────
-    price_final = int(cost_krw * margin)
+    price_raw = (
+        price_jpy
+        * (1 + _jp_fee_rate)
+        * rate
+        * (1 + _exchange_buy_markup)
+        * (1 + _margin_pct)
+        + _intl_shipping_krw
+    )
+    price_final = math.ceil(price_raw / 100) * 100
 
     return {
-        "price_jpy"         : price_jpy,
-        "domestic_shipping" : domestic_shipping,   # 일본 내 배송료 (엔)
-        "platform_fee"      : platform_fee,         # 수수료 (엔)
-        "intl_shipping"     : JP_INTL_SHIPPING,     # 국제 배송비 (엔)
-        "total_jpy"         : total_jpy,            # 일본 총 원가 (엔)
-        "rate"              : round(rate, 2),        # 실시간 환율
-        "remit_rate"        : round(remit_rate, 2), # 송금 환율
-        "cost_krw"          : cost_krw,             # 원화 원가
-        "margin"            : margin,               # 마진율
-        "price_final"       : price_final,          # 최종 판매가
+        "price_jpy"  : price_jpy,
+        "rate"       : round(rate, 2),
+        "price_final": price_final,
     }
 
 
@@ -165,14 +165,12 @@ def format_price(price: int) -> str:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    r = calc_buying_price(9980)
-    print(f"일본 현지가     : ¥{r['price_jpy']:,}")
-    print(f"일본 내 배송료  : ¥{r['domestic_shipping']:,}")
-    print(f"수수료(3%)      : ¥{r['platform_fee']:,}")
-    print(f"국제 배송비     : ¥{r['intl_shipping']:,}")
-    print(f"일본 총 원가    : ¥{r['total_jpy']:,}")
-    print(f"실시간 환율     : {r['rate']}원")
-    print(f"송금 환율(+1.5%): {r['remit_rate']}원")
-    print(f"원화 원가       : {format_price(r['cost_krw'])}")
-    print(f"마진율          : {r['margin']} ({(r['margin']-1)*100:.0f}%)")
+    r = calc_buying_price(9880)
+    print(f"일본 현지가  : ¥{r['price_jpy']:,}")
+    print(f"적용 환율    : {r['rate']}원/엔")
+    print(f"최종 판매가  : {format_price(r['price_final'])}")
+    # 계산식 확인: 9880 * 1.03 * rate * 1.02 * 1.1 + 15000 (백원 올림)
+    import math
+    raw = r['price_jpy'] * 1.03 * r['rate'] * 1.02 * 1.1 + 15000
+    print(f"계산 원값    : {raw:,.1f}원  →  올림: {math.ceil(raw/100)*100:,}원")
     print(f"최종 판매가     : {format_price(r['price_final'])}")

@@ -24,7 +24,7 @@ from config import (
 )
 from xebio_search import scrape_nike_sale, load_latest_products, set_app_status, force_close_browser
 from cafe_uploader import upload_products, naver_manual_login, has_saved_cookies, delete_cookies
-from exchange import get_jpy_to_krw_rate, get_cached_rate, calc_buying_price, set_margin_rate, get_margin_rate
+from exchange import get_jpy_to_krw_rate, get_cached_rate, calc_buying_price, set_margin_rate, get_margin_rate, set_price_config, get_price_config
 
 # =============================================
 # 앱 초기화
@@ -444,6 +444,28 @@ def update_products():
     return jsonify({"ok": True, "selected_count": len(selected_ids)})
 
 
+@app.route(f"{URL_PREFIX}/products/delete", methods=["POST"])
+@login_required
+def delete_products():
+    """상품 삭제 (인덱스 기준, 복수 가능)"""
+    data = request.json or {}
+    indices = data.get("indices", [])
+    if not indices:
+        return jsonify({"ok": False, "message": "삭제할 인덱스가 없습니다"})
+
+    products = load_latest_products()
+    # 내림차순 정렬 후 삭제 (인덱스 밀림 방지)
+    valid = sorted(set(int(i) for i in indices if 0 <= int(i) < len(products)), reverse=True)
+    for i in valid:
+        products.pop(i)
+
+    from xebio_search import save_products
+    save_products(products)
+    msg = f"상품 {len(valid)}개 삭제 완료 (남은 상품: {len(products)}개)"
+    push_log(f"🗑️ " + msg)
+    return jsonify({"ok": True, "deleted": len(valid), "remaining": len(products), "message": msg})
+
+
 @app.route(f"{URL_PREFIX}/products/check-duplicate", methods=["POST"])
 @login_required
 def check_duplicate():
@@ -611,7 +633,7 @@ def delete_dict(ja):
 @app.route(f"{URL_PREFIX}/settings/margin", methods=["POST"])
 @login_required
 def update_margin():
-    """마진율 변경"""
+    """마진율 변경 (하위 호환)"""
     data = request.json or {}
     pct = data.get("margin_pct", 20)   # 퍼센트로 받기 (예: 20 → 1.2)
     rate = 1 + (pct / 100)
@@ -620,6 +642,38 @@ def update_margin():
     msg = f"마진율 변경: {pct}% (x{round(rate,2)})"
     push_log("💰 " + msg)
     return jsonify({"ok": True, "margin_pct": pct, "margin_rate": round(rate, 2), "message": msg})
+
+
+@app.route(f"{URL_PREFIX}/settings/price", methods=["GET"])
+@login_required
+def get_price_settings():
+    """현재 가격 설정 조회"""
+    return jsonify({"ok": True, **get_price_config()})
+
+
+@app.route(f"{URL_PREFIX}/settings/price", methods=["POST"])
+@login_required
+def update_price_settings():
+    """가격 계산 변수 일괄 변경"""
+    data = request.json or {}
+    jp_fee   = data.get("jp_fee_pct")       # % 단위 (예: 3 → 0.03)
+    markup   = data.get("buy_markup_pct")   # % 단위 (예: 2 → 0.02)
+    margin   = data.get("margin_pct")       # % 단위 (예: 10 → 0.10)
+    shipping = data.get("intl_shipping_krw")# 원화 (예: 15000)
+
+    set_price_config(
+        jp_fee   = jp_fee   / 100 if jp_fee   is not None else None,
+        buy_markup = markup / 100 if markup   is not None else None,
+        margin   = margin   / 100 if margin   is not None else None,
+        shipping = shipping if shipping is not None else None,
+    )
+    cfg = get_price_config()
+    msg = (f"가격설정 변경: 수수료={cfg['jp_fee_pct']}% "
+           f"환율추가={cfg['buy_markup_pct']}% "
+           f"마진={cfg['margin_pct']}% "
+           f"배송={cfg['intl_shipping_krw']:,}원")
+    push_log("💰 " + msg)
+    return jsonify({"ok": True, **cfg, "message": msg})
 
 
 # ── 네이버 로그인 (쿠키 저장) ────────────

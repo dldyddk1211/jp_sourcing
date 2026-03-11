@@ -14,9 +14,10 @@ try:
     _translator = Translator()
     TRANSLATE_AVAILABLE = True
     logger.info("✅ googletrans 초기화 성공")
-except ImportError:
+except Exception:
     TRANSLATE_AVAILABLE = False
-    logger.warning("⚠️ googletrans 미설치 — pip install googletrans==4.0.0-rc1")
+    _translator = None
+    logger.warning("⚠️ googletrans 초기화 실패 — 커스텀 단어장만 사용")
 
 # 번역 캐시 (같은 텍스트 반복 번역 방지)
 _cache = {}

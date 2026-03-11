@@ -419,6 +419,7 @@
           <button class="btn b-gray" onclick="selectAll(true)"  style="padding:5px 10px;font-size:0.78rem">&#x2705; 전체 선택</button>
           <button class="btn b-gray" onclick="selectAll(false)" style="padding:5px 10px;font-size:0.78rem">&#x2610; 전체 해제</button>
           <button class="btn b-blue" onclick="checkDuplicate()" style="padding:5px 10px;font-size:0.78rem">&#x1f50d; 중복 체크</button>
+          <button class="btn b-red" onclick="deleteSelected()" style="padding:5px 10px;font-size:0.78rem">&#x1f5d1; 선택 삭제</button>
         </div>
 
         <div class="tbl-wrap">
@@ -434,10 +435,11 @@
                 <th>구매대행가</th>
                 <th>구매가능 사이즈</th>
                 <th>재고</th>
+                <th></th>
               </tr>
             </thead>
             <tbody id="tbody">
-              <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:40px">스크래핑을 실행하면 상품이 표시됩니다.</td></tr>
+              <tr><td colspan="10" style="text-align:center;color:var(--muted);padding:40px">스크래핑을 실행하면 상품이 표시됩니다.</td></tr>
             </tbody>
           </table>
         </div>
@@ -474,30 +476,48 @@
       <div class="panel">
         <div class="panel-title">&#x1f4b0; 구매대행 가격 설정</div>
         <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
-          <!-- 마진율 -->
-          <div style="background:#0f1117;border:1px solid var(--border);border-radius:8px;padding:16px;min-width:200px">
-            <div style="font-size:0.78rem;color:var(--muted);margin-bottom:10px">&#x1f4c8; 마진율 설정</div>
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-              <input type="number" id="margin-input" min="0" max="200" value="20"
-                style="background:#1a1d27;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:80px;font-size:1rem;text-align:center">
-              <span style="font-size:1rem;color:var(--text)">%</span>
-              <button class="btn b-blue" onclick="applyMargin()" style="padding:7px 14px">적용</button>
+
+          <!-- 변수 설정 -->
+          <div style="background:#0f1117;border:1px solid var(--border);border-radius:8px;padding:16px;min-width:240px">
+            <div style="font-size:0.78rem;color:var(--muted);margin-bottom:12px">&#x1f527; 가격 변수 설정</div>
+            <div style="display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:6px 10px;font-size:0.82rem">
+              <span style="color:var(--muted)">일본 수수료율</span>
+              <input type="number" id="jp-fee-input" min="0" max="30" step="0.1" value="3"
+                style="background:#1a1d27;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;font-size:0.85rem;text-align:center"
+                oninput="calcExample()">
+              <span style="color:var(--muted)">%</span>
+
+              <span style="color:var(--muted)">환율 추가 마진</span>
+              <input type="number" id="buy-markup-input" min="0" max="20" step="0.1" value="2"
+                style="background:#1a1d27;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;font-size:0.85rem;text-align:center"
+                oninput="calcExample()">
+              <span style="color:var(--muted)">%</span>
+
+              <span style="color:var(--muted)">구매대행 마진율</span>
+              <input type="number" id="margin-input" min="0" max="200" step="0.1" value="10"
+                style="background:#1a1d27;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;font-size:0.85rem;text-align:center"
+                oninput="calcExample()">
+              <span style="color:var(--muted)">%</span>
+
+              <span style="color:var(--muted)">국제배송비</span>
+              <input type="number" id="intl-shipping-input" min="0" max="100000" step="100" value="15000"
+                style="background:#1a1d27;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;font-size:0.85rem;text-align:center"
+                oninput="calcExample()">
+              <span style="color:var(--muted)">원</span>
             </div>
-            <div style="font-size:0.75rem;color:var(--muted)" id="margin-preview">판매가 = 원가 &#xd7; 1.20</div>
+            <button class="btn b-blue" onclick="applyPriceSettings()" style="margin-top:14px;width:100%;padding:8px">&#x2705; 설정 적용</button>
           </div>
 
           <!-- 원가 계산 구조 -->
           <div style="background:#0f1117;border:1px solid var(--border);border-radius:8px;padding:16px;font-size:0.78rem;color:var(--muted);line-height:2">
-            <div style="color:var(--text);font-weight:600;margin-bottom:6px">&#x1f4cb; 원가 계산 구조</div>
-            <div>일본 상품가</div>
-            <div>+ 일본 내 배송료 <span style="color:var(--yellow)">3,980엔 이상 무료 / 이하 550엔</span></div>
-            <div>+ 일본 업체 수수료 <span style="color:var(--yellow)">3%</span></div>
-            <div>+ 국제 배송비 <span style="color:var(--yellow)">1,500엔</span></div>
-            <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px">= 일본 총 원가 (엔)</div>
-            <div>&#xd7; 송금 환율 <span style="color:var(--yellow)">실시간 환율 +1.5%</span></div>
-            <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px">= 원화 원가</div>
-            <div>&#xd7; 마진율</div>
-            <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px;color:var(--green);font-weight:600">= 최종 판매가</div>
+            <div style="color:var(--text);font-weight:600;margin-bottom:6px">&#x1f4cb; 가격 계산 공식</div>
+            <div>일본 상품가 (엔)</div>
+            <div>&#xd7; (1 + 일본수수료율) <span id="fee-formula" style="color:var(--yellow)">1.03</span></div>
+            <div>&#xd7; 실시간 환율 (원/엔)</div>
+            <div>&#xd7; (1 + 환율추가) <span id="markup-formula" style="color:var(--yellow)">1.02</span></div>
+            <div>&#xd7; (1 + 마진율) <span id="margin-formula" style="color:var(--yellow)">1.10</span></div>
+            <div>+ 국제배송비 <span id="shipping-formula" style="color:var(--yellow)">15,000원</span></div>
+            <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px;color:var(--green);font-weight:600">= 최종 판매가 (백원 올림)</div>
           </div>
 
           <!-- 예시 계산기 -->
@@ -506,7 +526,8 @@
             <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
               <span style="font-size:0.78rem;color:var(--muted)">&#xa5;</span>
               <input type="number" id="calc-jpy" value="9980" min="1"
-                style="background:#1a1d27;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:90px;font-size:0.9rem">
+                style="background:#1a1d27;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:90px;font-size:0.9rem"
+                oninput="calcExample()">
               <button class="btn b-gray" onclick="calcExample()" style="padding:5px 10px;font-size:0.78rem">계산</button>
             </div>
             <div id="calc-result" style="font-size:0.78rem;line-height:1.9;color:var(--muted)">계산 버튼을 눌러보세요</div>
@@ -583,6 +604,45 @@
             &#x1f4a1; 처음 사용 시: 로그인 버튼 클릭 &#x2192; 브라우저가 열림 &#x2192; 네이버 로그인 &#x2192; 쿠키 자동 저장<br>
             &#x1f4a1; 쿠키 만료 시: 다시 로그인 버튼을 눌러주세요 (보통 1~2일 유효)
           </div>
+        </div>
+
+        <!-- 상품목록 불러오기 -->
+        <div style="margin-bottom:16px;">
+          <button class="btn b-gray" id="btn-load-cafe-products" onclick="toggleCafeProducts()" style="padding:9px 18px;">
+            &#x1f4cb; 상품목록 들고 오기
+          </button>
+        </div>
+
+        <!-- 카페 상품 목록 -->
+        <div id="cafe-product-section" style="display:none;margin-bottom:16px;">
+          <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
+            <input type="text" id="cafe-search" placeholder="상품명 검색..." oninput="loadCafeProducts(1)"
+              style="background:#0f1117;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;flex:1;min-width:160px;">
+            <select id="cafe-brand-select" onchange="loadCafeProducts(1)"
+              style="background:#0f1117;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;">
+              <option value="ALL">전체 브랜드</option>
+            </select>
+            <button class="btn b-gray" onclick="cafeSel(true)" style="padding:5px 10px;font-size:0.78rem;">전체선택</button>
+            <button class="btn b-gray" onclick="cafeSel(false)" style="padding:5px 10px;font-size:0.78rem;">선택해제</button>
+            <span style="font-size:0.78rem;color:var(--muted)" id="cafe-filter-result"></span>
+          </div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+              <thead>
+                <tr style="border-bottom:1px solid var(--border);color:var(--muted);">
+                  <th style="padding:8px 6px;text-align:left;font-weight:500;"><input type="checkbox" id="cafe-chk-all" onchange="cafeSel(this.checked)"></th>
+                  <th style="padding:8px 6px;text-align:left;font-weight:500;">이미지</th>
+                  <th style="padding:8px 6px;text-align:left;font-weight:500;">브랜드</th>
+                  <th style="padding:8px 6px;text-align:left;font-weight:500;">상품명</th>
+                  <th style="padding:8px 6px;text-align:left;font-weight:500;">가격(JPY)</th>
+                  <th style="padding:8px 6px;text-align:left;font-weight:500;">판매가</th>
+                  <th style="padding:8px 6px;text-align:left;font-weight:500;">재고</th>
+                </tr>
+              </thead>
+              <tbody id="cafe-tbody"></tbody>
+            </table>
+          </div>
+          <div id="cafe-pager" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:10px;"></div>
         </div>
 
         <!-- 업로드 컨트롤 -->
@@ -776,6 +836,107 @@ async function runAuto() {
   await post("/run/auto", {});
 }
 
+// ── 카페업로드 상품목록 ────────────────────────
+let cafePage = 1;
+
+async function toggleCafeProducts() {
+  const sec = document.getElementById("cafe-product-section");
+  const btn = document.getElementById("btn-load-cafe-products");
+  if (sec.style.display === "none") {
+    sec.style.display = "block";
+    btn.textContent = "📋 상품목록 닫기";
+    await loadCafeBrands();
+    await loadCafeProducts(1);
+  } else {
+    sec.style.display = "none";
+    btn.textContent = "📋 상품목록 들고 오기";
+  }
+}
+
+async function loadCafeBrands() {
+  try {
+    const d = await fetch(PREFIX + "/products/brands").then(r => r.json());
+    const sel = document.getElementById("cafe-brand-select");
+    sel.innerHTML = '<option value="ALL">전체 브랜드</option>';
+    (d.brands || []).forEach(b => {
+      const o = document.createElement("option");
+      o.value = b; o.textContent = b;
+      sel.appendChild(o);
+    });
+  } catch(e) {}
+}
+
+async function loadCafeProducts(page = 1) {
+  cafePage = page;
+  const brand = document.getElementById("cafe-brand-select")?.value || "ALL";
+  const search = document.getElementById("cafe-search")?.value || "";
+  try {
+    const url = `${PREFIX}/products?page=${page}&per_page=${PER}&brand=${encodeURIComponent(brand)}&search=${encodeURIComponent(search)}`;
+    const d = await fetch(url).then(r => r.json());
+    const tb = document.getElementById("cafe-tbody");
+    if (!d.products || d.products.length === 0) {
+      tb.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px">상품이 없습니다.</td></tr>`;
+      document.getElementById("cafe-filter-result").textContent = "0개";
+      return;
+    }
+    document.getElementById("cafe-filter-result").textContent = `총 ${d.total.toLocaleString()}개`;
+    const startIdx = (page - 1) * PER;
+    tb.innerHTML = d.products.map((p, i) => {
+      const globalIdx = startIdx + i;
+      const isChecked = checkedIndices.has(globalIdx);
+      const img = p.img_url ? `<img src="${p.img_url}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;" onerror="this.style.opacity=0">` : "";
+      const jpy = p.price_jpy ? `¥${p.price_jpy.toLocaleString()}` : "-";
+      const krw = p.price_info ? `${p.price_info.price_final.toLocaleString()}원` : "-";
+      const stock = p.in_stock === true ? '<span style="color:var(--green)">✅ 재고</span>'
+        : p.in_stock === false ? '<span style="color:var(--red)">품절</span>' : '-';
+      return `<tr class="${isChecked?'selected-row':''}" style="border-bottom:1px solid var(--border);">
+        <td style="padding:6px"><input type="checkbox" class="cafe-row-chk" data-idx="${globalIdx}" ${isChecked?'checked':''} onchange="onCafeRowCheck(this)"></td>
+        <td style="padding:6px">${img}</td>
+        <td style="padding:6px"><span class="badge b-brand">${p.brand_ko || p.brand || "-"}</span></td>
+        <td style="padding:6px;max-width:220px;word-break:break-word">${p.name_ko || p.name || "-"}</td>
+        <td style="padding:6px">${jpy}</td>
+        <td style="padding:6px">${krw}</td>
+        <td style="padding:6px">${stock}</td>
+      </tr>`;
+    }).join("");
+    renderCafePager(page, Math.ceil(d.total / PER));
+  } catch(e) { console.error(e); }
+}
+
+function onCafeRowCheck(chk) {
+  const idx = +chk.dataset.idx;
+  if (chk.checked) checkedIndices.add(idx); else checkedIndices.delete(idx);
+  chk.closest("tr").classList.toggle("selected-row", chk.checked);
+  document.getElementById("cafe-sel-cnt").textContent = checkedIndices.size;
+  const all = document.querySelectorAll(".cafe-row-chk");
+  document.getElementById("cafe-chk-all").checked = [...all].every(c => c.checked);
+}
+
+function cafeSel(checked) {
+  document.getElementById("cafe-chk-all").checked = checked;
+  document.querySelectorAll(".cafe-row-chk").forEach(chk => {
+    chk.checked = checked;
+    const idx = +chk.dataset.idx;
+    if (checked) checkedIndices.add(idx); else checkedIndices.delete(idx);
+    chk.closest("tr").classList.toggle("selected-row", checked);
+  });
+  document.getElementById("cafe-sel-cnt").textContent = checkedIndices.size;
+}
+
+function renderCafePager(cur, total) {
+  const pg = document.getElementById("cafe-pager");
+  if (total <= 1) { pg.innerHTML = ""; return; }
+  const btnStyle = "padding:4px 10px;background:#1e2533;border:1px solid var(--border);color:var(--text);border-radius:4px;cursor:pointer;";
+  const btnActiveStyle = "padding:4px 10px;background:var(--accent);border:1px solid var(--border);color:#fff;border-radius:4px;cursor:pointer;";
+  let h = `<button onclick="loadCafeProducts(${cur-1})" ${cur===1?"disabled":""} style="${btnStyle}">◀</button>`;
+  const start = Math.max(1, cur-3), end = Math.min(total, cur+3);
+  if (start > 1) h += `<button onclick="loadCafeProducts(1)" style="${btnStyle}">1</button><span style="color:var(--muted)">...</span>`;
+  for (let i=start; i<=end; i++) h += `<button onclick="loadCafeProducts(${i})" style="${i===cur?btnActiveStyle:btnStyle}">${i}</button>`;
+  if (end < total) h += `<span style="color:var(--muted)">...</span><button onclick="loadCafeProducts(${total})" style="${btnStyle}">${total}</button>`;
+  h += `<button onclick="loadCafeProducts(${cur+1})" ${cur===total?"disabled":""} style="${btnStyle}">▶</button>`;
+  pg.innerHTML = h;
+}
+
 async function uploadSelected() {
   if (checkedIndices.size === 0) {
     addLog("\u26A0\uFE0F \uC120\uD0DD\uB41C \uC0C1\uD488\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uCCB4\uD06C\uBC15\uC2A4\uB85C \uC0C1\uD488\uC744 \uC120\uD0DD\uD574\uC8FC\uC138\uC694", "warn");
@@ -785,7 +946,7 @@ async function uploadSelected() {
     method: "POST", headers: {"Content-Type":"application/json"},
     body: JSON.stringify({ selected: [...checkedIndices] })
   });
-  const mu = document.getElementById("max-upload").value;
+  const mu = document.getElementById("cafe-max-upload").value;
   addLog(`\uD83D\uDCE4 ${checkedIndices.size}\uAC1C \uC0C1\uD488 \uC5C5\uB85C\uB4DC \uC2DC\uC791...`, "info");
   await post("/run/upload", { max_upload: mu ? +mu : null });
 }
@@ -1009,7 +1170,7 @@ async function loadProducts(page = 1) {
     const d = await fetch(url).then(r => r.json());
     const tb = document.getElementById("tbody");
     if (!d.products || d.products.length === 0) {
-      tb.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:40px">${search||brand!=="ALL" ? "\uAC80\uC0C9 \uACB0\uACFC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4." : "\uC2A4\uD06C\uB798\uD551\uC744 \uBA3C\uC800 \uC2E4\uD589\uD558\uC138\uC694."}</td></tr>`;
+      tb.innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:40px">${search||brand!=="ALL" ? "\uAC80\uC0C9 \uACB0\uACFC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4." : "\uC2A4\uD06C\uB798\uD551\uC744 \uBA3C\uC800 \uC2E4\uD589\uD558\uC138\uC694."}</td></tr>`;
       document.getElementById("filter-result").textContent = "0\uAC1C";
       return;
     }
@@ -1052,6 +1213,7 @@ async function loadProducts(page = 1) {
         </td>
         <td>${code}</td><td>${jpy}</td><td>${krw}</td>
         <td style="max-width:180px">${sizesHtml}</td><td>${stock}</td>
+        <td><button class="btn b-red" onclick="deleteProduct(${globalIdx})" style="padding:3px 8px;font-size:0.72rem" title="삭제">&#x1f5d1;</button></td>
       </tr>`;
     }).join("");
     renderPager(page, Math.ceil(d.total / PER));
@@ -1068,6 +1230,39 @@ function renderPager(cur, total) {
   if (end < total) h += `<span style="color:var(--muted)">...</span><button onclick="loadProducts(${total})">${total}</button>`;
   h += `<button onclick="loadProducts(${cur+1})" ${cur===total?"disabled":""}>\u25B6</button>`;
   pg.innerHTML = h;
+}
+
+// ── 상품 삭제 ────────────────────────────────
+async function deleteProduct(globalIdx) {
+  if (!confirm("이 상품을 삭제할까요?")) return;
+  await _doDelete([globalIdx]);
+}
+
+async function deleteSelected() {
+  if (checkedIndices.size === 0) { addLog("⚠️ 삭제할 상품을 선택해주세요", "warn"); return; }
+  if (!confirm(`선택한 ${checkedIndices.size}개 상품을 삭제할까요?`)) return;
+  await _doDelete([...checkedIndices]);
+}
+
+async function _doDelete(indices) {
+  try {
+    const r = await fetch(PREFIX + "/products/delete", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ indices })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      addLog(`🗑️ ${d.message}`, "ok");
+      // 삭제된 인덱스를 checkedIndices에서 제거
+      indices.forEach(i => checkedIndices.delete(i));
+      loadProducts(curPage);
+      loadBrands();
+      refreshStatus();
+    } else {
+      addLog("❌ 삭제 실패: " + d.message, "err");
+    }
+  } catch(e) { addLog("❌ 삭제 실패", "err"); }
 }
 
 // ── 상태 폴링 ────────────────────────────────
@@ -1137,55 +1332,83 @@ async function deleteDict(ja) {
   loadDict();
 }
 
-// ── 마진율 설정 ──────────────────────────────
-document.getElementById("margin-input").addEventListener("input", () => {
-  const pct = +document.getElementById("margin-input").value || 0;
-  const rate = (1 + pct / 100).toFixed(2);
-  document.getElementById("margin-preview").textContent = `\uD310\uB9E4\uAC00 = \uC6D0\uAC00 \u00D7 ${rate}`;
-  calcExample();
-});
-
-document.getElementById("calc-jpy").addEventListener("input", () => { calcExample(); });
-
-async function applyMargin() {
-  const pct = +document.getElementById("margin-input").value;
-  if (isNaN(pct) || pct < 0 || pct > 200) { addLog("\u26A0\uFE0F \uB9C8\uC9C4\uC728\uC740 0~200% \uC0AC\uC774\uB85C \uC785\uB825\uD574\uC8FC\uC138\uC694", "warn"); return; }
-  try {
-    const r = await fetch(PREFIX + "/settings/margin", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ margin_pct: pct }) });
-    const d = await r.json();
-    addLog(`\uD83D\uDCB0 \uB9C8\uC9C4\uC728 ${pct}% \uC801\uC6A9 \uC644\uB8CC (\u00D7${d.margin_rate.toFixed(2)})`, "ok");
-    calcExample();
-    setTimeout(() => loadProducts(curPage), 500);
-  } catch(e) { addLog("\u274C \uB9C8\uC9C4\uC728 \uC801\uC6A9 \uC2E4\uD328", "err"); }
+// ── 가격 설정 ──────────────────────────────
+function updateFormulaLabels() {
+  const fee    = +document.getElementById("jp-fee-input").value    || 3;
+  const markup = +document.getElementById("buy-markup-input").value || 2;
+  const margin = +document.getElementById("margin-input").value     || 10;
+  const ship   = +document.getElementById("intl-shipping-input").value || 15000;
+  document.getElementById("fee-formula").textContent     = (1 + fee/100).toFixed(2);
+  document.getElementById("markup-formula").textContent  = (1 + markup/100).toFixed(2);
+  document.getElementById("margin-formula").textContent  = (1 + margin/100).toFixed(2);
+  document.getElementById("shipping-formula").textContent = ship.toLocaleString() + "원";
 }
 
-async function calcExample() {
-  const jpy = +document.getElementById("calc-jpy").value;
+async function loadPriceSettings() {
+  try {
+    const r = await fetch(PREFIX + "/settings/price");
+    const d = await r.json();
+    if (d.ok) {
+      document.getElementById("jp-fee-input").value       = d.jp_fee_pct;
+      document.getElementById("buy-markup-input").value   = d.buy_markup_pct;
+      document.getElementById("margin-input").value       = d.margin_pct;
+      document.getElementById("intl-shipping-input").value= d.intl_shipping_krw;
+      updateFormulaLabels();
+      calcExample();
+    }
+  } catch(e) {}
+}
+
+async function applyPriceSettings() {
+  const jp_fee   = +document.getElementById("jp-fee-input").value;
+  const markup   = +document.getElementById("buy-markup-input").value;
+  const margin   = +document.getElementById("margin-input").value;
+  const shipping = +document.getElementById("intl-shipping-input").value;
+  try {
+    const r = await fetch(PREFIX + "/settings/price", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ jp_fee_pct: jp_fee, buy_markup_pct: markup, margin_pct: margin, intl_shipping_krw: shipping })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      addLog("💰 " + d.message, "ok");
+      updateFormulaLabels();
+      calcExample();
+      setTimeout(() => loadProducts(curPage), 500);
+    } else {
+      addLog("❌ 가격 설정 실패", "err");
+    }
+  } catch(e) { addLog("❌ 가격 설정 실패", "err"); }
+}
+
+// 하위 호환 (기존 applyMargin 호출 보호)
+async function applyMargin() { return applyPriceSettings(); }
+
+function calcExample() {
+  const jpy  = +document.getElementById("calc-jpy").value;
   if (!jpy || jpy <= 0) return;
-  const pct = +document.getElementById("margin-input").value || 20;
-  const rateText = document.getElementById("rate").textContent || "9.23\uC6D0";
+  const fee    = (+document.getElementById("jp-fee-input").value    || 3)   / 100;
+  const markup = (+document.getElementById("buy-markup-input").value || 2)   / 100;
+  const margin = (+document.getElementById("margin-input").value     || 10)  / 100;
+  const ship   = +document.getElementById("intl-shipping-input").value || 15000;
+
+  const rateText = document.getElementById("rate").textContent || "9.23원";
   const rate = parseFloat(rateText) || 9.23;
-  const remitRate = rate * 1.015;
-  const domestic = jpy >= 3980 ? 0 : 550;
-  const fee = Math.floor(jpy * 0.03);
-  const intl = 1500;
-  const totalJpy = jpy + domestic + fee + intl;
-  const costKrw = Math.floor(totalJpy * remitRate);
-  const margin = 1 + pct / 100;
-  const finalKrw = Math.floor(costKrw * margin);
+
+  const raw      = jpy * (1 + fee) * rate * (1 + markup) * (1 + margin) + ship;
+  const finalKrw = Math.ceil(raw / 100) * 100;
+
+  updateFormulaLabels();
   document.getElementById("calc-result").innerHTML = `
-    <div>\uC77C\uBCF8\uAC00: <b style="color:var(--text)">\u00A5${jpy.toLocaleString()}</b></div>
-    <div>\uC77C\uBCF8\uBC30\uC1A1: <b style="color:var(--text)">\u00A5${domestic.toLocaleString()}</b></div>
-    <div>\uC218\uC218\uB8CC(3%): <b style="color:var(--text)">\u00A5${fee.toLocaleString()}</b></div>
-    <div>\uAD6D\uC81C\uBC30\uC1A1: <b style="color:var(--text)">\u00A51,500</b></div>
-    <div>\uCD1D\uC6D0\uAC00: <b style="color:var(--yellow)">\u00A5${totalJpy.toLocaleString()}</b></div>
-    <div>\uC1A1\uAE08\uD658\uC728: <b style="color:var(--text)">${remitRate.toFixed(2)}\uC6D0</b></div>
-    <div>\uC6D0\uD654\uC6D0\uAC00: <b style="color:var(--accent)">${costKrw.toLocaleString()}\uC6D0</b></div>
-    <div style="border-top:1px solid var(--border);padding-top:4px;margin-top:4px">
-      \uB9C8\uC9C4 \uAE08\uC561: <b style="color:var(--orange)">${(finalKrw - costKrw).toLocaleString()}\uC6D0</b>
-    </div>
-    <div style="margin-top:4px">
-      \uD310\uB9E4\uAC00(${pct}%): <b style="color:var(--green);font-size:1rem">${finalKrw.toLocaleString()}\uC6D0</b>
+    <div>일본가: <b style="color:var(--text)">¥${jpy.toLocaleString()}</b></div>
+    <div>× (1+수수료 ${(fee*100).toFixed(1)}%): <b style="color:var(--text)">¥${(jpy*(1+fee)).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,",")}</b></div>
+    <div>× 환율 ${rate.toFixed(2)}: <b style="color:var(--text)">${(jpy*(1+fee)*rate).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,",")}원</b></div>
+    <div>× (1+환율추가 ${(markup*100).toFixed(1)}%): <b style="color:var(--text)">${(jpy*(1+fee)*rate*(1+markup)).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,",")}원</b></div>
+    <div>× (1+마진 ${(margin*100).toFixed(1)}%): <b style="color:var(--accent)">${(jpy*(1+fee)*rate*(1+markup)*(1+margin)).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,",")}원</b></div>
+    <div>+ 국제배송비: <b style="color:var(--text)">${ship.toLocaleString()}원</b></div>
+    <div style="border-top:1px solid var(--border);padding-top:6px;margin-top:6px">
+      <b style="color:var(--green);font-size:1rem">최종 판매가: ${finalKrw.toLocaleString()}원</b>
     </div>`;
 }
 
@@ -1193,6 +1416,7 @@ async function calcExample() {
 refreshStatus();
 loadProducts(1);
 loadBrands();
+loadPriceSettings();
 setInterval(refreshStatus, 10000);
 setInterval(() => { loadProducts(curPage); loadBrands(); }, 30000);
 document.getElementById("max-pages")?.addEventListener("input", updatePagePreview);
