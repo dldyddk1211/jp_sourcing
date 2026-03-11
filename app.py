@@ -12,15 +12,18 @@ import threading
 from datetime import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask, jsonify, render_template, request, Response
+from functools import wraps
+from flask import Flask, jsonify, render_template, request, Response, session, redirect, url_for
 import queue
 
 from config import (
     SERVER_HOST, SERVER_PORT, URL_PREFIX,
-    AUTO_SCHEDULE_HOUR, AUTO_SCHEDULE_MINUTE
+    AUTO_SCHEDULE_HOUR, AUTO_SCHEDULE_MINUTE,
+    LOGIN_USERS, SECRET_KEY, APP_ENV,
+    OUTPUT_DIR,
 )
 from xebio_search import scrape_nike_sale, load_latest_products, set_app_status, force_close_browser
-from cafe_uploader import upload_products
+from cafe_uploader import upload_products, naver_manual_login, has_saved_cookies, delete_cookies
 from exchange import get_jpy_to_krw_rate, get_cached_rate, calc_buying_price, set_margin_rate, get_margin_rate
 
 # =============================================
@@ -28,8 +31,66 @@ from exchange import get_jpy_to_krw_rate, get_cached_rate, calc_buying_price, se
 # =============================================
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
+app.secret_key = SECRET_KEY
+app.config["TEMPLATES_AUTO_RELOAD"] = True   # 템플릿 변경 즉시 반영
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+
+
+@app.after_request
+def add_no_cache(response):
+    """브라우저 캐시 방지 — 항상 최신 HTML/JS 제공"""
+    if "text/html" in response.content_type:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
+# =============================================
+# 로그인 인증
+# =============================================
+
+def login_required(f):
+    """로그인 필수 데코레이터"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("logged_in"):
+            return redirect(f"{URL_PREFIX}/login")
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.route(f"{URL_PREFIX}/login", methods=["GET", "POST"])
+def login():
+    """로그인 페이지"""
+    if session.get("logged_in"):
+        return redirect(f"{URL_PREFIX}/")
+
+    error = None
+    username = ""
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        if username in LOGIN_USERS and LOGIN_USERS[username] == password:
+            session["logged_in"] = True
+            session["username"] = username
+            logger.info(f"로그인 성공: {username}")
+            return redirect(f"{URL_PREFIX}/")
+        else:
+            error = "아이디 또는 비밀번호가 올바르지 않습니다"
+            logger.warning(f"로그인 실패: {username}")
+
+    return render_template("login.html",
+                           error=error, username=username,
+                           url_prefix=URL_PREFIX, env=APP_ENV)
+
+
+@app.route(f"{URL_PREFIX}/logout")
+def logout():
+    """로그아웃"""
+    session.clear()
+    return redirect(f"{URL_PREFIX}/login")
 
 # 진행상황 메시지 큐 (SSE 실시간 전송용)
 log_queue = queue.Queue()
@@ -170,7 +231,7 @@ set_app_status(status)  # xebio_search에 status 딕셔너리 주입
 # =============================================
 
 @app.route(f"{URL_PREFIX}/")
-@app.route(f"{URL_PREFIX}")
+@login_required
 def dashboard():
     """메인 대시보드 페이지"""
     products = load_latest_products()
@@ -181,11 +242,13 @@ def dashboard():
         rate=rate,
         product_count=len(products),
         schedule_time=f"{AUTO_SCHEDULE_HOUR:02d}:{AUTO_SCHEDULE_MINUTE:02d}",
-        url_prefix=URL_PREFIX
+        url_prefix=URL_PREFIX,
+        env=APP_ENV,
     )
 
 
 @app.route(f"{URL_PREFIX}/products")
+@login_required
 def get_products():
     """수집된 상품 목록 JSON 반환 (브랜드 필터, 페이지네이션)"""
     products = load_latest_products()
@@ -223,6 +286,7 @@ def get_products():
 
 
 @app.route(f"{URL_PREFIX}/products/download")
+@login_required
 def download_excel():
     """수집된 상품 엑셀 다운로드"""
     import io
@@ -339,6 +403,7 @@ def download_excel():
 
 
 @app.route(f"{URL_PREFIX}/products/brands")
+@login_required
 def get_brands():
     """수집된 상품의 브랜드 목록 반환 (한국어 번역 우선)"""
     products = load_latest_products()
@@ -364,6 +429,7 @@ def get_brands():
 
 
 @app.route(f"{URL_PREFIX}/products/update", methods=["POST"])
+@login_required
 def update_products():
     """상품 선택 상태 업데이트 (체크박스)"""
     data = request.json or {}
@@ -379,6 +445,7 @@ def update_products():
 
 
 @app.route(f"{URL_PREFIX}/products/check-duplicate", methods=["POST"])
+@login_required
 def check_duplicate():
     """업로드 전 중복 체크 (품번 + 가격 기준)"""
     data = request.json or {}
@@ -418,6 +485,7 @@ def check_duplicate():
 
 
 @app.route(f"{URL_PREFIX}/status")
+@login_required
 def get_status():
     """현재 실행 상태 반환"""
     products = load_latest_products()
@@ -433,6 +501,7 @@ def get_status():
 # ── 수동 실행 API ──────────────────────────
 
 @app.route(f"{URL_PREFIX}/run/scrape", methods=["POST"])
+@login_required
 def manual_scrape():
     """수동 스크래핑 실행"""
     max_pages = request.json.get("max_pages") if request.json else None
@@ -442,6 +511,7 @@ def manual_scrape():
 
 
 @app.route(f"{URL_PREFIX}/run/upload", methods=["POST"])
+@login_required
 def manual_upload():
     """수동 업로드 실행"""
     max_upload = request.json.get("max_upload") if request.json else None
@@ -451,6 +521,7 @@ def manual_upload():
 
 
 @app.route(f"{URL_PREFIX}/run/auto", methods=["POST"])
+@login_required
 def manual_auto():
     """수동으로 자동 파이프라인(스크래핑+업로드) 실행"""
     thread = threading.Thread(target=run_auto_pipeline, daemon=True)
@@ -459,6 +530,7 @@ def manual_auto():
 
 
 @app.route(f"{URL_PREFIX}/products/translate", methods=["POST"])
+@login_required
 def translate_products():
     """기존 수집 데이터 일괄 번역"""
     try:
@@ -501,6 +573,7 @@ def translate_products():
 
 
 @app.route(f"{URL_PREFIX}/settings/dict", methods=["GET"])
+@login_required
 def get_dict():
     """커스텀 단어장 조회"""
     from translator import CUSTOM_DICT
@@ -508,6 +581,7 @@ def get_dict():
 
 
 @app.route(f"{URL_PREFIX}/settings/dict", methods=["POST"])
+@login_required
 def update_dict():
     """커스텀 단어장 단어 추가/수정"""
     from translator import CUSTOM_DICT
@@ -522,6 +596,7 @@ def update_dict():
 
 
 @app.route(f"{URL_PREFIX}/settings/dict/<path:ja>", methods=["DELETE"])
+@login_required
 def delete_dict(ja):
     """커스텀 단어장 단어 삭제"""
     from translator import CUSTOM_DICT
@@ -534,6 +609,7 @@ def delete_dict(ja):
 
 
 @app.route(f"{URL_PREFIX}/settings/margin", methods=["POST"])
+@login_required
 def update_margin():
     """마진율 변경"""
     data = request.json or {}
@@ -546,7 +622,42 @@ def update_margin():
     return jsonify({"ok": True, "margin_pct": pct, "margin_rate": round(rate, 2), "message": msg})
 
 
+# ── 네이버 로그인 (쿠키 저장) ────────────
+
+@app.route(f"{URL_PREFIX}/naver/status")
+@login_required
+def naver_status():
+    """네이버 로그인 상태 확인"""
+    return jsonify({"logged_in": has_saved_cookies()})
+
+
+@app.route(f"{URL_PREFIX}/naver/login", methods=["POST"])
+@login_required
+def naver_login():
+    """네이버 수동 로그인 시작 (브라우저 열림)"""
+    def run_login():
+        result = asyncio.run(naver_manual_login(status_callback=push_log))
+        if result:
+            push_log("✅ 네이버 로그인 & 쿠키 저장 완료!")
+        else:
+            push_log("❌ 네이버 로그인 실패 또는 시간 초과")
+
+    thread = threading.Thread(target=run_login, daemon=True)
+    thread.start()
+    return jsonify({"ok": True, "message": "로그인 브라우저가 열립니다. 직접 로그인해주세요."})
+
+
+@app.route(f"{URL_PREFIX}/naver/logout", methods=["POST"])
+@login_required
+def naver_logout():
+    """네이버 쿠키 삭제"""
+    delete_cookies()
+    push_log("🗑️ 네이버 쿠키 삭제 완료")
+    return jsonify({"ok": True, "message": "네이버 로그인 정보가 삭제되었습니다"})
+
+
 @app.route(f"{URL_PREFIX}/run/pause", methods=["POST"])
+@login_required
 def pause_scrape():
     """일시정지: 현재 상품 완료 후 멈춤"""
     if not status["scraping"]:
@@ -557,6 +668,7 @@ def pause_scrape():
 
 
 @app.route(f"{URL_PREFIX}/run/resume", methods=["POST"])
+@login_required
 def resume_scrape():
     """일시정지 해제"""
     status["paused"] = False
@@ -565,6 +677,7 @@ def resume_scrape():
 
 
 @app.route(f"{URL_PREFIX}/run/reset", methods=["POST"])
+@login_required
 def reset_all():
     """리셋: 수집 중단 + 브라우저 강제 종료 + 데이터 삭제 + 상태 초기화"""
     import glob, shutil
@@ -619,6 +732,7 @@ def reset_all():
 # ── 실시간 로그 스트리밍 (SSE) ─────────────
 
 @app.route(f"{URL_PREFIX}/logs/stream")
+@login_required
 def log_stream():
     """
     Server-Sent Events로 실시간 로그 전송
@@ -645,16 +759,12 @@ if __name__ == "__main__":
     os.makedirs("output", exist_ok=True)
     os.makedirs("logs", exist_ok=True)
 
-    print(f"""
-╔══════════════════════════════════════════════════╗
-║   Xebio 소싱 대시보드                            ║
-║   http://{SERVER_HOST}:{SERVER_PORT}{URL_PREFIX}
-╚══════════════════════════════════════════════════╝
-    """)
+    print(f"\n  Xebio Dashboard: http://{SERVER_HOST}:{SERVER_PORT}{URL_PREFIX}\n")
 
     app.run(
         host=SERVER_HOST,
         port=SERVER_PORT,
         debug=False,
-        threaded=True
+        threaded=True,
+        use_reloader=True,       # 파일 수정 시 자동 재기동
     )

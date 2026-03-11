@@ -5,7 +5,7 @@
 # ── 서버 설정 ──────────────────────────────
 SERVER_HOST = "0.0.0.0"
 SERVER_PORT = 3002
-URL_PREFIX  = "/jp_sourcing"   # 대시보드 접속 경로
+URL_PREFIX  = ""   # 대시보드 접속 경로 (루트)
 
 # ── Xebio 스크래핑 설정 ────────────────────
 XEBIO_BASE_URL  = "https://www.supersports.com/ja-jp/xebio"
@@ -36,10 +36,24 @@ JP_INTL_SHIPPING           = 1500   # 국제 배송비 (엔)
 EXCHANGE_RATE_MARKUP       = 1.015  # 송금 환율 마진 1.5%
 
 # ── 네이버 카페 설정 ──────────────────────
-NAVER_ID       = "your_naver_id"        # ← 실제 아이디로 변경
-NAVER_PW       = "your_naver_password"  # ← 실제 비밀번호로 변경
-CAFE_URL       = "https://cafe.naver.com/your_cafe"  # ← 카페 주소로 변경
-CAFE_MENU_NAME = "일본직구/구매대행"    # ← 올릴 게시판 이름으로 변경
+CAFE_URL       = "https://cafe.naver.com/sohosupport"
+CAFE_ID        = "28938799"        # 카페 고유 ID
+CAFE_MENU_ID   = "100"            # 게시판 메뉴 ID
+CAFE_MENU_NAME = "일본구매대행"    # 게시판 이름
+
+# ── 네이버 쿠키 기반 로그인 ──────────────
+NAVER_COOKIE_PATH = "naver_cookies.json"   # 쿠키 저장 경로
+NAVER_LOGIN_TIMEOUT = 120                   # 수동 로그인 대기 시간 (초)
+
+# ── 로그인 설정 ──────────────────────────
+import platform
+APP_ENV = "production" if platform.system() == "Darwin" else "test"
+
+LOGIN_USERS = {
+    "admin": "0000",            # 관리자 계정
+}
+
+SECRET_KEY = "jp-sourcing-secret-key-change-me"  # 세션 암호화 키 (운영 시 변경)
 
 # ── 출력 경로 ─────────────────────────────
 OUTPUT_DIR = "output"

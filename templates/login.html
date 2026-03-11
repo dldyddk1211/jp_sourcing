@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TheOne - 로그인</title>
+  <style>
+    :root {
+      --bg:#0f1117; --card:#1a1d27; --border:#2a2d3a;
+      --accent:#4f8ef7; --accent2:#7c5cbf;
+      --green:#2ecc71; --red:#e74c3c; --yellow:#f39c12;
+      --text:#e0e0e0; --muted:#7a7f9a;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body {
+      background:var(--bg); color:var(--text);
+      font-family:'Noto Sans KR',sans-serif;
+      min-height:100vh; display:flex; align-items:center; justify-content:center;
+    }
+
+    .login-container {
+      width:100%; max-width:420px; padding:20px;
+    }
+
+    .login-card {
+      background:var(--card); border:1px solid var(--border);
+      border-radius:16px; padding:40px 36px; text-align:center;
+      box-shadow:0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    .login-logo {
+      font-size:1.6rem; font-weight:800;
+      background:linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+      margin-bottom:6px;
+    }
+    .login-sub {
+      font-size:0.82rem; color:var(--muted); margin-bottom:32px;
+    }
+
+    .form-group {
+      margin-bottom:18px; text-align:left;
+    }
+    .form-group label {
+      display:block; font-size:0.78rem; color:var(--muted);
+      margin-bottom:6px; letter-spacing:.03em;
+    }
+    .form-group input {
+      width:100%; padding:12px 14px;
+      background:#0f1117; border:1px solid var(--border);
+      border-radius:8px; color:var(--text);
+      font-size:0.92rem; outline:none;
+      transition:border-color .2s;
+    }
+    .form-group input:focus {
+      border-color:var(--accent);
+      box-shadow:0 0 0 3px rgba(79,142,247,0.15);
+    }
+
+    .login-btn {
+      width:100%; padding:13px;
+      background:linear-gradient(135deg, var(--accent), var(--accent2));
+      border:none; border-radius:8px;
+      color:#fff; font-size:0.95rem; font-weight:700;
+      cursor:pointer; transition:opacity .15s, transform .1s;
+      margin-top:8px;
+    }
+    .login-btn:hover { opacity:.9; }
+    .login-btn:active { transform:scale(.98); }
+
+    .error-msg {
+      background:rgba(231,76,60,0.12); border:1px solid rgba(231,76,60,0.3);
+      border-radius:8px; padding:10px 14px;
+      color:var(--red); font-size:0.82rem;
+      margin-bottom:18px; display:none;
+    }
+    .error-msg.show { display:block; }
+
+    .env-badge {
+      display:inline-flex; align-items:center; gap:6px;
+      margin-top:24px; padding:5px 14px;
+      background:#1e2433; border:1px solid var(--border);
+      border-radius:20px; font-size:0.72rem; color:var(--muted);
+    }
+    .env-dot {
+      width:6px; height:6px; border-radius:50%;
+    }
+    .env-dot.prod { background:var(--green); }
+    .env-dot.test { background:var(--yellow); }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-logo">TheOne</div>
+      <div class="login-sub">JP 소싱 대시보드</div>
+
+      <div class="error-msg {% if error %}show{% endif %}" id="errorMsg">
+        {{ error or '' }}
+      </div>
+
+      <form method="POST" action="{{ url_prefix }}/login">
+        <div class="form-group">
+          <label>아이디</label>
+          <input type="text" name="username" placeholder="아이디를 입력하세요"
+                 value="{{ username or '' }}" autofocus required>
+        </div>
+        <div class="form-group">
+          <label>비밀번호</label>
+          <input type="password" name="password" placeholder="비밀번호를 입력하세요" required>
+        </div>
+        <button type="submit" class="login-btn">로그인</button>
+      </form>
+
+      <div class="env-badge">
+        <span class="env-dot {{ 'prod' if env == 'production' else 'test' }}"></span>
+        {{ '운영 서버 (Mac)' if env == 'production' else '테스트 서버 (Windows)' }}
+      </div>
+    </div>
+  </div>
+</body>
+</html>

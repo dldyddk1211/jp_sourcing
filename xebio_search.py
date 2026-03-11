@@ -133,12 +133,14 @@ async def scrape_nike_sale(status_callback=None, max_pages=None):
             if total:
                 log(f"   📊 총 수집 대상: 약 {total:,}개 상품")
 
+            SALE_BASE = "https://www.supersports.com/ja-jp/xebio/products/?discount=sale"
             current_page = 1
+            prev_product_links = set()  # 중복 감지용
+
             while True:
-                # ── 리셋 요청 체크 ──────────────────────
+                # ── 리셋 체크 ───────────────────────────
                 if status_callback and _check_flag("stop"):
                     log("🔄 리셋 요청 — 수집을 중단합니다")
-                    products = []
                     return []
 
                 # ── 일시정지 체크 ───────────────────────
@@ -147,29 +149,61 @@ async def scrape_nike_sale(status_callback=None, max_pages=None):
                     while _check_flag("pause"):
                         await asyncio.sleep(1)
                         if _check_flag("stop"):
-                            log("🔄 리셋 요청 — 수집을 중단합니다")
                             return []
                     log("▶️ 수집 재개!")
 
-                # 파싱 전에도 리셋 체크
-                if status_callback and _check_flag("stop"):
-                    log("🔄 리셋 — 수집 즉시 중단")
-                    return []
+                # ── 1페이지는 URL 직접 이동, 이후는 다음 버튼 클릭 ──
+                if current_page == 1:
+                    page_url = SALE_BASE
+                    log(f"   📄 [{current_page}페이지] 상품 파싱 중...")
+                    log(f"   🔗 {page_url}")
+                    try:
+                        await page.goto(page_url, wait_until="domcontentloaded", timeout=30000)
+                        await asyncio.sleep(2)
+                    except Exception as e:
+                        log(f"   ⚠️ 페이지 이동 오류: {e}")
+                        break
+                else:
+                    log(f"   📄 [{current_page}페이지] 다음 페이지로 이동 중...")
+                    moved = await go_next_page(page)
+                    if not moved:
+                        log("   ✅ 마지막 페이지 도달! (다음 버튼 없음)")
+                        break
+                    # SPA 렌더링 대기 — 상품 카드가 나타날 때까지
+                    for sel in [".product-tile", ".product-item", "[class*='product-card']"]:
+                        try:
+                            await page.wait_for_selector(sel, timeout=5000)
+                            break
+                        except Exception:
+                            continue
+                    await asyncio.sleep(3)
 
-                log(f"   📄 [{current_page}페이지] 상품 파싱 중...")
+                actual_url = page.url
+                log(f"   ✅ 실제 URL: {actual_url}")
+
                 page_products = await parse_product_list(page)
+                log(f"   📦 이 페이지에서 수집: {len(page_products)}개")
+
+                # 상품이 없으면 마지막 페이지
+                if not page_products:
+                    log("   ✅ 마지막 페이지 도달! (상품 없음)")
+                    break
+
+                # 이전 페이지와 완전 동일한 상품이면 중단
+                curr_links = set(p.get("link", "") for p in page_products)
+                if curr_links and curr_links == prev_product_links:
+                    log(f"   ⚠️ 이전 페이지와 동일한 상품 — 마지막 페이지로 판단")
+                    break
+                prev_product_links = curr_links
+
                 products.extend(page_products)
                 pct = int(len(products) / total * 100) if total else 0
                 bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
                 log(f"   [{bar}] {pct}% — {len(page_products)}개 수집 / 누적: {len(products):,}개")
 
+                # 지정 페이지 도달 시 중단
                 if max_pages and current_page >= max_pages:
-                    log(f"   🛑 테스트 모드: {max_pages}페이지에서 중단")
-                    break
-
-                has_next = await go_next_page(page)
-                if not has_next:
-                    log("   ✅ 마지막 페이지 도달!")
+                    log(f"   🛑 {max_pages}페이지까지 수집 완료!")
                     break
 
                 current_page += 1
@@ -646,12 +680,18 @@ async def scrape_detail_page(page, url: str) -> dict:
 
 async def go_next_page(page):
     """다음 페이지 버튼 클릭, 없으면 False"""
+    old_url = page.url
+
     for sel in [
         "a[aria-label='次へ']",
         "a.pagination__next",
         ".pagination__item--next a",
         "a:has-text('次へ')",
+        "a:has-text('次のページ')",
+        "a:has-text('>')",
         "[class*='next']:not([class*='disabled']) a",
+        "nav[class*='pagination'] a:last-child",
+        "[class*='pager'] a:last-child",
     ]:
         try:
             btn = page.locator(sel).first
@@ -659,10 +699,30 @@ async def go_next_page(page):
                 cls = await btn.get_attribute("class") or ""
                 disabled = await btn.get_attribute("disabled")
                 if "disabled" not in cls and disabled is None:
-                    await btn.click()
-                    await page.wait_for_load_state("networkidle", timeout=15000)
+                    # 클릭 전 href 확인 — href가 있으면 직접 이동
+                    href = await btn.get_attribute("href") or ""
+                    logger.info(f"다음 페이지 버튼 발견: {sel} / href={href[:80]}")
+
+                    if href and href.startswith("http"):
+                        await page.goto(href, wait_until="domcontentloaded", timeout=30000)
+                    elif href and href.startswith("/"):
+                        await page.goto(f"https://www.supersports.com{href}",
+                                        wait_until="domcontentloaded", timeout=30000)
+                    else:
+                        await btn.click()
+                        # SPA: URL 변경 또는 콘텐츠 로딩 대기
+                        try:
+                            await page.wait_for_load_state("networkidle", timeout=15000)
+                        except Exception:
+                            pass
+
+                    # URL이 바뀌었거나 충분히 대기
+                    await asyncio.sleep(3)
+                    new_url = page.url
+                    logger.info(f"페이지 이동: {old_url[:60]} → {new_url[:60]}")
                     return True
-        except Exception:
+        except Exception as e:
+            logger.debug(f"다음 페이지 선택자 오류 ({sel}): {e}")
             continue
     return False
 

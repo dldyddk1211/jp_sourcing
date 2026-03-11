@@ -3,25 +3,122 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JP 소싱 대시보드</title>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <title>TheOne - JP 소싱</title>
   <style>
     :root {
       --bg:#0f1117; --card:#1a1d27; --border:#2a2d3a;
       --accent:#4f8ef7; --accent2:#7c5cbf;
       --green:#2ecc71; --red:#e74c3c; --yellow:#f39c12; --orange:#e67e22;
       --text:#e0e0e0; --muted:#7a7f9a;
+      --sidebar-w:230px;
     }
     * { box-sizing:border-box; margin:0; padding:0; }
-    body { background:var(--bg); color:var(--text); font-family:'Noto Sans KR',sans-serif; min-height:100vh; }
+    body { background:var(--bg); color:var(--text); font-family:'Noto Sans KR',sans-serif; min-height:100vh; display:flex; }
 
-    header { background:var(--card); border-bottom:1px solid var(--border); padding:14px 28px; display:flex; align-items:center; gap:14px; }
-    .logo  { font-size:1.2rem; font-weight:700; color:var(--accent); }
-    .sub   { font-size:0.8rem; color:var(--muted); margin-top:2px; }
-    .rate-badge { margin-left:auto; background:#1e2433; border:1px solid var(--border); border-radius:8px; padding:6px 14px; font-size:0.85rem; }
+    /* ── 사이드바 ───────────────────────── */
+    .sidebar {
+      width:var(--sidebar-w); min-height:100vh; background:var(--card);
+      border-right:1px solid var(--border);
+      display:flex; flex-direction:column; position:fixed; top:0; left:0; z-index:100;
+    }
+    .sidebar-banner {
+      padding:24px 20px 18px; text-align:center;
+      border-bottom:1px solid var(--border);
+    }
+    .sidebar-banner .brand {
+      font-size:1.5rem; font-weight:800;
+      background:linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    }
+    .sidebar-banner .sub { font-size:0.72rem; color:var(--muted); margin-top:4px; }
+
+    .sidebar-nav { flex:1; padding:8px 0; overflow-y:auto; }
+
+    /* ── 카테고리 헤더 ──────────────────── */
+    .nav-category {
+      display:flex; align-items:center; gap:10px;
+      padding:12px 20px; cursor:pointer; font-size:0.88rem; font-weight:700;
+      color:var(--text); transition:all .15s; user-select:none;
+      border-left:3px solid transparent;
+    }
+    .nav-category:hover { background:rgba(79,142,247,0.06); }
+    .nav-category.active { border-left-color:var(--accent); }
+    .cat-icon { font-size:1.05rem; width:22px; text-align:center; }
+    .cat-arrow { margin-left:auto; font-size:0.6rem; color:var(--muted); transition:transform .2s; }
+    .cat-arrow.open { transform:rotate(180deg); }
+    .cat-label { flex:1; }
+    .cat-badge {
+      background:rgba(79,142,247,0.15); color:var(--accent);
+      font-size:0.6rem; font-weight:700; padding:2px 7px; border-radius:10px;
+    }
+
+    /* ── 카테고리 하위 메뉴 ──────────────── */
+    .nav-sub { overflow:hidden; max-height:300px; transition:max-height .25s ease; }
+    .nav-sub.collapsed { max-height:0; }
+
+    .nav-item {
+      display:flex; align-items:center; gap:10px;
+      padding:9px 20px 9px 52px; cursor:pointer; font-size:0.82rem;
+      color:var(--muted); transition:all .15s; border-left:3px solid transparent;
+    }
+    .nav-item:hover { background:rgba(79,142,247,0.06); color:var(--text); }
+    .nav-item.active {
+      background:rgba(79,142,247,0.1); color:var(--accent);
+      border-left-color:var(--accent); font-weight:600;
+    }
+    .nav-icon { font-size:0.9rem; width:18px; text-align:center; }
+    .nav-badge {
+      margin-left:auto; background:var(--accent); color:#fff;
+      font-size:0.65rem; font-weight:700; padding:2px 7px; border-radius:10px;
+    }
+
+    /* ── 준비중 태그 ────────────────────── */
+    .coming-soon {
+      margin-left:auto; font-size:0.6rem; color:var(--muted);
+      background:rgba(255,255,255,0.05); padding:2px 8px; border-radius:10px;
+    }
+
+    .sidebar-footer {
+      padding:14px 20px; border-top:1px solid var(--border);
+      display:flex; flex-direction:column; gap:8px;
+    }
+    .sidebar-footer .env-badge {
+      display:flex; align-items:center; gap:6px;
+      font-size:0.72rem; color:var(--muted);
+    }
+    .env-dot { width:6px; height:6px; border-radius:50%; }
+    .env-dot.prod { background:var(--green); }
+    .env-dot.test { background:var(--yellow); }
+    .logout-btn {
+      display:flex; align-items:center; gap:6px;
+      padding:8px 12px; background:rgba(231,76,60,0.1); border:1px solid rgba(231,76,60,0.2);
+      border-radius:7px; color:var(--red); font-size:0.78rem; cursor:pointer;
+      transition:background .15s;
+    }
+    .logout-btn:hover { background:rgba(231,76,60,0.2); }
+
+    /* ── 메인 영역 ──────────────────────── */
+    .main { margin-left:var(--sidebar-w); flex:1; min-height:100vh; }
+
+    .topbar {
+      background:var(--card); border-bottom:1px solid var(--border);
+      padding:14px 28px; display:flex; align-items:center; gap:14px;
+      position:sticky; top:0; z-index:50;
+    }
+    .topbar-title { font-size:1rem; font-weight:600; }
+    .topbar-right { margin-left:auto; display:flex; align-items:center; gap:14px; }
+    .rate-badge { background:#1e2433; border:1px solid var(--border); border-radius:8px; padding:6px 14px; font-size:0.85rem; }
     .rate-badge span { color:var(--yellow); font-weight:700; }
 
-    .container { max-width:1400px; margin:0 auto; padding:24px 20px; }
+    .content { padding:24px 28px; }
 
+    /* ── 페이지 섹션 ────────────────────── */
+    .page-section { display:none; }
+    .page-section.active { display:block; }
+
+    /* ── 공통 컴포넌트 ──────────────────── */
     .stat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
     .stat-card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:18px; }
     .stat-card .lbl { font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; }
@@ -32,7 +129,6 @@
     .panel { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:20px; margin-bottom:18px; }
     .panel-title { font-size:0.92rem; font-weight:600; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
 
-    /* 버튼 */
     .btn { padding:9px 18px; border-radius:7px; border:none; font-size:0.85rem; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition:opacity .15s,transform .1s; }
     .btn:hover  { opacity:.85; }
     .btn:active { transform:scale(.97); }
@@ -43,43 +139,36 @@
     .b-yellow { background:var(--yellow);  color:#000; }
     .b-red    { background:var(--red);     color:#fff; }
     .b-gray   { background:#2a2d3a;        color:var(--text); }
-
     .btn-row { display:flex; gap:10px; flex-wrap:wrap; }
 
     .opts { display:flex; align-items:center; gap:12px; margin-top:12px; flex-wrap:wrap; }
     .opts label { font-size:0.78rem; color:var(--muted); }
-    .opts input[type=number] { background:#0f1117; border:1px solid var(--border); color:var(--text); padding:5px 9px; border-radius:5px; width:80px; font-size:0.82rem; }
 
     .schedule-pill { display:inline-flex; align-items:center; gap:6px; background:#1e2433; border:1px solid var(--border); border-radius:20px; padding:4px 12px; font-size:0.78rem; color:var(--yellow); margin-top:12px; }
     .dot { width:6px; height:6px; border-radius:50%; background:var(--green); animation:pulse 1.5s infinite; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-    /* 로그 */
-    .log-box { background:#080a0f; border:1px solid var(--border); border-radius:8px; height:260px; overflow-y:auto; padding:12px 14px; font-family:'Consolas',monospace; font-size:0.77rem; line-height:1.8; }
+    .log-box { background:#080a0f; border:1px solid var(--border); border-radius:8px; height:400px; overflow-y:auto; padding:12px 14px; font-family:'Consolas',monospace; font-size:0.77rem; line-height:1.8; }
     .log-line      { color:#9ca3af; }
     .log-line.ok   { color:var(--green); }
     .log-line.err  { color:var(--red); }
     .log-line.warn { color:var(--yellow); }
     .log-line.info { color:#60a5fa; }
 
-    /* 필터 영역 */
     .filter-bar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
     .search-input { background:#0f1117; border:1px solid var(--border); color:var(--text); padding:7px 12px; border-radius:7px; font-size:0.85rem; width:220px; }
     .search-input:focus { outline:none; border-color:var(--accent); }
     .brand-select { background:#0f1117; border:1px solid var(--border); color:var(--text); padding:7px 12px; border-radius:7px; font-size:0.85rem; cursor:pointer; }
     .brand-select:focus { outline:none; border-color:var(--accent); }
 
-    /* 선택 정보 바 */
     .select-bar { display:flex; align-items:center; gap:14px; padding:10px 14px; background:#1a2433; border:1px solid #2a3a4a; border-radius:8px; margin-bottom:12px; font-size:0.85rem; }
     .select-count { color:var(--accent); font-weight:700; }
 
-    /* 중복 알림 */
     .dup-alert { background:#2a1a1a; border:1px solid var(--red); border-radius:8px; padding:12px 16px; margin-bottom:12px; font-size:0.82rem; }
     .dup-alert .dup-title { color:var(--red); font-weight:700; margin-bottom:8px; }
     .price-change { background:#2a2000; border:1px solid var(--yellow); border-radius:8px; padding:12px 16px; margin-bottom:12px; font-size:0.82rem; }
     .price-change .pc-title { color:var(--yellow); font-weight:700; margin-bottom:8px; }
 
-    /* 테이블 */
     .tbl-wrap { overflow-x:auto; }
     table { width:100%; border-collapse:collapse; font-size:0.82rem; }
     th,td { padding:9px 12px; text-align:left; border-bottom:1px solid var(--border); }
@@ -93,7 +182,6 @@
     .b-brand { background:#2a1a3a; color:#c084fc; }
     .b-code  { background:#1a1a2a; color:#94a3b8; font-family:monospace; font-size:0.7rem; }
 
-    /* 체크박스 */
     input[type=checkbox] { width:16px; height:16px; cursor:pointer; accent-color:var(--accent); }
 
     .pager { display:flex; justify-content:center; gap:7px; margin-top:16px; }
@@ -104,257 +192,536 @@
     .spinner { display:inline-block; width:12px; height:12px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; }
     @keyframes spin { to{transform:rotate(360deg)} }
 
-    @media(max-width:900px) { .stat-grid{grid-template-columns:repeat(2,1fr)} }
+    @media(max-width:900px) {
+      .sidebar { width:60px; }
+      .sidebar-banner .brand { font-size:0.9rem; }
+      .sidebar-banner .sub { display:none; }
+      .nav-category .cat-label, .nav-category .cat-arrow, .nav-category .coming-soon { display:none; }
+      .nav-item span:not(.nav-icon) { display:none; }
+      .nav-badge { display:none; }
+      .nav-item { padding-left:20px; }
+      .main { margin-left:60px; }
+      .stat-grid { grid-template-columns:repeat(2,1fr); }
+    }
   </style>
 </head>
 <body>
 
-<header>
-  <div>
-    <div class="logo">🛒 JP 소싱 대시보드</div>
-    <div class="sub">Xebio セール 전체 수집 → 브랜드 필터 → 네이버 카페 업로드</div>
-  </div>
-  <div class="rate-badge">💱 환율 <span id="rate">-</span> / 1엔</div>
-</header>
-
-<div class="container">
-
-  <!-- 상태 카드 -->
-  <div class="stat-grid">
-    <div class="stat-card">
-      <div class="lbl">수집된 상품</div>
-      <div class="val c-blue" id="s-count">0</div>
-      <div class="hint">마지막: <span id="s-last-scrape">-</span></div>
-    </div>
-    <div class="stat-card">
-      <div class="lbl">선택된 상품</div>
-      <div class="val c-yellow" id="s-selected">0</div>
-      <div class="hint">업로드 대상</div>
-    </div>
-    <div class="stat-card">
-      <div class="lbl">업로드 완료</div>
-      <div class="val c-green" id="s-uploaded">0</div>
-      <div class="hint">마지막: <span id="s-last-upload">-</span></div>
-    </div>
-    <div class="stat-card">
-      <div class="lbl">스크래핑 상태</div>
-      <div class="val" id="s-scraping"><span class="c-green">대기 중 ✓</span></div>
-      <div class="hint" id="s-upload-status">업로드 대기중</div>
-    </div>
+<!-- ═══════════ 사이드바 ═══════════ -->
+<aside class="sidebar">
+  <div class="sidebar-banner">
+    <div class="brand">THE ONE</div>
+    <div class="sub">JP Sourcing Platform</div>
   </div>
 
-  <!-- 컨트롤 -->
-  <div class="panel">
-    <div class="panel-title">⚙️ 실행 컨트롤</div>
-    <div class="btn-row">
-      <button class="btn b-blue"   id="btn-scrape" onclick="runScrape()">🔍 수동 스크래핑</button>
-      <button class="btn b-green"  id="btn-upload" onclick="runUpload()">📤 선택 상품 업로드</button>
-      <button class="btn b-purple" id="btn-auto"   onclick="runAuto()">⚡ 자동 실행</button>
-      <button class="btn b-yellow" id="btn-pause"  onclick="togglePause()" style="display:none">⏸️ 일시정지</button>
-      <button class="btn b-red"    id="btn-reset"  onclick="runReset()">🔄 리셋</button>
-      <button class="btn b-gray"   id="btn-translate" onclick="runTranslate()">🌐 한국어 번역</button>
-      <button class="btn b-gray"   onclick="openDict()">📖 단어장</button>
-      <button class="btn b-gray"   onclick="downloadExcel()" id="btn-excel">📥 엑셀 다운로드</button>
+  <nav class="sidebar-nav">
+    <!-- ▼ Sport -->
+    <div class="nav-category active" onclick="toggleCategory('sport')">
+      <span class="cat-icon">&#x26BD;</span>
+      <span class="cat-label">Sport</span>
+      <span class="cat-arrow open" id="arrow-sport">&#x25BC;</span>
     </div>
-    <div class="opts">
-      <label>스크래핑 페이지 수</label>
-      <input type="text" id="max-pages" placeholder="전부" style="background:#0f1117;border:1px solid var(--border);color:var(--text);padding:5px 9px;border-radius:5px;width:80px;font-size:0.82rem">
-      <span style="font-size:0.75rem;color:var(--muted)">※ 비워두면 전체 수집 / 숫자 입력 시 해당 페이지까지만</span>
-      <label style="margin-left:10px">업로드 최대 개수</label>
-      <input type="number" id="max-upload" placeholder="전체" min="1" style="background:#0f1117;border:1px solid var(--border);color:var(--text);padding:5px 9px;border-radius:5px;width:80px;font-size:0.82rem">
-    </div>
-    <div id="page-preview" style="margin-top:8px;font-size:0.78rem;color:var(--muted)">
-      📄 현재 설정: <span id="page-preview-text" style="color:var(--yellow)">전체 페이지 수집</span>
-    </div>
-    <!-- 진행 시간 표시 -->
-    <div id="time-bar" style="display:none;margin-top:12px;background:#0f1117;border:1px solid var(--border);border-radius:8px;padding:12px 16px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <span style="font-size:0.8rem;color:var(--muted)">⏱️ 예상 소요시간</span>
-        <span id="t-estimated" style="font-size:0.85rem;color:var(--yellow);font-weight:600">-</span>
+    <div class="nav-sub" id="sub-sport">
+      <div class="nav-item active" data-page="dashboard" onclick="showPage('dashboard')">
+        <span class="nav-icon">&#x1f4ca;</span>
+        <span>&#xb300;&#xc2dc;&#xbcf4;&#xb4dc;</span>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <span style="font-size:0.8rem;color:var(--muted)">⏳ 남은 시간</span>
-        <span id="t-remaining" style="font-size:0.85rem;color:var(--accent);font-weight:600">-</span>
+      <div class="nav-item" data-page="products" onclick="showPage('products')">
+        <span class="nav-icon">&#x1f4e6;</span>
+        <span>&#xc0c1;&#xd488; &#xbaa9;&#xb85d;</span>
+        <span class="nav-badge" id="nav-count">0</span>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span style="font-size:0.78rem;color:var(--muted)">경과 시간</span>
-        <span id="t-elapsed" style="font-size:0.78rem;color:var(--muted)">-</span>
+      <div class="nav-item" data-page="price" onclick="showPage('price')">
+        <span class="nav-icon">&#x1f4b0;</span>
+        <span>&#xac00;&#xaca9; &#xc124;&#xc815;</span>
       </div>
-      <!-- 프로그레스 바 -->
-      <div style="background:#1a1d27;border-radius:4px;height:6px;overflow:hidden;">
-        <div id="t-progress-bar" style="height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:4px;width:0%;transition:width 0.5s;"></div>
+      <div class="nav-item" data-page="cafe-upload" onclick="showPage('cafe-upload')">
+        <span class="nav-icon">&#x2615;</span>
+        <span>네이버카페 업로드</span>
       </div>
-      <div style="display:flex;justify-content:space-between;margin-top:4px;">
-        <span style="font-size:0.72rem;color:var(--muted)" id="t-progress-text">0%</span>
-        <span style="font-size:0.72rem;color:var(--muted)" id="t-step-text">-</span>
+      <div class="nav-item" data-page="logs" onclick="showPage('logs')">
+        <span class="nav-icon">&#x1f4cb;</span>
+        <span>&#xc2e4;&#xc2dc;&#xac04; &#xb85c;&#xadf8;</span>
       </div>
     </div>
-    <div class="schedule-pill"><div class="dot"></div> 자동 스케줄 활성화 — 매일 <span id="s-schedule">-</span> 실행</div>
+
+    <!-- ▶ Vintage -->
+    <div class="nav-category" onclick="toggleCategory('vintage')">
+      <span class="cat-icon">&#x1f3ba;</span>
+      <span class="cat-label">Vintage</span>
+      <span class="coming-soon">&#xc900;&#xbe44;&#xc911;</span>
+    </div>
+    <div class="nav-sub collapsed" id="sub-vintage">
+      <div class="nav-item" data-page="vintage" onclick="showPage('vintage')">
+        <span class="nav-icon">&#x1f4cb;</span>
+        <span>&#xb300;&#xc2dc;&#xbcf4;&#xb4dc;</span>
+      </div>
+    </div>
+
+    <!-- ▶ Brand Auc -->
+    <div class="nav-category" onclick="toggleCategory('brandauc')">
+      <span class="cat-icon">&#x1f3af;</span>
+      <span class="cat-label">Brand Auc</span>
+      <span class="coming-soon">&#xc900;&#xbe44;&#xc911;</span>
+    </div>
+    <div class="nav-sub collapsed" id="sub-brandauc">
+      <div class="nav-item" data-page="brandauc" onclick="showPage('brandauc')">
+        <span class="nav-icon">&#x1f4cb;</span>
+        <span>&#xb300;&#xc2dc;&#xbcf4;&#xb4dc;</span>
+      </div>
+    </div>
+
+    <!-- ▼ Setting -->
+    <div class="nav-category" onclick="toggleCategory('setting')">
+      <span class="cat-icon">&#x2699;&#xfe0f;</span>
+      <span class="cat-label">Setting</span>
+      <span class="cat-arrow" id="arrow-setting">&#x25BC;</span>
+    </div>
+    <div class="nav-sub collapsed" id="sub-setting">
+      <div class="nav-item" data-page="dictionary" onclick="showPage('dictionary')">
+        <span class="nav-icon">&#x1f4d6;</span>
+        <span>&#xbc88;&#xc5ed; &#xb2e8;&#xc5b4;&#xc7a5;</span>
+      </div>
+    </div>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="env-badge">
+      <span class="env-dot {{ 'prod' if env == 'production' else 'test' }}"></span>
+      {{ '운영 서버' if env == 'production' else '테스트 서버' }}
+    </div>
+    <a href="{{ url_prefix }}/logout" class="logout-btn" style="text-decoration:none">
+      &#x1f6aa; <span>&#xb85c;&#xadf8;&#xc544;&#xc6c3;</span>
+    </a>
+  </div>
+</aside>
+
+<!-- ═══════════ 메인 영역 ═══════════ -->
+<div class="main">
+  <!-- 상단바 -->
+  <div class="topbar">
+    <div class="topbar-title" id="topbar-title">&#x1f4ca; &#xb300;&#xc2dc;&#xbcf4;&#xb4dc;</div>
+    <div class="topbar-right">
+      <div class="rate-badge">&#x1f4b1; &#xd658;&#xc728; <span id="rate">-</span> / 1&#xc5d4;</div>
+      <div style="font-size:0.8rem;color:var(--muted)">{{ session.get('username','') }}</div>
+    </div>
   </div>
 
-  <!-- 가격 설정 패널 -->
-  <div class="panel">
-    <div class="panel-title">💰 구매대행 가격 설정</div>
-    <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
+  <div class="content">
 
-      <!-- 마진율 -->
-      <div style="background:#0f1117;border:1px solid var(--border);border-radius:8px;padding:16px;min-width:200px">
-        <div style="font-size:0.78rem;color:var(--muted);margin-bottom:10px">📈 마진율 설정</div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-          <input type="number" id="margin-input" min="0" max="200" value="20"
-            style="background:#1a1d27;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:80px;font-size:1rem;text-align:center">
-          <span style="font-size:1rem;color:var(--text)">%</span>
-          <button class="btn b-blue" onclick="applyMargin()" style="padding:7px 14px">적용</button>
+    <!-- ═══ 1. 대시보드 (Overview) ═══ -->
+    <div class="page-section active" id="page-dashboard">
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="lbl">수집된 상품</div>
+          <div class="val c-blue" id="s-count">0</div>
+          <div class="hint">마지막: <span id="s-last-scrape">-</span></div>
         </div>
-        <div style="font-size:0.75rem;color:var(--muted)" id="margin-preview">판매가 = 원가 × 1.20</div>
-      </div>
-
-      <!-- 원가 계산 구조 설명 -->
-      <div style="background:#0f1117;border:1px solid var(--border);border-radius:8px;padding:16px;font-size:0.78rem;color:var(--muted);line-height:2">
-        <div style="color:var(--text);font-weight:600;margin-bottom:6px">📋 원가 계산 구조</div>
-        <div>일본 상품가</div>
-        <div>+ 일본 내 배송료 <span style="color:var(--yellow)">3,980엔 이상 무료 / 이하 550엔</span></div>
-        <div>+ 일본 업체 수수료 <span style="color:var(--yellow)">3%</span></div>
-        <div>+ 국제 배송비 <span style="color:var(--yellow)">1,500엔</span></div>
-        <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px">= 일본 총 원가 (엔)</div>
-        <div>× 송금 환율 <span style="color:var(--yellow)">실시간 환율 +1.5%</span></div>
-        <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px">= 원화 원가</div>
-        <div>× 마진율</div>
-        <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px;color:var(--green);font-weight:600">= 최종 판매가</div>
-      </div>
-
-      <!-- 예시 계산기 -->
-      <div style="background:#0f1117;border:1px solid var(--border);border-radius:8px;padding:16px;min-width:220px">
-        <div style="font-size:0.78rem;color:var(--muted);margin-bottom:10px">🧮 예시 계산</div>
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
-          <span style="font-size:0.78rem;color:var(--muted)">¥</span>
-          <input type="number" id="calc-jpy" value="9980" min="1"
-            style="background:#1a1d27;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:90px;font-size:0.9rem">
-          <button class="btn b-gray" onclick="calcExample()" style="padding:5px 10px;font-size:0.78rem">계산</button>
+        <div class="stat-card">
+          <div class="lbl">선택된 상품</div>
+          <div class="val c-yellow" id="s-selected">0</div>
+          <div class="hint">업로드 대상</div>
         </div>
-        <div id="calc-result" style="font-size:0.78rem;line-height:1.9;color:var(--muted)">계산 버튼을 눌러보세요</div>
+        <div class="stat-card">
+          <div class="lbl">업로드 완료</div>
+          <div class="val c-green" id="s-uploaded">0</div>
+          <div class="hint">마지막: <span id="s-last-upload">-</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="lbl">스크래핑 상태</div>
+          <div class="val" id="s-scraping"><span class="c-green">대기 중 &#x2713;</span></div>
+          <div class="hint" id="s-upload-status">업로드 대기중</div>
+        </div>
       </div>
 
+      <!-- 실행 컨트롤 -->
+      <div class="panel">
+        <div class="panel-title">&#x2699;&#xfe0f; 실행 컨트롤</div>
+        <div class="btn-row">
+          <button class="btn b-blue"   id="btn-scrape" onclick="runScrape()">&#x1f50d; 수동 스크래핑</button>
+          <button class="btn b-green"  id="btn-upload" onclick="runUpload()">&#x1f4e4; 선택 상품 업로드</button>
+          <button class="btn b-purple" id="btn-auto"   onclick="runAuto()">&#x26a1; 자동 실행</button>
+          <button class="btn b-yellow" id="btn-pause"  onclick="togglePause()" style="display:none">&#x23f8;&#xfe0f; 일시정지</button>
+          <button class="btn b-red"    id="btn-reset"  onclick="runReset()">&#x1f504; 리셋</button>
+          <button class="btn b-gray"   id="btn-translate" onclick="runTranslate()">&#x1f310; 한국어 번역</button>
+          <button class="btn b-gray"   onclick="downloadExcel()" id="btn-excel">&#x1f4e5; 엑셀 다운로드</button>
+        </div>
+        <div class="opts">
+          <label>스크래핑 페이지 수</label>
+          <input type="text" id="max-pages" placeholder="전부" style="background:#0f1117;border:1px solid var(--border);color:var(--text);padding:5px 9px;border-radius:5px;width:80px;font-size:0.82rem">
+          <span style="font-size:0.75rem;color:var(--muted)">&#x203b; 비워두면 전체 수집</span>
+          <label style="margin-left:10px">업로드 최대 개수</label>
+          <input type="number" id="max-upload" placeholder="전체" min="1" style="background:#0f1117;border:1px solid var(--border);color:var(--text);padding:5px 9px;border-radius:5px;width:80px;font-size:0.82rem">
+        </div>
+        <div id="page-preview" style="margin-top:8px;font-size:0.78rem;color:var(--muted)">
+          &#x1f4c4; 현재 설정: <span id="page-preview-text" style="color:var(--yellow)">전체 페이지 수집</span>
+        </div>
+        <!-- 진행 시간 표시 -->
+        <div id="time-bar" style="display:none;margin-top:12px;background:#0f1117;border:1px solid var(--border);border-radius:8px;padding:12px 16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span style="font-size:0.8rem;color:var(--muted)">&#x23f1;&#xfe0f; 예상 소요시간</span>
+            <span id="t-estimated" style="font-size:0.85rem;color:var(--yellow);font-weight:600">-</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <span style="font-size:0.8rem;color:var(--muted)">&#x23f3; 남은 시간</span>
+            <span id="t-remaining" style="font-size:0.85rem;color:var(--accent);font-weight:600">-</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <span style="font-size:0.78rem;color:var(--muted)">경과 시간</span>
+            <span id="t-elapsed" style="font-size:0.78rem;color:var(--muted)">-</span>
+          </div>
+          <div style="background:#1a1d27;border-radius:4px;height:6px;overflow:hidden;">
+            <div id="t-progress-bar" style="height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:4px;width:0%;transition:width 0.5s;"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:4px;">
+            <span style="font-size:0.72rem;color:var(--muted)" id="t-progress-text">0%</span>
+            <span style="font-size:0.72rem;color:var(--muted)" id="t-step-text">-</span>
+          </div>
+        </div>
+        <div class="schedule-pill"><div class="dot"></div> 자동 스케줄 활성화 &#x2014; 매일 <span id="s-schedule">-</span> 실행</div>
+      </div>
+
+      <!-- 미니 로그 -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>&#x1f4cb; 최근 로그</span>
+          <button onclick="showPage('logs')" class="btn b-gray" style="padding:4px 10px;font-size:0.75rem">전체 보기</button>
+        </div>
+        <div class="log-box log-mirror" id="mini-log" style="height:200px">
+          <div class="log-line info">[시스템] 대시보드 연결됨.</div>
+        </div>
+      </div>
     </div>
+
+
+    <!-- ═══ 3. 상품 목록 ═══ -->
+    <div class="page-section" id="page-products">
+      <div class="panel">
+        <div class="panel-title">
+          <span>&#x1f4e6; 수집된 상품 목록</span>
+          <button class="btn b-green" onclick="uploadSelected()" style="padding:7px 14px">&#x1f4e4; 선택 상품 업로드 (<span id="sel-cnt">0</span>개)</button>
+        </div>
+
+        <div class="filter-bar">
+          <input class="search-input" type="text" id="search-input" placeholder="&#x1f50d; 상품명 / 품번 검색..." oninput="onFilter()">
+          <select class="brand-select" id="brand-select" onchange="onFilter()">
+            <option value="ALL">모든 브랜드</option>
+          </select>
+          <button class="btn b-gray" onclick="onFilter()" style="padding:7px 12px;font-size:0.82rem">적용</button>
+          <button class="btn b-gray" onclick="resetFilter()" style="padding:7px 12px;font-size:0.82rem">초기화</button>
+          <span style="color:var(--muted);font-size:0.8rem" id="filter-result"></span>
+        </div>
+
+        <div id="dup-area"></div>
+
+        <div class="select-bar">
+          <span>선택: <span class="select-count" id="sel-cnt2">0</span>개</span>
+          <button class="btn b-gray" onclick="selectAll(true)"  style="padding:5px 10px;font-size:0.78rem">&#x2705; 전체 선택</button>
+          <button class="btn b-gray" onclick="selectAll(false)" style="padding:5px 10px;font-size:0.78rem">&#x2610; 전체 해제</button>
+          <button class="btn b-blue" onclick="checkDuplicate()" style="padding:5px 10px;font-size:0.78rem">&#x1f50d; 중복 체크</button>
+        </div>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th><input type="checkbox" id="chk-all" onchange="selectAll(this.checked)" title="전체선택/해제"></th>
+                <th>이미지</th>
+                <th>브랜드</th>
+                <th>상품명</th>
+                <th>품번</th>
+                <th>일본가 (클릭&#x2192;상품)</th>
+                <th>구매대행가</th>
+                <th>구매가능 사이즈</th>
+                <th>재고</th>
+              </tr>
+            </thead>
+            <tbody id="tbody">
+              <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:40px">스크래핑을 실행하면 상품이 표시됩니다.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pager" id="pager"></div>
+      </div>
+    </div>
+
+    <!-- ═══ Vintage ═══ -->
+    <div class="page-section" id="page-vintage">
+      <div class="panel">
+        <div class="panel-title">&#x1f3ba; Vintage</div>
+        <div style="text-align:center;padding:60px 20px;color:var(--muted)">
+          <div style="font-size:2.5rem;margin-bottom:16px">&#x1f3ba;</div>
+          <div style="font-size:1.1rem;color:var(--text);margin-bottom:8px">Vintage &#xcc44;&#xb110; &#xc900;&#xbe44; &#xc911;</div>
+          <div style="font-size:0.82rem">&#xbe48;&#xd2f0;&#xc9c0; &#xc0c1;&#xd488; &#xc18c;&#xc2f1; &#xae30;&#xb2a5;&#xc774; &#xc5ec;&#xae30;&#xc5d0; &#xcd94;&#xac00;&#xb429;&#xb2c8;&#xb2e4;</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Brand Auc ═══ -->
+    <div class="page-section" id="page-brandauc">
+      <div class="panel">
+        <div class="panel-title">&#x1f3af; Brand Auc</div>
+        <div style="text-align:center;padding:60px 20px;color:var(--muted)">
+          <div style="font-size:2.5rem;margin-bottom:16px">&#x1f3af;</div>
+          <div style="font-size:1.1rem;color:var(--text);margin-bottom:8px">Brand Auc &#xcc44;&#xb110; &#xc900;&#xbe44; &#xc911;</div>
+          <div style="font-size:0.82rem">&#xbe0c;&#xb79c;&#xb4dc; &#xacbd;&#xb9e4; &#xc0c1;&#xd488; &#xc18c;&#xc2f1; &#xae30;&#xb2a5;&#xc774; &#xc5ec;&#xae30;&#xc5d0; &#xcd94;&#xac00;&#xb429;&#xb2c8;&#xb2e4;</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 4. 가격 설정 ═══ -->
+    <div class="page-section" id="page-price">
+      <div class="panel">
+        <div class="panel-title">&#x1f4b0; 구매대행 가격 설정</div>
+        <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
+          <!-- 마진율 -->
+          <div style="background:#0f1117;border:1px solid var(--border);border-radius:8px;padding:16px;min-width:200px">
+            <div style="font-size:0.78rem;color:var(--muted);margin-bottom:10px">&#x1f4c8; 마진율 설정</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+              <input type="number" id="margin-input" min="0" max="200" value="20"
+                style="background:#1a1d27;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:80px;font-size:1rem;text-align:center">
+              <span style="font-size:1rem;color:var(--text)">%</span>
+              <button class="btn b-blue" onclick="applyMargin()" style="padding:7px 14px">적용</button>
+            </div>
+            <div style="font-size:0.75rem;color:var(--muted)" id="margin-preview">판매가 = 원가 &#xd7; 1.20</div>
+          </div>
+
+          <!-- 원가 계산 구조 -->
+          <div style="background:#0f1117;border:1px solid var(--border);border-radius:8px;padding:16px;font-size:0.78rem;color:var(--muted);line-height:2">
+            <div style="color:var(--text);font-weight:600;margin-bottom:6px">&#x1f4cb; 원가 계산 구조</div>
+            <div>일본 상품가</div>
+            <div>+ 일본 내 배송료 <span style="color:var(--yellow)">3,980엔 이상 무료 / 이하 550엔</span></div>
+            <div>+ 일본 업체 수수료 <span style="color:var(--yellow)">3%</span></div>
+            <div>+ 국제 배송비 <span style="color:var(--yellow)">1,500엔</span></div>
+            <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px">= 일본 총 원가 (엔)</div>
+            <div>&#xd7; 송금 환율 <span style="color:var(--yellow)">실시간 환율 +1.5%</span></div>
+            <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px">= 원화 원가</div>
+            <div>&#xd7; 마진율</div>
+            <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px;color:var(--green);font-weight:600">= 최종 판매가</div>
+          </div>
+
+          <!-- 예시 계산기 -->
+          <div style="background:#0f1117;border:1px solid var(--border);border-radius:8px;padding:16px;min-width:220px">
+            <div style="font-size:0.78rem;color:var(--muted);margin-bottom:10px">&#x1f9ee; 예시 계산</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+              <span style="font-size:0.78rem;color:var(--muted)">&#xa5;</span>
+              <input type="number" id="calc-jpy" value="9980" min="1"
+                style="background:#1a1d27;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:90px;font-size:0.9rem">
+              <button class="btn b-gray" onclick="calcExample()" style="padding:5px 10px;font-size:0.78rem">계산</button>
+            </div>
+            <div id="calc-result" style="font-size:0.78rem;line-height:1.9;color:var(--muted)">계산 버튼을 눌러보세요</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 5. 번역 단어장 ═══ -->
+    <div class="page-section" id="page-dictionary">
+      <div class="panel">
+        <div class="panel-title">
+          <span>&#x1f4d6; 번역 단어장</span>
+          <div style="display:flex;gap:8px">
+            <button class="btn b-gray" onclick="loadDict()" style="padding:6px 12px;font-size:0.78rem">&#x1f504; 새로고침</button>
+            <button class="btn b-green" onclick="runTranslate()" style="padding:6px 12px;font-size:0.78rem">&#x1f310; 재번역 적용</button>
+          </div>
+        </div>
+        <div style="font-size:0.75rem;color:var(--muted);margin-bottom:14px">잘못 번역되는 단어를 직접 수정할 수 있습니다</div>
+
+        <!-- 단어 추가 -->
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;padding:14px;background:#0f1117;border:1px solid var(--border);border-radius:8px">
+          <input type="text" id="dict-ja" placeholder="일본어 (예: ズーム)" class="search-input" style="flex:1;min-width:120px">
+          <span style="color:var(--muted);font-size:1.1rem">&#x2192;</span>
+          <input type="text" id="dict-ko" placeholder="한국어 (예: 줌)" class="search-input" style="flex:1;min-width:120px">
+          <button class="btn b-blue" onclick="addDict()" style="padding:7px 14px;white-space:nowrap">&#x2795; 추가</button>
+        </div>
+
+        <!-- 단어 목록 -->
+        <div style="max-height:400px;overflow-y:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>일본어</th>
+                <th>&#x2192; 한국어</th>
+                <th style="width:40px"></th>
+              </tr>
+            </thead>
+            <tbody id="dict-tbody">
+              <tr><td colspan="3" style="text-align:center;color:var(--muted);padding:24px">로딩 중...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="dict-count" style="font-size:0.75rem;color:var(--muted);margin-top:10px"></div>
+      </div>
+    </div>
+
+    <!-- ═══ 6. 네이버카페 업로드 ═══ -->
+    <div class="page-section" id="page-cafe-upload">
+      <div class="panel">
+        <div class="panel-title">
+          <span>&#x2615; 네이버 카페 업로드</span>
+        </div>
+
+        <!-- 네이버 로그인 상태 -->
+        <div id="naver-login-section" style="margin-bottom:20px;padding:18px;background:#0f1117;border:1px solid var(--border);border-radius:10px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div>
+              <div style="font-size:0.9rem;font-weight:600;margin-bottom:4px;">
+                <span id="naver-status-icon">&#x26aa;</span> 네이버 로그인 상태
+              </div>
+              <div id="naver-status-text" style="font-size:0.78rem;color:var(--muted);">확인 중...</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn b-green" id="btn-naver-login" onclick="naverLogin()" style="padding:8px 16px;">
+                &#x1f511; 네이버 로그인
+              </button>
+              <button class="btn b-red" id="btn-naver-logout" onclick="naverLogout()" style="padding:8px 16px;display:none;">
+                &#x1f6aa; 로그인 해제
+              </button>
+            </div>
+          </div>
+          <div style="font-size:0.72rem;color:var(--muted);margin-top:10px;line-height:1.6;">
+            &#x1f4a1; 처음 사용 시: 로그인 버튼 클릭 &#x2192; 브라우저가 열림 &#x2192; 네이버 로그인 &#x2192; 쿠키 자동 저장<br>
+            &#x1f4a1; 쿠키 만료 시: 다시 로그인 버튼을 눌러주세요 (보통 1~2일 유효)
+          </div>
+        </div>
+
+        <!-- 업로드 컨트롤 -->
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;">
+          <button class="btn b-green" id="btn-cafe-upload" onclick="uploadSelected()" style="padding:9px 18px;">
+            &#x1f4e4; 선택 상품 업로드 (<span id="cafe-sel-cnt">0</span>개)
+          </button>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <label style="font-size:0.8rem;color:var(--muted);">최대 업로드 수</label>
+            <input type="number" id="cafe-max-upload" placeholder="전체" min="1"
+              style="background:#0f1117;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:80px;font-size:0.82rem;">
+          </div>
+        </div>
+
+        <!-- 안내 -->
+        <div style="font-size:0.78rem;color:var(--muted);line-height:1.7;padding:14px;background:#0f1117;border:1px solid var(--border);border-radius:8px;">
+          <div style="font-weight:600;color:var(--text);margin-bottom:6px;">&#x1f4dd; 업로드 흐름</div>
+          1. 상품 목록에서 체크박스로 업로드할 상품 선택<br>
+          2. 네이버 로그인 완료 확인<br>
+          3. 업로드 버튼 클릭 &#x2192; 선택된 상품이 카페에 게시글로 등록<br>
+          <div style="margin-top:8px;color:var(--yellow);">&#x26a0;&#xfe0f; 업로드 중에는 브라우저를 닫지 마세요</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 7. 실시간 로그 ═══ -->
+    <div class="page-section" id="page-logs">
+      <div class="panel">
+        <div class="panel-title">
+          <span>&#x1f4cb; 실시간 로그</span>
+          <button onclick="clearLog()" class="btn b-gray" style="padding:4px 10px;font-size:0.75rem">지우기</button>
+        </div>
+        <div class="log-box log-mirror" style="height:calc(100vh - 200px)">
+          <div class="log-line info">[시스템] 대시보드 연결됨.</div>
+        </div>
+      </div>
+    </div>
+
   </div>
-
-  <!-- 실시간 로그 -->
-  <div class="panel">
-    <div class="panel-title">
-      <span>📋 실시간 로그</span>
-      <button onclick="clearLog()" class="btn b-gray" style="padding:4px 10px;font-size:0.75rem">지우기</button>
-    </div>
-    <div class="log-box" id="log-box">
-      <div class="log-line info">[시스템] 대시보드 연결됨.</div>
-    </div>
-  </div>
-
-  <!-- 상품 목록 -->
-  <div class="panel">
-    <div class="panel-title">
-      <span>📦 수집된 상품 목록</span>
-      <button class="btn b-green" onclick="uploadSelected()" style="padding:7px 14px">📤 선택 상품 업로드 (<span id="sel-cnt">0</span>개)</button>
-    </div>
-
-    <!-- 필터 바 -->
-    <div class="filter-bar">
-      <input class="search-input" type="text" id="search-input" placeholder="🔍 상품명 / 품번 검색..." oninput="onFilter()">
-      <select class="brand-select" id="brand-select" onchange="onFilter()">
-        <option value="ALL">모든 브랜드</option>
-      </select>
-      <button class="btn b-gray" onclick="onFilter()" style="padding:7px 12px;font-size:0.82rem">적용</button>
-      <button class="btn b-gray" onclick="resetFilter()" style="padding:7px 12px;font-size:0.82rem">초기화</button>
-      <span style="color:var(--muted);font-size:0.8rem" id="filter-result"></span>
-    </div>
-
-    <!-- 중복/가격변동 알림 영역 -->
-    <div id="dup-area"></div>
-
-    <!-- 선택 바 -->
-    <div class="select-bar">
-      <span>선택: <span class="select-count" id="sel-cnt2">0</span>개</span>
-      <button class="btn b-gray" onclick="selectAll(true)"  style="padding:5px 10px;font-size:0.78rem">✅ 전체 선택</button>
-      <button class="btn b-gray" onclick="selectAll(false)" style="padding:5px 10px;font-size:0.78rem">☐ 전체 해제</button>
-      <button class="btn b-blue" onclick="checkDuplicate()" style="padding:5px 10px;font-size:0.78rem">🔍 중복 체크</button>
-    </div>
-
-    <div class="tbl-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th><input type="checkbox" id="chk-all" onchange="selectAll(this.checked)" title="전체선택/해제"></th>
-            <th>이미지</th>
-            <th>브랜드</th>
-            <th>상품명</th>
-            <th>품번</th>
-            <th>일본가 (클릭→상품)</th>
-            <th>구매대행가</th>
-            <th>구매가능 사이즈</th>
-            <th>재고</th>
-          </tr>
-        </thead>
-        <tbody id="tbody">
-          <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:40px">스크래핑을 실행하면 상품이 표시됩니다.</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="pager" id="pager"></div>
-  </div>
-
 </div>
 
 <script>
-const PREFIX = "/jp_sourcing";
+const PREFIX = "{{ url_prefix }}";
 let curPage = 1;
 const PER = 50;
 let isPaused = false;
-let checkedIndices = new Set();   // 전체 선택된 인덱스
-let pageIndexMap = [];            // 현재 페이지 상품의 전체 인덱스
+let checkedIndices = new Set();
+let pageIndexMap = [];
+
+// ── 카테고리 토글 ──────────────────────────
+function toggleCategory(cat) {
+  const sub = document.getElementById("sub-" + cat);
+  const arrow = document.getElementById("arrow-" + cat);
+  if (!sub) return;
+  const isCollapsed = sub.classList.toggle("collapsed");
+  if (arrow) arrow.classList.toggle("open", !isCollapsed);
+  // Vintage, Brand Auc은 하위 메뉴 펼침 시 해당 페이지로 이동
+  if (!isCollapsed && (cat === "vintage" || cat === "brandauc")) {
+    showPage(cat);
+  }
+}
+
+// ── 페이지 네비게이션 ──────────────────────
+const pageTitles = {
+  dashboard:  "Sport \u203A \uD83D\uDCCA \uB300\uC2DC\uBCF4\uB4DC",
+  products:   "Sport \u203A \uD83D\uDCE6 \uC0C1\uD488 \uBAA9\uB85D",
+  price:      "Sport \u203A \uD83D\uDCB0 \uAC00\uACA9 \uC124\uC815",
+  logs:       "Sport \u203A \uD83D\uDCCB \uC2E4\uC2DC\uAC04 \uB85C\uADF8",
+  vintage:    "\uD83C\uDFBA Vintage",
+  brandauc:   "\uD83C\uDFAF Brand Auc",
+  dictionary: "Setting \u203A \uD83D\uDCD6 \uBC88\uC5ED \uB2E8\uC5B4\uC7A5",
+  "cafe-upload": "Sport \u203A \u2615 \uB124\uC774\uBC84\uCE74\uD398 \uC5C5\uB85C\uB4DC",
+};
+
+function showPage(page) {
+  document.querySelectorAll(".page-section").forEach(el => el.classList.remove("active"));
+  document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
+  const section = document.getElementById("page-" + page);
+  const navItem = document.querySelector(`.nav-item[data-page="${page}"]`);
+  if (section) section.classList.add("active");
+  if (navItem) navItem.classList.add("active");
+  document.getElementById("topbar-title").textContent = pageTitles[page] || page;
+
+  // 페이지 전환 시 데이터 로드
+  if (page === "products") { loadProducts(curPage); loadBrands(); }
+  if (page === "dictionary") loadDict();
+  if (page === "cafe-upload") {
+    checkNaverStatus();
+    document.getElementById("cafe-sel-cnt").textContent = checkedIndices.size;
+  }
+}
 
 // ── SSE 실시간 로그 ──────────────────────────
-const logBox = document.getElementById("log-box");
+const logBoxes = document.querySelectorAll(".log-box");
+const mainLogId = "mini-log";
 const es = new EventSource(PREFIX + "/logs/stream");
 es.onmessage = e => {
   const { msg } = JSON.parse(e.data);
   if (msg === ".") return;
-  const d = document.createElement("div");
-  d.className = "log-line";
-  if (/\u2705|\uD83C\uDF89|완료|성공/.test(msg))   d.classList.add("ok");
-  else if (/\u274C|오류|실패/.test(msg))             d.classList.add("err");
-  else if (/\u26A0\uFE0F|타임아웃|중복|차단/.test(msg)) d.classList.add("warn");
-  else if (/\uD83D\uDCE1|\uD83D\uDCC4|\u23F0|\uD83D\uDD0D|\uD83D\uDCE4|\uD83D\uDC5F/.test(msg)) d.classList.add("info");
-  d.textContent = msg;
-  logBox.appendChild(d);
-  logBox.scrollTop = logBox.scrollHeight;
+  // 모든 로그 박스에 추가
+  document.querySelectorAll(".log-box").forEach(box => {
+    const d = document.createElement("div");
+    d.className = "log-line";
+    if (/\u2705|\uD83C\uDF89|완료|성공/.test(msg))   d.classList.add("ok");
+    else if (/\u274C|오류|실패/.test(msg))             d.classList.add("err");
+    else if (/\u26A0\uFE0F|타임아웃|중복|차단/.test(msg)) d.classList.add("warn");
+    else if (/\uD83D\uDCE1|\uD83D\uDCC4|\u23F0|\uD83D\uDD0D|\uD83D\uDCE4|\uD83D\uDC5F/.test(msg)) d.classList.add("info");
+    d.textContent = msg;
+    box.appendChild(d);
+    box.scrollTop = box.scrollHeight;
+  });
 };
-function clearLog() { logBox.innerHTML = ""; }
+function clearLog() {
+  document.querySelectorAll(".log-box").forEach(box => { box.innerHTML = ""; });
+}
 
 // ── 버튼 액션 ────────────────────────────────
 function fmtTime(sec) {
-  if (sec < 60) return `${Math.ceil(sec)}초`;
-  if (sec < 3600) return `${Math.floor(sec/60)}분 ${Math.ceil(sec%60)}초`;
-  return `${Math.floor(sec/3600)}시간 ${Math.floor((sec%3600)/60)}분`;
+  if (sec < 60) return `${Math.ceil(sec)}\uCD08`;
+  if (sec < 3600) return `${Math.floor(sec/60)}\uBD84 ${Math.ceil(sec%60)}\uCD08`;
+  return `${Math.floor(sec/3600)}\uC2DC\uAC04 ${Math.floor((sec%3600)/60)}\uBD84`;
 }
 
-// 타이머 상태
 let timerInterval = null;
 let scrapeStartTime = null;
 let estimatedSec = 0;
 
 function startTimer(totalProducts) {
   scrapeStartTime = Date.now();
-  // 목록 수집: 페이지당 2초, 상세 수집: 상품당 2.5초
   estimatedSec = totalProducts * 2.5 + 30;
   document.getElementById("time-bar").style.display = "block";
   document.getElementById("t-estimated").textContent = fmtTime(estimatedSec);
-
   if (timerInterval) clearInterval(timerInterval);
   timerInterval = setInterval(() => {
     const elapsed = (Date.now() - scrapeStartTime) / 1000;
     const remaining = Math.max(0, estimatedSec - elapsed);
     const pct = Math.min(100, Math.floor(elapsed / estimatedSec * 100));
     document.getElementById("t-elapsed").textContent   = fmtTime(elapsed);
-    document.getElementById("t-remaining").textContent = remaining > 0 ? fmtTime(remaining) : "거의 완료!";
+    document.getElementById("t-remaining").textContent = remaining > 0 ? fmtTime(remaining) : "\uAC70\uC758 \uC644\uB8CC!";
     document.getElementById("t-progress-bar").style.width = pct + "%";
     document.getElementById("t-progress-text").textContent = pct + "%";
   }, 1000);
@@ -364,36 +731,28 @@ function stopTimer() {
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   const elapsed = scrapeStartTime ? (Date.now() - scrapeStartTime) / 1000 : 0;
   if (elapsed > 0) {
-    document.getElementById("t-remaining").textContent = "완료 ✅";
+    document.getElementById("t-remaining").textContent = "\uC644\uB8CC \u2705";
     document.getElementById("t-progress-bar").style.width = "100%";
     document.getElementById("t-progress-text").textContent = "100%";
-    document.getElementById("t-elapsed").textContent = fmtTime(elapsed) + " (총 소요)";
+    document.getElementById("t-elapsed").textContent = fmtTime(elapsed) + " (\uCD1D \uC18C\uC694)";
   }
 }
 
 function updatePagePreview() {
   const val = document.getElementById("max-pages").value.trim();
   const el  = document.getElementById("page-preview-text");
-  const stepEl = document.getElementById("t-step-text");
-  if (!val || val === "전부") {
-    el.textContent = "전체 페이지 수집 (セール 전체)";
+  if (!val || val === "\uC804\uBD80") {
+    el.textContent = "\uC804\uCCB4 \uD398\uC774\uC9C0 \uC218\uC9D1 (\u30BB\u30FC\u30EB \uC804\uCCB4)";
     el.style.color = "var(--green)";
-    if (stepEl) stepEl.textContent = "전체 수집";
   } else if (!isNaN(val) && +val > 0) {
     const products = +val * 40;
     const estSec = products * 2.5 + 30;
-    el.textContent = `1페이지 ~ ${val}페이지까지 수집 (약 ${products}개 상품 예상)`;
+    el.textContent = `1\uD398\uC774\uC9C0 ~ ${val}\uD398\uC774\uC9C0\uAE4C\uC9C0 \uC218\uC9D1 (\uC57D ${products}\uAC1C \uC0C1\uD488 \uC608\uC0C1)`;
     el.style.color = "var(--yellow)";
-    if (stepEl) stepEl.textContent = `예상 ${fmtTime(estSec)}`;
-    // 미리보기 시간 표시
     document.getElementById("time-bar").style.display = "block";
     document.getElementById("t-estimated").textContent = fmtTime(estSec);
-    document.getElementById("t-remaining").textContent = "-";
-    document.getElementById("t-elapsed").textContent   = "-";
-    document.getElementById("t-progress-bar").style.width = "0%";
-    document.getElementById("t-progress-text").textContent = "0%";
   } else {
-    el.textContent = "⚠️ 숫자 또는 비워두기(전체)만 입력 가능";
+    el.textContent = "\u26A0\uFE0F \uC22B\uC790 \uB610\uB294 \uBE44\uC6CC\uB450\uAE30(\uC804\uCCB4)\uB9CC \uC785\uB825 \uAC00\uB2A5";
     el.style.color = "var(--red)";
   }
 }
@@ -401,21 +760,16 @@ function updatePagePreview() {
 async function runScrape() {
   const raw = document.getElementById("max-pages").value.trim();
   let maxPages = null;
-  if (raw && raw !== "전부" && !isNaN(raw) && +raw > 0) {
-    maxPages = +raw;
-  }
+  if (raw && raw !== "\uC804\uBD80" && !isNaN(raw) && +raw > 0) maxPages = +raw;
   checkedIndices.clear();
   updateSelCount();
-
-  // 타이머 시작
   const products = maxPages ? maxPages * 40 : 3000;
   startTimer(products);
-
   await post("/run/scrape", { max_pages: maxPages });
 }
-async function runUpload() {
-  await uploadSelected();
-}
+
+async function runUpload() { await uploadSelected(); }
+
 async function runAuto() {
   checkedIndices.clear();
   updateSelCount();
@@ -424,80 +778,110 @@ async function runAuto() {
 
 async function uploadSelected() {
   if (checkedIndices.size === 0) {
-    addLog("⚠️ 선택된 상품이 없습니다. 체크박스로 상품을 선택해주세요", "warn");
+    addLog("\u26A0\uFE0F \uC120\uD0DD\uB41C \uC0C1\uD488\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uCCB4\uD06C\uBC15\uC2A4\uB85C \uC0C1\uD488\uC744 \uC120\uD0DD\uD574\uC8FC\uC138\uC694", "warn");
     return;
   }
-  // 서버에 선택 상태 저장
   await fetch(PREFIX + "/products/update", {
     method: "POST", headers: {"Content-Type":"application/json"},
     body: JSON.stringify({ selected: [...checkedIndices] })
   });
   const mu = document.getElementById("max-upload").value;
-  addLog(`📤 ${checkedIndices.size}개 상품 업로드 시작...`, "info");
+  addLog(`\uD83D\uDCE4 ${checkedIndices.size}\uAC1C \uC0C1\uD488 \uC5C5\uB85C\uB4DC \uC2DC\uC791...`, "info");
   await post("/run/upload", { max_upload: mu ? +mu : null });
+}
+
+// ── 네이버 로그인 (쿠키 기반) ─────────────
+async function checkNaverStatus() {
+  try {
+    const r = await fetch(PREFIX + "/naver/status");
+    const d = await r.json();
+    const icon = document.getElementById("naver-status-icon");
+    const text = document.getElementById("naver-status-text");
+    const btnLogin = document.getElementById("btn-naver-login");
+    const btnLogout = document.getElementById("btn-naver-logout");
+    if (d.logged_in) {
+      icon.textContent = "\uD83D\uDFE2";
+      text.textContent = "\uB85C\uADF8\uC778 \uB428 (\uCFE0\uD0A4 \uC800\uC7A5\uB428)";
+      text.style.color = "var(--green)";
+      btnLogin.style.display = "none";
+      btnLogout.style.display = "";
+    } else {
+      icon.textContent = "\uD83D\uDD34";
+      text.textContent = "\uB85C\uADF8\uC778 \uD544\uC694";
+      text.style.color = "var(--red)";
+      btnLogin.style.display = "";
+      btnLogout.style.display = "none";
+    }
+  } catch(e) { console.log("naver status err", e); }
+}
+
+async function naverLogin() {
+  addLog("\uD83D\uDD11 \uB124\uC774\uBC84 \uB85C\uADF8\uC778 \uBE0C\uB77C\uC6B0\uC800\uB97C \uC5FD\uB2C8\uB2E4...", "info");
+  const btn = document.getElementById("btn-naver-login");
+  btn.disabled = true; btn.textContent = "\uD83D\uDD11 \uB85C\uADF8\uC778 \uB300\uAE30\uC911...";
+  try {
+    await post("/naver/login", {});
+    // 로그인 완료 대기 (5초마다 상태 체크, 최대 2분)
+    let checks = 0;
+    const timer = setInterval(async () => {
+      checks++;
+      const r = await fetch(PREFIX + "/naver/status");
+      const d = await r.json();
+      if (d.logged_in) {
+        clearInterval(timer);
+        checkNaverStatus();
+        addLog("\u2705 \uB124\uC774\uBC84 \uB85C\uADF8\uC778 \uC644\uB8CC!", "ok");
+        btn.disabled = false; btn.textContent = "\uD83D\uDD11 \uB124\uC774\uBC84 \uB85C\uADF8\uC778";
+      }
+      if (checks > 24) { // 2분 초과
+        clearInterval(timer);
+        btn.disabled = false; btn.textContent = "\uD83D\uDD11 \uB124\uC774\uBC84 \uB85C\uADF8\uC778";
+      }
+    }, 5000);
+  } catch(e) {
+    addLog("\u274C \uB124\uC774\uBC84 \uB85C\uADF8\uC778 \uC694\uCCAD \uC2E4\uD328: " + e, "err");
+    btn.disabled = false; btn.textContent = "\uD83D\uDD11 \uB124\uC774\uBC84 \uB85C\uADF8\uC778";
+  }
+}
+
+async function naverLogout() {
+  if (!confirm("\uB124\uC774\uBC84 \uB85C\uADF8\uC778 \uC815\uBCF4\uB97C \uC0AD\uC81C\uD558\uC2DC\uACA0\uC2B5\uB2C8\uAE4C?")) return;
+  await post("/naver/logout", {});
+  checkNaverStatus();
+  addLog("\uD83D\uDEAA \uB124\uC774\uBC84 \uB85C\uADF8\uC778 \uD574\uC81C \uC644\uB8CC", "info");
 }
 
 function downloadExcel() {
   const btn = document.getElementById("btn-excel");
-  btn.disabled = true;
-  btn.textContent = "📥 생성 중...";
-  addLog("📥 엑셀 파일 생성 중...", "info");
-
-  // 링크 클릭으로 다운로드
-  const a = document.createElement("a");
-  a.href = PREFIX + "/products/download";
-  a.click();
-
-  setTimeout(() => {
-    btn.disabled = false;
-    btn.textContent = "📥 엑셀 다운로드";
-    addLog("✅ 엑셀 다운로드 완료!", "ok");
-  }, 2000);
+  btn.disabled = true; btn.textContent = "\uD83D\uDCE5 \uC0DD\uC131 \uC911...";
+  addLog("\uD83D\uDCE5 \uC5D1\uC140 \uD30C\uC77C \uC0DD\uC131 \uC911...", "info");
+  const a = document.createElement("a"); a.href = PREFIX + "/products/download"; a.click();
+  setTimeout(() => { btn.disabled = false; btn.textContent = "\uD83D\uDCE5 \uC5D1\uC140 \uB2E4\uC6B4\uB85C\uB4DC"; addLog("\u2705 \uC5D1\uC140 \uB2E4\uC6B4\uB85C\uB4DC \uC644\uB8CC!", "ok"); }, 2000);
 }
 
 async function runTranslate() {
   const btn = document.getElementById("btn-translate");
-  btn.disabled = true;
-  btn.textContent = "🌐 번역 중...";
-  addLog("🌐 한국어 번역 시작...", "info");
+  if (btn) { btn.disabled = true; btn.textContent = "\uD83C\uDF10 \uBC88\uC5ED \uC911..."; }
+  addLog("\uD83C\uDF10 \uD55C\uAD6D\uC5B4 \uBC88\uC5ED \uC2DC\uC791...", "info");
   try {
     const r = await fetch(PREFIX + "/products/translate", { method: "POST" });
     const d = await r.json();
-    if (d.ok) {
-      addLog(`✅ ${d.message}`, "ok");
-      setTimeout(() => loadProducts(curPage), 800);
-    } else {
-      addLog(`❌ ${d.message}`, "err");
-    }
-  } catch(e) {
-    addLog("❌ 번역 요청 실패: " + e, "err");
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "🌐 한국어 번역";
-  }
+    if (d.ok) { addLog(`\u2705 ${d.message}`, "ok"); setTimeout(() => loadProducts(curPage), 800); }
+    else addLog(`\u274C ${d.message}`, "err");
+  } catch(e) { addLog("\u274C \uBC88\uC5ED \uC694\uCCAD \uC2E4\uD328: " + e, "err"); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = "\uD83C\uDF10 \uD55C\uAD6D\uC5B4 \uBC88\uC5ED"; } }
 }
 
 async function togglePause() {
   const btn = document.getElementById("btn-pause");
-  if (!isPaused) {
-    await post("/run/pause", {});
-    isPaused = true;
-    btn.textContent = "▶️ 재개";
-    btn.classList.replace("b-yellow", "b-green");
-  } else {
-    await post("/run/resume", {});
-    isPaused = false;
-    btn.textContent = "⏸️ 일시정지";
-    btn.classList.replace("b-green", "b-yellow");
-  }
+  if (!isPaused) { await post("/run/pause", {}); isPaused = true; btn.textContent = "\u25B6\uFE0F \uC7AC\uAC1C"; btn.classList.replace("b-yellow","b-green"); }
+  else { await post("/run/resume", {}); isPaused = false; btn.textContent = "\u23F8\uFE0F \uC77C\uC2DC\uC815\uC9C0"; btn.classList.replace("b-green","b-yellow"); }
 }
 
 async function runReset() {
-  if (!confirm("⚠️ 리셋하면 수집된 모든 데이터가 삭제됩니다. 정말 리셋하시겠어요?")) return;
+  if (!confirm("\u26A0\uFE0F \uB9AC\uC14B\uD558\uBA74 \uC218\uC9D1\uB41C \uBAA8\uB4E0 \uB370\uC774\uD130\uAC00 \uC0AD\uC81C\uB429\uB2C8\uB2E4. \uC815\uB9D0 \uB9AC\uC14B\uD558\uC2DC\uACA0\uC5B4\uC694?")) return;
   await post("/run/reset", {});
-  isPaused = false;
-  checkedIndices.clear();
-  updateSelCount();
+  isPaused = false; checkedIndices.clear(); updateSelCount();
   document.getElementById("btn-pause").style.display = "none";
   document.getElementById("dup-area").innerHTML = "";
   setTimeout(() => loadProducts(1), 800);
@@ -505,26 +889,26 @@ async function runReset() {
 
 async function post(path, body) {
   try {
-    const r = await fetch(PREFIX + path, {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify(body)
-    });
+    const r = await fetch(PREFIX + path, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
     const d = await r.json();
-    addLog("🚀 " + d.message, "info");
-  } catch(e) { addLog("❌ 요청 실패: " + e, "err"); }
+    addLog("\uD83D\uDE80 " + d.message, "info");
+  } catch(e) { addLog("\u274C \uC694\uCCAD \uC2E4\uD328: " + e, "err"); }
 }
 
 function addLog(msg, cls="") {
-  const d = document.createElement("div");
-  d.className = "log-line " + cls;
-  d.textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
-  logBox.appendChild(d);
-  logBox.scrollTop = logBox.scrollHeight;
+  document.querySelectorAll(".log-box").forEach(box => {
+    const d = document.createElement("div");
+    d.className = "log-line " + cls;
+    d.textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
+    box.appendChild(d);
+    box.scrollTop = box.scrollHeight;
+  });
 }
 
 function setBtn(on) {
   ["btn-scrape","btn-upload","btn-auto"].forEach(id => {
-    document.getElementById(id).disabled = !on;
+    const el = document.getElementById(id);
+    if (el) el.disabled = !on;
   });
 }
 
@@ -535,37 +919,28 @@ async function loadBrands() {
     const sel = document.getElementById("brand-select");
     const brands = d.brands || [];
     const counts = d.counts || {};
-    sel.innerHTML = '<option value="ALL">모든 브랜드</option>';
+    sel.innerHTML = '<option value="ALL">\uBAA8\uB4E0 \uBE0C\uB79C\uB4DC</option>';
     brands.forEach(b => {
-      const o = document.createElement("option");
-      o.value = b;
-      o.textContent = `${b} (${counts[b] || 0})`;
-      sel.appendChild(o);
+      const o = document.createElement("option"); o.value = b;
+      o.textContent = `${b} (${counts[b] || 0})`; sel.appendChild(o);
     });
   } catch(e) {}
 }
 
-function onFilter() {
-  curPage = 1;
-  loadProducts(1);
-}
-
+function onFilter() { curPage = 1; loadProducts(1); }
 function resetFilter() {
   document.getElementById("search-input").value = "";
   document.getElementById("brand-select").value = "ALL";
-  curPage = 1;
-  loadProducts(1);
+  curPage = 1; loadProducts(1);
 }
 
 // ── 체크박스 ─────────────────────────────────
 function selectAll(checked) {
   document.getElementById("chk-all").checked = checked;
-  const rows = document.querySelectorAll(".row-chk");
-  rows.forEach(chk => {
+  document.querySelectorAll(".row-chk").forEach(chk => {
     chk.checked = checked;
     const idx = +chk.dataset.idx;
-    if (checked) checkedIndices.add(idx);
-    else checkedIndices.delete(idx);
+    if (checked) checkedIndices.add(idx); else checkedIndices.delete(idx);
     chk.closest("tr").classList.toggle("selected-row", checked);
   });
   updateSelCount();
@@ -573,15 +948,11 @@ function selectAll(checked) {
 
 function onRowCheck(chk) {
   const idx = +chk.dataset.idx;
-  if (chk.checked) checkedIndices.add(idx);
-  else checkedIndices.delete(idx);
+  if (chk.checked) checkedIndices.add(idx); else checkedIndices.delete(idx);
   chk.closest("tr").classList.toggle("selected-row", chk.checked);
   updateSelCount();
-
-  // 전체선택 체크박스 상태 동기화
   const all = document.querySelectorAll(".row-chk");
-  const allChecked = [...all].every(c => c.checked);
-  document.getElementById("chk-all").checked = allChecked;
+  document.getElementById("chk-all").checked = [...all].every(c => c.checked);
 }
 
 function updateSelCount() {
@@ -593,55 +964,39 @@ function updateSelCount() {
 
 // ── 중복 체크 ────────────────────────────────
 async function checkDuplicate() {
-  if (checkedIndices.size === 0) {
-    addLog("⚠️ 먼저 상품을 선택해주세요", "warn");
-    return;
-  }
-  addLog("🔍 중복 체크 중...", "info");
+  if (checkedIndices.size === 0) { addLog("\u26A0\uFE0F \uBA3C\uC800 \uC0C1\uD488\uC744 \uC120\uD0DD\uD574\uC8FC\uC138\uC694", "warn"); return; }
+  addLog("\uD83D\uDD0D \uC911\uBCF5 \uCCB4\uD06C \uC911...", "info");
   try {
     const r = await fetch(PREFIX + "/products/check-duplicate", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ indices: [...checkedIndices] })
     });
-    const d = await r.json();
-    renderDupAlert(d);
-  } catch(e) { addLog("❌ 중복 체크 실패: " + e, "err"); }
+    renderDupAlert(await r.json());
+  } catch(e) { addLog("\u274C \uC911\uBCF5 \uCCB4\uD06C \uC2E4\uD328: " + e, "err"); }
 }
 
 function renderDupAlert(d) {
   const area = document.getElementById("dup-area");
   let html = "";
-
   if (d.block && d.block.length > 0) {
-    html += `<div class="dup-alert">
-      <div class="dup-title">🚫 업로드 차단 (동일 가격 중복 ${d.block.length}개)</div>`;
-    d.block.forEach(b => {
-      html += `<div>• ${b.name} — ${b.reason}</div>`;
-      checkedIndices.delete(b.idx); // 자동 선택 해제
-    });
+    html += `<div class="dup-alert"><div class="dup-title">\uD83D\uDEAB \uC5C5\uB85C\uB4DC \uCC28\uB2E8 (\uB3D9\uC77C \uAC00\uACA9 \uC911\uBCF5 ${d.block.length}\uAC1C)</div>`;
+    d.block.forEach(b => { html += `<div>\u2022 ${b.name} \u2014 ${b.reason}</div>`; checkedIndices.delete(b.idx); });
     html += `</div>`;
-    addLog(`🚫 ${d.block.length}개 상품이 중복으로 차단되었습니다`, "err");
+    addLog(`\uD83D\uDEAB ${d.block.length}\uAC1C \uC0C1\uD488\uC774 \uC911\uBCF5\uC73C\uB85C \uCC28\uB2E8\uB418\uC5C8\uC2B5\uB2C8\uB2E4`, "err");
   }
-
   if (d.price_changed && d.price_changed.length > 0) {
-    html += `<div class="price-change">
-      <div class="pc-title">⚠️ 가격 변동 감지 (${d.price_changed.length}개) — 업로드 가능</div>`;
+    html += `<div class="price-change"><div class="pc-title">\u26A0\uFE0F \uAC00\uACA9 \uBCC0\uB3D9 \uAC10\uC9C0 (${d.price_changed.length}\uAC1C) \u2014 \uC5C5\uB85C\uB4DC \uAC00\uB2A5</div>`;
     d.price_changed.forEach(p => {
-      const arrow = p.diff > 0 ? "▲" : "▼";
+      const arrow = p.diff > 0 ? "\u25B2" : "\u25BC";
       const color = p.diff > 0 ? "#f87171" : "#4ade80";
-      html += `<div>• ${p.name} &nbsp; ¥${p.old_price.toLocaleString()} → <span style="color:${color}">${arrow} ¥${p.new_price.toLocaleString()}</span></div>`;
+      html += `<div>\u2022 ${p.name} \u00A0 \u00A5${p.old_price.toLocaleString()} \u2192 <span style="color:${color}">${arrow} \u00A5${p.new_price.toLocaleString()}</span></div>`;
     });
     html += `</div>`;
-    addLog(`⚠️ ${d.price_changed.length}개 상품 가격 변동 감지`, "warn");
   }
-
-  if (d.ok && d.ok.length > 0) {
-    addLog(`✅ ${d.ok.length}개 상품 중복 없음 — 업로드 가능`, "ok");
-  }
-
+  if (d.ok && d.ok.length > 0) addLog(`\u2705 ${d.ok.length}\uAC1C \uC0C1\uD488 \uC911\uBCF5 \uC5C6\uC74C \u2014 \uC5C5\uB85C\uB4DC \uAC00\uB2A5`, "ok");
   area.innerHTML = html;
   updateSelCount();
-  loadProducts(curPage); // 체크박스 상태 갱신
+  loadProducts(curPage);
 }
 
 // ── 상품 목록 로드 ────────────────────────────
@@ -649,107 +1004,69 @@ async function loadProducts(page = 1) {
   curPage = page;
   const brand = document.getElementById("brand-select")?.value || "ALL";
   const search = document.getElementById("search-input")?.value || "";
-
   try {
     const url = `${PREFIX}/products?page=${page}&per_page=${PER}&brand=${encodeURIComponent(brand)}&search=${encodeURIComponent(search)}`;
     const d = await fetch(url).then(r => r.json());
     const tb = document.getElementById("tbody");
-
     if (!d.products || d.products.length === 0) {
-      tb.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:40px">
-        ${search||brand!=="ALL" ? "검색 결과가 없습니다." : "스크래핑을 먼저 실행하세요."}</td></tr>`;
-      document.getElementById("filter-result").textContent = "0개";
+      tb.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:40px">${search||brand!=="ALL" ? "\uAC80\uC0C9 \uACB0\uACFC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4." : "\uC2A4\uD06C\uB798\uD551\uC744 \uBA3C\uC800 \uC2E4\uD589\uD558\uC138\uC694."}</td></tr>`;
+      document.getElementById("filter-result").textContent = "0\uAC1C";
       return;
     }
-
-    document.getElementById("filter-result").textContent = `총 ${d.total.toLocaleString()}개`;
-
-    // 현재 페이지 상품 인덱스 계산
+    document.getElementById("filter-result").textContent = `\uCD1D ${d.total.toLocaleString()}\uAC1C`;
+    document.getElementById("nav-count").textContent = d.total;
     const startIdx = (page - 1) * PER;
     pageIndexMap = d.products.map((_, i) => startIdx + i);
-
     tb.innerHTML = d.products.map((p, i) => {
       const globalIdx = startIdx + i;
       const isChecked = checkedIndices.has(globalIdx);
       const img   = p.img_url ? `<img class="pimg" src="${p.img_url}" onerror="this.style.opacity=0">` : `<div class="pimg"></div>`;
-      // 브랜드: 한국어 번역 + 원문
       const brandTxt = p.brand_ko && p.brand_ko !== p.brand
         ? `<span class="badge b-brand">${p.brand_ko}</span><br><span style="font-size:0.68rem;color:var(--muted)">${p.brand}</span>`
         : `<span class="badge b-brand">${p.brand || "-"}</span>`;
-      const brand = brandTxt;
-      const code  = p.product_code ? `<span class="badge b-code">${p.product_code}</span>` : "-";
-
-      // 일본가에 URL 링크 삽입
+      const code = p.product_code ? `<span class="badge b-code">${p.product_code}</span>` : "-";
       const jpy = p.price_jpy
         ? (p.link
-            ? `<a href="${p.link}" target="_blank" style="text-decoration:none">
-                <span class="badge b-jpy" style="cursor:pointer;border-bottom:1px dashed #60a5fa">
-                  ¥${p.price_jpy.toLocaleString()} ↗
-                </span>
-               </a>`
-            : `<span class="badge b-jpy">¥${p.price_jpy.toLocaleString()}</span>`)
+            ? `<a href="${p.link}" target="_blank" style="text-decoration:none"><span class="badge b-jpy" style="cursor:pointer;border-bottom:1px dashed #60a5fa">\u00A5${p.price_jpy.toLocaleString()} \u2197</span></a>`
+            : `<span class="badge b-jpy">\u00A5${p.price_jpy.toLocaleString()}</span>`)
         : "-";
-
-      const krw = p.price_info
-        ? `<span class="badge b-krw">${p.price_info.price_final.toLocaleString()}원</span>`
-        : "-";
-
-      // 구매가능 사이즈 (재고 있는 것만 표시)
+      const krw = p.price_info ? `<span class="badge b-krw">${p.price_info.price_final.toLocaleString()}\uC6D0</span>` : "-";
       let sizesHtml = "-";
       if (p.sizes && p.sizes.length > 0) {
         const available = p.sizes.filter(s => s.in_stock);
         const soldout   = p.sizes.filter(s => !s.in_stock);
         if (available.length > 0) {
-          sizesHtml = available.map(s =>
-            `<span style="display:inline-block;margin:1px 2px;padding:2px 6px;background:#1a2e1a;color:#4ade80;border-radius:3px;font-size:0.7rem">${s.size}</span>`
-          ).join("");
-          if (soldout.length > 0) {
-            sizesHtml += `<span style="font-size:0.7rem;color:var(--muted);margin-left:4px">+품절 ${soldout.length}개</span>`;
-          }
-        } else {
-          sizesHtml = '<span style="color:var(--red);font-size:0.75rem">전 사이즈 품절</span>';
-        }
+          sizesHtml = available.map(s => `<span style="display:inline-block;margin:1px 2px;padding:2px 6px;background:#1a2e1a;color:#4ade80;border-radius:3px;font-size:0.7rem">${s.size}</span>`).join("");
+          if (soldout.length > 0) sizesHtml += `<span style="font-size:0.7rem;color:var(--muted);margin-left:4px">+\uD488\uC808 ${soldout.length}\uAC1C</span>`;
+        } else sizesHtml = '<span style="color:var(--red);font-size:0.75rem">\uC804 \uC0AC\uC774\uC988 \uD488\uC808</span>';
       }
-
-      // 재고 여부
-      const stock = p.in_stock === true
-        ? '<span style="color:var(--green);font-size:0.78rem">✅ 재고있음</span>'
-        : p.in_stock === false
-          ? '<span style="color:var(--red);font-size:0.78rem">❌ 품절</span>'
-          : '<span style="color:var(--muted);font-size:0.78rem">-</span>';
-
+      const stock = p.in_stock === true ? '<span style="color:var(--green);font-size:0.78rem">\u2705 \uC7AC\uACE0\uC788\uC74C</span>'
+        : p.in_stock === false ? '<span style="color:var(--red);font-size:0.78rem">\u274C \uD488\uC808</span>'
+        : '<span style="color:var(--muted);font-size:0.78rem">-</span>';
       return `<tr class="${isChecked?'selected-row':''}">
         <td><input type="checkbox" class="row-chk" data-idx="${globalIdx}" ${isChecked?'checked':''} onchange="onRowCheck(this)"></td>
-        <td>${img}</td>
-        <td>${brand}</td>
+        <td>${img}</td><td>${brandTxt}</td>
         <td style="max-width:200px;word-break:break-word">
           <div style="font-size:0.82rem;color:var(--text)">${p.name_ko || p.name || "-"}</div>
           ${p.name_ko && p.name_ko !== p.name ? `<div style="font-size:0.68rem;color:var(--muted);margin-top:2px">${p.name}</div>` : ""}
         </td>
-        <td>${code}</td>
-        <td>${jpy}</td>
-        <td>${krw}</td>
-        <td style="max-width:180px">${sizesHtml}</td>
-        <td>${stock}</td>
+        <td>${code}</td><td>${jpy}</td><td>${krw}</td>
+        <td style="max-width:180px">${sizesHtml}</td><td>${stock}</td>
       </tr>`;
     }).join("");
-
     renderPager(page, Math.ceil(d.total / PER));
-
   } catch(e) { console.error(e); }
 }
 
 function renderPager(cur, total) {
   const pg = document.getElementById("pager");
   if (total <= 1) { pg.innerHTML=""; return; }
-  let h = `<button onclick="loadProducts(${cur-1})" ${cur===1?"disabled":""}>◀</button>`;
-  const start = Math.max(1, cur-3);
-  const end   = Math.min(total, cur+3);
+  let h = `<button onclick="loadProducts(${cur-1})" ${cur===1?"disabled":""}>\u25C0</button>`;
+  const start = Math.max(1, cur-3), end = Math.min(total, cur+3);
   if (start > 1) h += `<button onclick="loadProducts(1)">1</button><span style="color:var(--muted)">...</span>`;
-  for (let i=start; i<=end; i++)
-    h += `<button class="${i===cur?'on':''}" onclick="loadProducts(${i})">${i}</button>`;
+  for (let i=start; i<=end; i++) h += `<button class="${i===cur?'on':''}" onclick="loadProducts(${i})">${i}</button>`;
   if (end < total) h += `<span style="color:var(--muted)">...</span><button onclick="loadProducts(${total})">${total}</button>`;
-  h += `<button onclick="loadProducts(${cur+1})" ${cur===total?"disabled":""}>▶</button>`;
+  h += `<button onclick="loadProducts(${cur+1})" ${cur===total?"disabled":""}>\u25B6</button>`;
   pg.innerHTML = h;
 }
 
@@ -757,8 +1074,9 @@ function renderPager(cur, total) {
 async function refreshStatus() {
   try {
     const d = await fetch(PREFIX + "/status").then(r => r.json());
-    document.getElementById("rate").textContent       = (d.rate||0).toFixed(2) + "원";
+    document.getElementById("rate").textContent       = (d.rate||0).toFixed(2) + "\uC6D0";
     document.getElementById("s-count").textContent    = (d.product_count||0).toLocaleString();
+    document.getElementById("nav-count").textContent  = d.product_count || 0;
     document.getElementById("s-uploaded").textContent = d.uploaded_count || 0;
     document.getElementById("s-last-scrape").textContent = d.last_scrape || "-";
     document.getElementById("s-last-upload").textContent = d.last_upload || "-";
@@ -767,70 +1085,37 @@ async function refreshStatus() {
     const scEl = document.getElementById("s-scraping");
     const pauseBtn = document.getElementById("btn-pause");
     if (d.scraping) {
-      scEl.innerHTML = `<span class="c-yellow">실행 중 <span class="spinner"></span>${d.paused?' (일시정지)':''}</span>`;
+      scEl.innerHTML = `<span class="c-yellow">\uC2E4\uD589 \uC911 <span class="spinner"></span>${d.paused?' (\uC77C\uC2DC\uC815\uC9C0)':''}</span>`;
       setBtn(false);
       pauseBtn.style.display = "inline-flex";
-      // 진행률 로그에서 % 파싱해서 프로그레스바 업데이트
-      const logLines = document.querySelectorAll(".log-line");
-      const last = [...logLines].reverse().find(l => l.textContent.includes("%"));
-      if (last) {
-        const m = last.textContent.match(/(\d+)%/);
-        if (m) {
-          const pct = +m[1];
-          document.getElementById("t-progress-bar").style.width = pct + "%";
-          document.getElementById("t-progress-text").textContent = pct + "%";
-        }
-        // 현재 단계 표시
-        const stepEl = document.getElementById("t-step-text");
-        if (last.textContent.includes("STEP 4")) stepEl.textContent = "목록 수집 중...";
-        else if (last.textContent.includes("STEP 5")) stepEl.textContent = "상세 페이지 수집 중...";
-      }
     } else {
-      scEl.innerHTML = '<span class="c-green">대기 중 ✓</span>';
+      scEl.innerHTML = '<span class="c-green">\uB300\uAE30 \uC911 \u2713</span>';
       setBtn(true);
       pauseBtn.style.display = "none";
       if (isPaused) isPaused = false;
-      // 스크래핑 완료 → 타이머 종료
       if (scrapeStartTime) stopTimer();
     }
-    document.getElementById("s-upload-status").textContent = d.uploading ? "업로드 진행 중..." : "대기중";
-
-    // 수집 완료 후 상품 목록/브랜드 자동 갱신
-    if (!d.scraping && d.product_count > 0) {
-      const curCount = +document.getElementById("s-count").textContent.replace(/,/g,"");
-    }
+    document.getElementById("s-upload-status").textContent = d.uploading ? "\uC5C5\uB85C\uB4DC \uC9C4\uD589 \uC911..." : "\uB300\uAE30\uC911";
   } catch(e) {}
 }
 
-// ── 커스텀 단어장 팝업 ──────────────────────
-function openDict() {
-  document.getElementById("dict-overlay").style.display = "block";
-  document.getElementById("dict-popup").style.display   = "flex";
-  loadDict();
-}
-function closeDict() {
-  document.getElementById("dict-overlay").style.display = "none";
-  document.getElementById("dict-popup").style.display   = "none";
-}
-// ESC 키로 닫기
-document.addEventListener("keydown", e => { if (e.key === "Escape") closeDict(); });
-
+// ── 단어장 ──────────────────────────────────
 async function loadDict() {
   try {
     const d = await fetch(PREFIX + "/settings/dict").then(r => r.json());
     const tb = document.getElementById("dict-tbody");
     const entries = Object.entries(d.dict || {});
     if (entries.length === 0) {
-      tb.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:20px">단어장이 비어있어요</td></tr>';
+      tb.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:20px">\uB2E8\uC5B4\uC7A5\uC774 \uBE44\uC5B4\uC788\uC5B4\uC694</td></tr>';
       return;
     }
-    document.getElementById("dict-count").textContent = `총 ${entries.length}개 단어`;
+    document.getElementById("dict-count").textContent = `\uCD1D ${entries.length}\uAC1C \uB2E8\uC5B4`;
     tb.innerHTML = entries.map(([ja, ko]) => `
       <tr>
-        <td style="padding:7px 16px;border-bottom:1px solid var(--border)">${ja}</td>
-        <td style="padding:7px 16px;border-bottom:1px solid var(--border);color:var(--green);font-weight:600">${ko}</td>
-        <td style="padding:7px 8px;border-bottom:1px solid var(--border);text-align:center">
-          <button onclick="deleteDict('${ja}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:1rem" title="삭제">🗑️</button>
+        <td style="padding:7px 12px">${ja}</td>
+        <td style="padding:7px 12px;color:var(--green);font-weight:600">${ko}</td>
+        <td style="padding:7px 8px;text-align:center">
+          <button onclick="deleteDict('${ja}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:1rem">\uD83D\uDDD1\uFE0F</button>
         </td>
       </tr>`).join("");
   } catch(e) { console.error(e); }
@@ -839,24 +1124,16 @@ async function loadDict() {
 async function addDict() {
   const ja = document.getElementById("dict-ja").value.trim();
   const ko = document.getElementById("dict-ko").value.trim();
-  if (!ja || !ko) { addLog("⚠️ 일본어와 한국어를 모두 입력해주세요", "warn"); return; }
-  const r = await fetch(PREFIX + "/settings/dict", {
-    method: "POST", headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ ja, ko })
-  });
+  if (!ja || !ko) { addLog("\u26A0\uFE0F \uC77C\uBCF8\uC5B4\uC640 \uD55C\uAD6D\uC5B4\uB97C \uBAA8\uB450 \uC785\uB825\uD574\uC8FC\uC138\uC694", "warn"); return; }
+  const r = await fetch(PREFIX + "/settings/dict", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ja, ko}) });
   const d = await r.json();
-  if (d.ok) {
-    addLog(`📖 단어 추가: ${ja} → ${ko}`, "ok");
-    document.getElementById("dict-ja").value = "";
-    document.getElementById("dict-ko").value = "";
-    loadDict();
-  }
+  if (d.ok) { addLog(`\uD83D\uDCD6 \uB2E8\uC5B4 \uCD94\uAC00: ${ja} \u2192 ${ko}`, "ok"); document.getElementById("dict-ja").value = ""; document.getElementById("dict-ko").value = ""; loadDict(); }
 }
 
 async function deleteDict(ja) {
-  if (!confirm(`"${ja}" 단어를 삭제할까요?`)) return;
+  if (!confirm(`"${ja}" \uB2E8\uC5B4\uB97C \uC0AD\uC81C\uD560\uAE4C\uC694?`)) return;
   await fetch(PREFIX + "/settings/dict/" + encodeURIComponent(ja), { method: "DELETE" });
-  addLog(`🗑️ 단어 삭제: ${ja}`, "warn");
+  addLog(`\uD83D\uDDD1\uFE0F \uB2E8\uC5B4 \uC0AD\uC81C: ${ja}`, "warn");
   loadDict();
 }
 
@@ -864,62 +1141,51 @@ async function deleteDict(ja) {
 document.getElementById("margin-input").addEventListener("input", () => {
   const pct = +document.getElementById("margin-input").value || 0;
   const rate = (1 + pct / 100).toFixed(2);
-  document.getElementById("margin-preview").textContent = `판매가 = 원가 × ${rate}`;
-  calcExample();  // 마진율 바뀔 때마다 예시 자동 갱신
+  document.getElementById("margin-preview").textContent = `\uD310\uB9E4\uAC00 = \uC6D0\uAC00 \u00D7 ${rate}`;
+  calcExample();
 });
 
-document.getElementById("calc-jpy").addEventListener("input", () => {
-  calcExample();  // 일본가 바뀔 때마다 예시 자동 갱신
-});
+document.getElementById("calc-jpy").addEventListener("input", () => { calcExample(); });
 
 async function applyMargin() {
   const pct = +document.getElementById("margin-input").value;
-  if (isNaN(pct) || pct < 0 || pct > 200) {
-    addLog("⚠️ 마진율은 0~200% 사이로 입력해주세요", "warn");
-    return;
-  }
+  if (isNaN(pct) || pct < 0 || pct > 200) { addLog("\u26A0\uFE0F \uB9C8\uC9C4\uC728\uC740 0~200% \uC0AC\uC774\uB85C \uC785\uB825\uD574\uC8FC\uC138\uC694", "warn"); return; }
   try {
-    const r = await fetch(PREFIX + "/settings/margin", {
-      method: "POST", headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({ margin_pct: pct })
-    });
+    const r = await fetch(PREFIX + "/settings/margin", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ margin_pct: pct }) });
     const d = await r.json();
-    addLog(`💰 마진율 ${pct}% 적용 완료 (×${d.margin_rate.toFixed(2)})`, "ok");
-    calcExample();  // 예시 계산 즉시 갱신
+    addLog(`\uD83D\uDCB0 \uB9C8\uC9C4\uC728 ${pct}% \uC801\uC6A9 \uC644\uB8CC (\u00D7${d.margin_rate.toFixed(2)})`, "ok");
+    calcExample();
     setTimeout(() => loadProducts(curPage), 500);
-  } catch(e) { addLog("❌ 마진율 적용 실패", "err"); }
+  } catch(e) { addLog("\u274C \uB9C8\uC9C4\uC728 \uC801\uC6A9 \uC2E4\uD328", "err"); }
 }
 
 async function calcExample() {
   const jpy = +document.getElementById("calc-jpy").value;
   if (!jpy || jpy <= 0) return;
   const pct = +document.getElementById("margin-input").value || 20;
-  // 이미 갱신된 환율 배지에서 읽기 (status API 재호출 불필요)
-  const rateText = document.getElementById("rate").textContent || "9.23원";
+  const rateText = document.getElementById("rate").textContent || "9.23\uC6D0";
   const rate = parseFloat(rateText) || 9.23;
   const remitRate = rate * 1.015;
-
   const domestic = jpy >= 3980 ? 0 : 550;
-  const fee      = Math.floor(jpy * 0.03);
-  const intl     = 1500;
+  const fee = Math.floor(jpy * 0.03);
+  const intl = 1500;
   const totalJpy = jpy + domestic + fee + intl;
-  const costKrw  = Math.floor(totalJpy * remitRate);
-  const margin   = 1 + pct / 100;
+  const costKrw = Math.floor(totalJpy * remitRate);
+  const margin = 1 + pct / 100;
   const finalKrw = Math.floor(costKrw * margin);
-
   document.getElementById("calc-result").innerHTML = `
-    <div>일본가: <b style="color:var(--text)">¥${jpy.toLocaleString()}</b></div>
-    <div>일본배송: <b style="color:var(--text)">¥${domestic.toLocaleString()}</b></div>
-    <div>수수료(3%): <b style="color:var(--text)">¥${fee.toLocaleString()}</b></div>
-    <div>국제배송: <b style="color:var(--text)">¥1,500</b></div>
-    <div>총원가: <b style="color:var(--yellow)">¥${totalJpy.toLocaleString()}</b></div>
-    <div>송금환율: <b style="color:var(--text)">${remitRate.toFixed(2)}원</b></div>
-    <div>원화원가: <b style="color:var(--accent)">${costKrw.toLocaleString()}원</b></div>
+    <div>\uC77C\uBCF8\uAC00: <b style="color:var(--text)">\u00A5${jpy.toLocaleString()}</b></div>
+    <div>\uC77C\uBCF8\uBC30\uC1A1: <b style="color:var(--text)">\u00A5${domestic.toLocaleString()}</b></div>
+    <div>\uC218\uC218\uB8CC(3%): <b style="color:var(--text)">\u00A5${fee.toLocaleString()}</b></div>
+    <div>\uAD6D\uC81C\uBC30\uC1A1: <b style="color:var(--text)">\u00A51,500</b></div>
+    <div>\uCD1D\uC6D0\uAC00: <b style="color:var(--yellow)">\u00A5${totalJpy.toLocaleString()}</b></div>
+    <div>\uC1A1\uAE08\uD658\uC728: <b style="color:var(--text)">${remitRate.toFixed(2)}\uC6D0</b></div>
+    <div>\uC6D0\uD654\uC6D0\uAC00: <b style="color:var(--accent)">${costKrw.toLocaleString()}\uC6D0</b></div>
     <div style="border-top:1px solid var(--border);padding-top:4px;margin-top:4px">
-      마진 금액: <b style="color:var(--orange)">${(finalKrw - costKrw).toLocaleString()}원</b>
+      \uB9C8\uC9C4 \uAE08\uC561: <b style="color:var(--orange)">${(finalKrw - costKrw).toLocaleString()}\uC6D0</b>
     </div>
     <div style="margin-top:4px">
-      판매가(${pct}%): <b style="color:var(--green);font-size:1rem">${finalKrw.toLocaleString()}원</b>
+      \uD310\uB9E4\uAC00(${pct}%): <b style="color:var(--green);font-size:1rem">${finalKrw.toLocaleString()}\uC6D0</b>
     </div>`;
 }
 
@@ -927,68 +1193,12 @@ async function calcExample() {
 refreshStatus();
 loadProducts(1);
 loadBrands();
-setInterval(refreshStatus, 10000);        // 10초마다 상태 확인
-setInterval(() => { loadProducts(curPage); loadBrands(); }, 30000);  // 30초마다 상품 갱신
-
-// 페이지 수 입력 시 실시간 프리뷰
-document.getElementById("max-pages").addEventListener("input", updatePagePreview);
+setInterval(refreshStatus, 10000);
+setInterval(() => { loadProducts(curPage); loadBrands(); }, 30000);
+document.getElementById("max-pages")?.addEventListener("input", updatePagePreview);
 updatePagePreview();
-
-// 초기 예시 계산 실행
 calcExample();
-
-// 단어장은 팝업 열 때 로드
 </script>
-<!-- 단어장 팝업 -->
-<div id="dict-overlay" onclick="closeDict()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999"></div>
-<div id="dict-popup" style="
-  display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-  background:var(--card);border:1px solid var(--border);border-radius:12px;
-  width:480px;max-width:95vw;max-height:80vh;z-index:1000;
-  display:none;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.5)">
-
-  <!-- 팝업 헤더 -->
-  <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border)">
-    <span style="font-weight:700;font-size:0.95rem">📖 번역 단어장</span>
-    <div style="display:flex;gap:8px;align-items:center">
-      <span style="font-size:0.72rem;color:var(--muted)">잘못 번역되는 단어를 직접 수정</span>
-      <button onclick="closeDict()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.2rem;line-height:1">✕</button>
-    </div>
-  </div>
-
-  <!-- 단어 추가 입력 -->
-  <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-    <input type="text" id="dict-ja" placeholder="일본어 (예: ズーム)" class="search-input" style="flex:1;min-width:120px">
-    <span style="color:var(--muted);font-size:1.1rem">→</span>
-    <input type="text" id="dict-ko" placeholder="한국어 (예: 줌)" class="search-input" style="flex:1;min-width:120px">
-    <button class="btn b-blue" onclick="addDict()" style="padding:7px 14px;white-space:nowrap">➕ 추가</button>
-  </div>
-
-  <!-- 단어 목록 -->
-  <div style="overflow-y:auto;flex:1;padding:0 4px">
-    <table style="width:100%;font-size:0.82rem;border-collapse:collapse">
-      <thead>
-        <tr>
-          <th style="text-align:left;padding:8px 16px;color:var(--muted);font-size:0.72rem;background:#141720;position:sticky;top:0">일본어</th>
-          <th style="text-align:left;padding:8px 16px;color:var(--muted);font-size:0.72rem;background:#141720;position:sticky;top:0">→ 한국어</th>
-          <th style="padding:8px;background:#141720;width:40px;position:sticky;top:0"></th>
-        </tr>
-      </thead>
-      <tbody id="dict-tbody">
-        <tr><td colspan="3" style="text-align:center;color:var(--muted);padding:24px">로딩 중...</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <!-- 팝업 푸터 -->
-  <div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-    <span id="dict-count" style="font-size:0.75rem;color:var(--muted)"></span>
-    <div style="display:flex;gap:8px">
-      <button class="btn b-gray" onclick="loadDict()" style="padding:6px 12px;font-size:0.78rem">🔄 새로고침</button>
-      <button class="btn b-green" onclick="closeDict();runTranslate()" style="padding:6px 12px;font-size:0.78rem">🌐 재번역 적용</button>
-    </div>
-  </div>
-</div>
 
 </body>
 </html>
