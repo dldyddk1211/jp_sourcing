@@ -392,7 +392,7 @@ def _build_prompt(product: dict, price_info: dict) -> str:
 - 적용 환율: 1엔 = {rate}원
 - 주문 가능 사이즈: {size_text}
 - 상품 링크: {link}
-- 상세 설명(일본어): {description[:800] if description else "없음"}
+- 상세 설명(반드시 한국어로 번역하여 사용할 것): {description[:800] if description else "없음"}
 
 [작성 규칙]
 1. 아래 형식을 반드시 그대로 따를 것 — 고정 문구는 절대 변경하지 말 것
@@ -401,6 +401,8 @@ def _build_prompt(product: dict, price_info: dict) -> str:
 4. 친근하고 신뢰감 있는 톤
 5. 이미지 태그나 HTML은 절대 포함하지 말 것
 6. 마크다운 문법(**, ##, - 등) 절대 사용하지 말 것 — 순수 텍스트만 출력
+7. 절대로 일본어(히라가나, 카타카나, 한자)를 출력하지 말 것 — 모든 일본어는 반드시 한국어로 번역하여 출력
+8. 소재명, 기술명 등 일본어로 된 전문 용어도 반드시 한국어로 번역 (예: 合成繊維→합성섬유, ゴム底→고무밑창, 合成樹脂→합성수지)
 
 [상품 특징 작성 가이드]
 - 상품에 맞는 이모지로 시작하는 핵심 포인트 제목을 먼저 쓸 것
@@ -435,7 +437,9 @@ def _build_prompt(product: dict, price_info: dict) -> str:
 
 {NAVER_FORM_URL}
 
-위 형식에서 (상품 특징) 부분만 채워서 전체를 출력하세요. 마크다운 문법은 절대 쓰지 마세요."""
+위 형식에서 (상품 특징) 부분만 채워서 전체를 출력하세요.
+마크다운 문법은 절대 쓰지 마세요.
+일본어(カタカナ, ひらがな, 漢字)는 절대 출력하지 마세요 — 모든 내용을 한국어로 번역하세요."""
 
 
 # ── AI 호출 ────────────────────────────────
@@ -459,6 +463,37 @@ def _call_claude(prompt: str) -> str:
         messages=[{"role": "user", "content": prompt}]
     ) as stream:
         return stream.get_final_message().content[0].text.strip()
+
+
+def _retranslate_content(content: str) -> str:
+    """본문에 남은 일본어를 Gemini로 재번역"""
+    if not _has_japanese(content):
+        return content
+    if _ai_config["provider"] == "none" or not _ai_config["gemini_key"]:
+        return content
+
+    try:
+        prompt = f"""아래 텍스트에서 일본어로 된 부분을 모두 한국어로 번역해주세요.
+이미 한국어/영어/숫자인 부분은 그대로 유지하세요.
+전체 문맥과 형식을 그대로 유지하면서 일본어만 한국어로 바꿔주세요.
+번역 결과만 출력하세요.
+
+{content}"""
+        result = _call_gemini(prompt)
+        result = _clean_ai_response(result)
+        if result and len(result) > len(content) * 0.5:
+            # 재번역 결과에서도 일본어 단어를 사전에 저장
+            ja_words_before = _extract_japanese_words(content)
+            if ja_words_before:
+                _auto_save_translations(content, result, ja_words_before)
+            logger.info("✅ 본문 재번역 완료")
+            return result
+    except Exception as e:
+        logger.warning(f"본문 재번역 실패: {e}")
+
+    # 재번역 실패 시 카타카나 사전으로 단어 단위 치환
+    content = _translate_katakana(content)
+    return content
 
 
 def _clean_ai_response(content: str) -> str:
@@ -510,6 +545,12 @@ def generate_cafe_post(product: dict, price_info: dict) -> dict:
             logger.info("✅ Claude 게시글 생성 완료")
 
         content = _clean_ai_response(content)
+
+        # 본문에 일본어가 남아있으면 재번역 시도
+        if _has_japanese(content):
+            logger.warning("⚠️ 본문에 일본어 잔존 — 재번역 시도")
+            content = _retranslate_content(content)
+
         return {"title": title, "content": content, "tags": tags}
 
     except Exception as e:
