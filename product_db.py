@@ -81,8 +81,10 @@ def exists(site_id: str, product_code: str, price_jpy: int) -> bool:
         conn.close()
 
 
-def bulk_exists(site_id: str, products: list) -> set:
-    """상품 리스트에서 이미 DB에 있는 (product_code, price_jpy) 튜플 셋 반환"""
+def bulk_exists(site_id: str, products: list, days=15) -> set:
+    """상품 리스트에서 이미 DB에 있고 days일 이내인 (product_code, price_jpy) 튜플 셋 반환
+    days일 이상 지난 상품은 중복으로 취급하지 않음 (재수집 허용)
+    """
     conn = _conn()
     try:
         existing = set()
@@ -96,7 +98,8 @@ def bulk_exists(site_id: str, products: list) -> set:
                 params.extend([code, price])
             rows = conn.execute(
                 f"SELECT product_code, price_jpy FROM products "
-                f"WHERE site_id=? AND (product_code, price_jpy) IN ({placeholders})",
+                f"WHERE site_id=? AND (product_code, price_jpy) IN ({placeholders}) "
+                f"AND created_at >= datetime('now','localtime','-{days} days')",
                 [site_id] + params
             ).fetchall()
             for row in rows:
@@ -107,7 +110,7 @@ def bulk_exists(site_id: str, products: list) -> set:
 
 
 def insert_products(products: list) -> int:
-    """상품 리스트를 DB에 저장 (중복은 자동 스킵). 신규 저장 수 반환"""
+    """상품 리스트를 DB에 저장 (15일 이상 된 중복은 갱신). 저장 수 반환"""
     if not products:
         return 0
     conn = _conn()
@@ -116,7 +119,7 @@ def insert_products(products: list) -> int:
         for p in products:
             try:
                 conn.execute("""
-                    INSERT OR IGNORE INTO products
+                    INSERT OR REPLACE INTO products
                     (site_id, category_id, product_code, name, name_ko,
                      brand, brand_ko, price_jpy, link, img_url,
                      description, description_ko, sizes, detail_images,

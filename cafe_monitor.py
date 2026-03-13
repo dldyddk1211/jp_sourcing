@@ -317,3 +317,196 @@ def is_monitoring() -> bool:
 def get_article_mapping() -> dict:
     """텔레그램 메시지 ↔ 카페 게시글 매핑 반환"""
     return _load_mapping()
+
+
+async def search_cafe_by_browser(page, keyword: str, nickname: str = "", days: int = 30, log=None) -> dict | None:
+    """Playwright 브라우저로 카페 검색 — 카페 검색 URL로 이동 후 결과 파싱
+
+    Returns:
+        {"title", "writer", "write_date"} or None
+    """
+    import asyncio
+    import re
+    from urllib.parse import quote
+
+    try:
+        # 새 카페 검색 URL 형식
+        import time as _time
+        ts = int(_time.time() * 1000)
+        search_url = f"https://cafe.naver.com/f-e/cafes/{CAFE_ID}/menus/0?q={quote(keyword)}&t={ts}"
+        await page.goto(search_url, wait_until="domcontentloaded", timeout=15000)
+        await asyncio.sleep(3)
+
+        # 검색 결과 로딩 대기
+        try:
+            await page.wait_for_selector("a[class*='article'], a[class*='Article'], div[class*='article'], li[class*='article']", timeout=5000)
+        except Exception:
+            # 결과 없음 = 카페에 해당 품번 글 없음
+            return None
+
+        # 검색 결과 전체 텍스트에서 파싱
+        # 방법1: 게시글 목록 항목 찾기
+        article_selectors = [
+            "li[class*='article']",
+            "div[class*='ArticleItem']",
+            "a[class*='article']",
+            "div[class*='item']",
+            "ul[class*='list'] > li",
+            "div[class*='search'] li",
+            "div[class*='Article'] > div",
+        ]
+        items = []
+        for sel in article_selectors:
+            items = await page.query_selector_all(sel)
+            if len(items) >= 1:
+                break
+
+        # 방법2: 전체 페이지 텍스트에서 닉네임+날짜 검색
+        if not items:
+            page_text = await page.inner_text("body")
+            if nickname and nickname in page_text:
+                # 날짜 패턴 매칭
+                date_match = re.search(r'(\d{4})\.(\d{2})\.(\d{2})', page_text[page_text.index(nickname):])
+                if date_match:
+                    y, m, d = int(date_match.group(1)), int(date_match.group(2)), int(date_match.group(3))
+                    write_date = datetime(y, m, d)
+                    diff_days = (datetime.now() - write_date).days
+                    if diff_days <= days:
+                        return {
+                            "title": keyword,
+                            "writer": nickname,
+                            "write_date": write_date.strftime("%Y-%m-%d"),
+                        }
+            return None
+
+        now = datetime.now()
+        for item in items:
+            text = await item.inner_text()
+            if not text.strip() or len(text.strip()) < 5:
+                continue
+
+            # 닉네임 필터
+            if nickname and nickname not in text:
+                continue
+
+            # 날짜 추출 (YYYY.MM.DD 형식)
+            date_match = re.search(r'(\d{4})\.(\d{2})\.(\d{2})', text)
+            if date_match:
+                y, m, d = int(date_match.group(1)), int(date_match.group(2)), int(date_match.group(3))
+                write_date = datetime(y, m, d)
+            else:
+                # MM.DD. 형식 (올해)
+                date_match2 = re.search(r'(\d{2})\.(\d{2})\.', text)
+                if date_match2:
+                    month, day = int(date_match2.group(1)), int(date_match2.group(2))
+                    write_date = datetime(now.year, month, day)
+                else:
+                    continue
+
+            diff_days = (now - write_date).days
+            if diff_days > days:
+                continue
+
+            # 제목 추출 — 첫 번째 줄 또는 링크 텍스트
+            title_el = await item.query_selector("a")
+            title = (await title_el.inner_text()).strip() if title_el else text.split("\n")[0].strip()
+
+            return {
+                "title": title[:50],
+                "writer": nickname,
+                "write_date": write_date.strftime("%Y-%m-%d"),
+            }
+
+        return None
+
+    except Exception as e:
+        logger.debug(f"카페 브라우저 검색 오류 ({keyword}): {e}")
+        return None
+
+
+async def batch_check_cafe_duplicates(products: list, nickname: str, days: int = 30, log=None):
+    """Playwright 브라우저로 상품 목록의 카페 중복 일괄 체크
+
+    Args:
+        products: 체크할 상품 리스트 (cafe_status 직접 수정됨)
+        nickname: 작성자 닉네임
+        days: 최근 N일
+        log: 로그 콜백
+
+    Returns:
+        (checked, duplicates) 튜플
+    """
+    import asyncio
+    from playwright.async_api import async_playwright
+
+    total = len(products)
+    checked = 0
+    duplicates = 0
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=False,
+            slow_mo=200,
+            args=["--no-sandbox", "--window-size=1280,900"]
+        )
+        context = await browser.new_context(
+            viewport={"width": 1280, "height": 900},
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
+        )
+
+        # 쿠키 로드
+        if os.path.exists(NAVER_COOKIE_PATH):
+            try:
+                import json as _json
+                with open(NAVER_COOKIE_PATH, "r", encoding="utf-8") as f:
+                    cookies = _json.load(f)
+                naver_cookies = []
+                for c in cookies:
+                    cookie = {
+                        "name": c["name"],
+                        "value": c["value"],
+                        "domain": c.get("domain", ".naver.com"),
+                        "path": c.get("path", "/"),
+                    }
+                    naver_cookies.append(cookie)
+                await context.add_cookies(naver_cookies)
+                if log:
+                    log("   🍪 네이버 쿠키 로드 완료")
+            except Exception as e:
+                if log:
+                    log(f"   ⚠️ 쿠키 로드 실패: {e}")
+
+        page = await context.new_page()
+
+        try:
+            for prod in products:
+                code = prod.get("product_code", "")
+                if not code:
+                    checked += 1
+                    if log:
+                        log(f"   ⚪ [{checked}/{total}] (품번 없음 — 건너뜀)")
+                    continue
+
+                result = await search_cafe_by_browser(page, code, nickname, days, log)
+                checked += 1
+
+                if result:
+                    prod["cafe_status"] = "중복"
+                    prod["cafe_dup_date"] = result["write_date"]
+                    duplicates += 1
+                    if log:
+                        log(f"   🔴 [{checked}/{total}] {code} — {result['write_date']} 등록 ({result['title'][:40]})")
+                else:
+                    if log:
+                        log(f"   🟢 [{checked}/{total}] {code}")
+
+                await asyncio.sleep(1)
+
+        finally:
+            await browser.close()
+
+    return checked, duplicates

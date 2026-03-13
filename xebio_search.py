@@ -61,16 +61,47 @@ async def force_close_browser():
 # 메인 스크래핑 함수
 # =============================================
 
-async def scrape_nike_sale(status_callback=None, max_pages=None,
-                           site_id="xebio", category_id="sale"):
+def _parse_pages(pages_str: str) -> list:
+    """페이지 지정 문자열 파싱 → 정렬된 페이지 번호 리스트 반환
+    '2-10' → [2,3,...,10], '2,3,5' → [2,3,5], '2' → [2], '' → []
+    """
+    if not pages_str or not pages_str.strip():
+        return []
+    pages_str = pages_str.strip()
+    result = set()
+    for part in pages_str.split(","):
+        part = part.strip()
+        if "-" in part:
+            bounds = part.split("-", 1)
+            try:
+                start, end = int(bounds[0].strip()), int(bounds[1].strip())
+                for p in range(start, end + 1):
+                    if p >= 1:
+                        result.add(p)
+            except ValueError:
+                continue
+        else:
+            try:
+                p = int(part)
+                if p >= 1:
+                    result.add(p)
+            except ValueError:
+                continue
+    return sorted(result)
+
+
+async def scrape_nike_sale(status_callback=None,
+                           site_id="xebio", category_id="sale",
+                           keyword="", pages=""):
     """
     지정 사이트/카테고리에서 상품 수집
 
     Args:
         status_callback : 진행상황 문자열을 실시간으로 전달할 콜백 함수
-        max_pages       : 테스트용 최대 페이지 수 (None = 전체 수집)
         site_id         : 사이트 ID (예: "xebio")
         category_id     : 카테고리 ID (예: "sale", "running")
+        keyword         : 검색 키워드 (비어있으면 전체)
+        pages           : 페이지 지정 (예: "2-10", "2,3,5", "2", 비우면 전체)
 
     Returns:
         list: 수집된 상품 딕셔너리 리스트
@@ -108,19 +139,24 @@ async def scrape_nike_sale(status_callback=None, max_pages=None,
             # ── 사이트/카테고리 URL 결정 ─────────────────
             site_info = get_site(site_id)
             cat_info = get_category(site_id, category_id)
-            CATEGORY_URL = build_url(site_id, category_id)
+            CATEGORY_URL = build_url(site_id, category_id)  # 키워드 없이 카테고리만
             site_name = site_info["name"] if site_info else "Xebio"
             cat_name = cat_info["name"] if cat_info else "세일"
             base_url = site_info["base_url"] if site_info else XEBIO_BASE_URL
+
+            # 페이지 지정 파싱
+            target_pages = _parse_pages(pages)
 
             # fallback: site_config에 없으면 기존 세일 URL 사용
             if not CATEGORY_URL:
                 CATEGORY_URL = "https://www.supersports.com/ja-jp/xebio/products/?discount=sale"
                 base_url = XEBIO_BASE_URL
 
+            kw_label = f" [{keyword}]" if keyword else ""
+
             # ── STEP 1: 메인 접속 ──────────────────
             log("━" * 45)
-            log(f"🚀 [STEP 1/4] {site_name} 메인 페이지 접속 중...")
+            log(f"🚀 [STEP 1/5] {site_name} 메인 페이지 접속 중...")
             log(f"   🌐 접속 URL: {base_url}")
             await page.goto(base_url, wait_until="domcontentloaded", timeout=30000)
             await asyncio.sleep(2)
@@ -128,28 +164,80 @@ async def scrape_nike_sale(status_callback=None, max_pages=None,
 
             # ── STEP 2: 카테고리 이동 ────────
             log("━" * 45)
-            log(f"🏷️  [STEP 2/4] {cat_name} 페이지로 이동 중...")
+            log(f"🏷️  [STEP 2/5] {cat_name} 페이지로 이동 중...")
             await page.goto(CATEGORY_URL, wait_until="domcontentloaded", timeout=30000)
             await asyncio.sleep(3)
             log(f"   ✅ {cat_name} 페이지 이동 완료!")
             log(f"   🔗 현재 URL: {page.url}")
 
-            # ── STEP 3: 수집 준비 ────────
+            # ── STEP 3: 키워드 검색 (입력값이 있을 때만) ────────
+            if keyword:
+                log("━" * 45)
+                log(f"🔍 [STEP 3/5] 키워드 검색: {keyword}")
+
+                # 사이트 내 검색창 찾기 (さらに絞り込む)
+                search_selectors = [
+                    'input[placeholder*="絞り込む"]',
+                    'input[placeholder*="さらに"]',
+                    'input.middle[type="search"]',
+                    'input[type="search"]',
+                ]
+                search_input = None
+                for sel in search_selectors:
+                    try:
+                        el = page.locator(sel).first
+                        if await el.is_visible(timeout=3000):
+                            search_input = el
+                            log(f"   ✅ 검색창 발견: {sel}")
+                            break
+                    except Exception:
+                        continue
+
+                if search_input:
+                    # 검색창에 키워드 입력 후 Enter
+                    await search_input.click()
+                    await asyncio.sleep(0.5)
+                    await search_input.fill(keyword)
+                    await asyncio.sleep(0.5)
+                    await search_input.press("Enter")
+                    log(f"   ⌨️ '{keyword}' 입력 후 검색 실행")
+                    await asyncio.sleep(3)
+                    # 검색 결과 로딩 대기
+                    for sel in [".product-tile", ".product-item", "[class*='product-card']"]:
+                        try:
+                            await page.wait_for_selector(sel, timeout=8000)
+                            break
+                        except Exception:
+                            continue
+                    log(f"   ✅ 검색 완료! URL: {page.url}")
+                else:
+                    log("   ⚠️ 검색창을 찾지 못함 — 키워드 없이 진행합니다")
+            else:
+                log("━" * 45)
+                log(f"🔍 [STEP 3/5] 키워드 없음 — 전체 상품 수집")
+
+            # ── STEP 4: 수집 준비 ────────
             log("━" * 45)
-            log(f"🛍️  [STEP 3/4] {site_name} › {cat_name} 상품 수집 준비 중...")
-            log("   📋 브랜드 필터 없이 전체 상품을 수집합니다")
+            log(f"🛍️  [STEP 4/5] {site_name} › {cat_name}{kw_label} 상품 수집 준비 중...")
+            if target_pages:
+                log(f"   📄 지정 페이지: {pages}")
+            else:
+                log("   📋 전체 상품을 수집합니다")
             log(f"   ✅ 준비 완료! 현재 URL: {page.url}")
 
-            # ── STEP 4: 페이지 순회하며 상품 수집 ──────────
+            # ── STEP 5: 페이지 순회하며 상품 수집 ──────────
             log("━" * 45)
-            log("📦 [STEP 4/4] 상품 전체 수집 시작!")
+            log(f"📦 [STEP 5/5] 상품 수집 시작!{kw_label}")
             total = await get_total_count(page)
             if total:
                 log(f"   📊 총 수집 대상: 약 {total:,}개 상품")
 
-            SALE_BASE = CATEGORY_URL
             current_page = 1
             prev_product_links = set()  # 중복 감지용
+
+            # 페이지 지정 모드: 지정된 페이지만 수집
+            # target_pages가 있으면 해당 페이지까지 순회하되 지정 페이지만 수집
+            max_target_page = max(target_pages) if target_pages else None
 
             while True:
                 # ── 리셋 체크 ───────────────────────────
@@ -166,17 +254,10 @@ async def scrape_nike_sale(status_callback=None, max_pages=None,
                             return []
                     log("▶️ 수집 재개!")
 
-                # ── 1페이지는 URL 직접 이동, 이후는 다음 버튼 클릭 ──
+                # ── 1페이지는 현재 페이지 그대로 (카테고리/검색 결과), 이후는 다음 버튼 클릭 ──
                 if current_page == 1:
-                    page_url = SALE_BASE
                     log(f"   📄 [{current_page}페이지] 상품 파싱 중...")
-                    log(f"   🔗 {page_url}")
-                    try:
-                        await page.goto(page_url, wait_until="domcontentloaded", timeout=30000)
-                        await asyncio.sleep(2)
-                    except Exception as e:
-                        log(f"   ⚠️ 페이지 이동 오류: {e}")
-                        break
+                    log(f"   🔗 {page.url}")
                 else:
                     log(f"   📄 [{current_page}페이지] 다음 페이지로 이동 중...")
                     moved = await go_next_page(page)
@@ -191,6 +272,16 @@ async def scrape_nike_sale(status_callback=None, max_pages=None,
                         except Exception:
                             continue
                     await asyncio.sleep(3)
+
+                # ── 페이지 지정 모드: 해당 페이지가 아니면 건너뛰기 ──
+                if target_pages and current_page not in target_pages:
+                    log(f"   ⏭️ [{current_page}페이지] 건너뜀 (지정 페이지 아님)")
+                    if max_target_page and current_page >= max_target_page:
+                        log(f"   🛑 지정 페이지 수집 완료!")
+                        break
+                    current_page += 1
+                    await asyncio.sleep(0.5)
+                    continue
 
                 actual_url = page.url
                 log(f"   ✅ 실제 URL: {actual_url}")
@@ -215,9 +306,9 @@ async def scrape_nike_sale(status_callback=None, max_pages=None,
                 bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
                 log(f"   [{bar}] {pct}% — {len(page_products)}개 수집 / 누적: {len(products):,}개")
 
-                # 지정 페이지 도달 시 중단
-                if max_pages and current_page >= max_pages:
-                    log(f"   🛑 {max_pages}페이지까지 수집 완료!")
+                # 지정 페이지 모드: 마지막 지정 페이지 도달 시 중단
+                if max_target_page and current_page >= max_target_page:
+                    log(f"   🛑 지정 페이지 수집 완료!")
                     break
 
                 current_page += 1
@@ -225,7 +316,7 @@ async def scrape_nike_sale(status_callback=None, max_pages=None,
 
             # ── STEP 5: 상세 페이지 수집 ──────────────────
             log("━" * 45)
-            log(f"🔎 [STEP 5/5] 상품 상세 페이지 수집 시작!")
+            log(f"🔎 [STEP 6] 상품 상세 페이지 수집 시작!")
             log(f"   📋 총 {len(products):,}개 상품 상세 페이지 방문 예정")
             log(f"   ⏱️  예상 소요 시간: 약 {len(products) * 2 // 60}분")
 
@@ -827,7 +918,7 @@ def load_latest_products() -> list:
 # 단독 테스트
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-    results = asyncio.run(scrape_nike_sale(max_pages=2))
+    results = asyncio.run(scrape_nike_sale(pages="1-2"))
     print(f"\n총 {len(results)}개 수집")
     if results:
         print(json.dumps(results[0], ensure_ascii=False, indent=2))

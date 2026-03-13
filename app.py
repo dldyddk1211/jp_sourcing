@@ -30,7 +30,7 @@ from post_generator import get_ai_config, set_ai_config
 from site_config import get_sites_for_ui
 from scrape_history import get_history as get_scrape_history
 from product_db import init_db as init_product_db, get_stats as bigdata_get_stats, search_products as bigdata_search, get_brands as bigdata_get_brands, delete_all as bigdata_delete_all, delete_by_site as bigdata_delete_site, get_total_count as bigdata_total, export_all as bigdata_export
-from cafe_monitor import start_monitor, stop_monitor, is_monitoring
+from cafe_monitor import start_monitor, stop_monitor, is_monitoring, batch_check_cafe_duplicates
 from telegram_bot import start_bot, stop_bot, is_bot_running
 
 # =============================================
@@ -127,7 +127,7 @@ def push_log(msg: str):
 # 스크래핑 / 업로드 실행 함수 (백그라운드)
 # =============================================
 
-def run_scrape(max_pages=None, site_id="xebio", category_id="sale"):
+def run_scrape(site_id="xebio", category_id="sale", keyword="", pages=""):
     """백그라운드 스레드에서 스크래핑 실행"""
     if status["scraping"]:
         push_log("⚠️ 이미 스크래핑이 진행 중입니다")
@@ -137,9 +137,10 @@ def run_scrape(max_pages=None, site_id="xebio", category_id="sale"):
     try:
         products = asyncio.run(scrape_nike_sale(
             status_callback=push_log,
-            max_pages=max_pages,
             site_id=site_id,
             category_id=category_id,
+            keyword=keyword,
+            pages=pages,
         ))
         status["product_count"] = len(products)
         status["last_scrape"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -600,16 +601,22 @@ def get_status():
 def manual_scrape():
     """수동 스크래핑 실행"""
     data = request.json or {}
-    max_pages = data.get("max_pages")
     site_id = data.get("site_id", "xebio")
     category_id = data.get("category_id", "sale")
+    keyword = data.get("keyword", "")
+    pages = data.get("pages", "")
     thread = threading.Thread(
         target=run_scrape,
-        args=(max_pages, site_id, category_id),
+        args=(site_id, category_id, keyword, pages),
         daemon=True,
     )
     thread.start()
-    return jsonify({"ok": True, "message": f"스크래핑 시작됨 ({site_id} › {category_id})"})
+    desc = f"{site_id} › {category_id}"
+    if keyword:
+        desc += f" [{keyword}]"
+    if pages:
+        desc += f" (p.{pages})"
+    return jsonify({"ok": True, "message": f"스크래핑 시작됨 ({desc})"})
 
 
 # ── 사이트/카테고리 API ────────────────────────
@@ -858,6 +865,48 @@ def manual_upload():
     thread = threading.Thread(target=run_upload, args=(max_upload,), daemon=True)
     thread.start()
     return jsonify({"ok": True, "message": "업로드 시작됨"})
+
+
+def _run_upload_check():
+    """백그라운드에서 카페 중복 체크 실행 (Playwright 브라우저 사용)"""
+    from config import CAFE_MY_NICKNAME
+
+    products = load_latest_products()
+    waiting = [p for p in products if (p.get("cafe_status") or "대기") == "대기"]
+
+    if not waiting:
+        push_log("⚠️ 대기 상품이 없습니다")
+        return
+
+    push_log(f"🔍 업로드 체크 시작: {len(waiting)}개 상품 — 브라우저로 카페 검색 중...")
+
+    try:
+        checked, duplicates = asyncio.run(
+            batch_check_cafe_duplicates(
+                products=waiting,
+                nickname=CAFE_MY_NICKNAME,
+                days=30,
+                log=push_log,
+            )
+        )
+
+        # 결과 저장
+        from xebio_search import save_products
+        save_products(products)
+
+        push_log(f"✅ 체크 완료: {checked}개 확인, {duplicates}개 중복 발견")
+
+    except Exception as e:
+        push_log(f"❌ 체크 오류: {e}")
+
+
+@app.route(f"{URL_PREFIX}/run/upload-check", methods=["POST"])
+@login_required
+def upload_check():
+    """대기 상품을 카페에서 검색하여 중복 여부 체크 (백그라운드)"""
+    thread = threading.Thread(target=_run_upload_check, daemon=True)
+    thread.start()
+    return jsonify({"ok": True, "message": "카페 중복 체크 시작됨 — 로그를 확인하세요"})
 
 
 @app.route(f"{URL_PREFIX}/run/auto", methods=["POST"])

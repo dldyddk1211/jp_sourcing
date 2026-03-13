@@ -356,22 +356,33 @@
       <div class="panel">
         <div class="panel-title">&#x2699;&#xfe0f; 실행 컨트롤</div>
 
-        <!-- 사이트/카테고리 선택 -->
-        <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center;flex-wrap:wrap;">
+        <!-- 사이트/카테고리/키워드 선택 -->
+        <div style="display:flex;gap:10px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
           <div style="display:flex;align-items:center;gap:6px;">
-            <label style="font-size:0.82rem;color:var(--muted);white-space:nowrap;">사이트</label>
+            <span style="font-size:0.82rem;color:var(--muted);white-space:nowrap;">사이트</span>
             <select id="sel-site" onchange="onSiteChange()" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;min-width:140px;">
               <option value="">로딩중...</option>
             </select>
           </div>
           <div style="display:flex;align-items:center;gap:6px;">
-            <label style="font-size:0.82rem;color:var(--muted);white-space:nowrap;">카테고리</label>
+            <span style="font-size:0.82rem;color:var(--muted);white-space:nowrap;">카테고리</span>
             <select id="sel-category" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;min-width:140px;">
               <option value="">사이트를 선택하세요</option>
             </select>
           </div>
-          <span id="sel-preview" style="font-size:0.75rem;color:var(--yellow);"></span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-size:0.82rem;color:var(--muted);white-space:nowrap;">키워드</span>
+            <input type="text" id="scrape-keyword" value="" autocomplete="off" placeholder="예: adidas, nike" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;width:160px;">
+          </div>
         </div>
+        <div style="display:flex;gap:10px;margin-bottom:8px;align-items:center;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-size:0.82rem;color:var(--muted);white-space:nowrap;">페이지 지정</span>
+            <input type="text" id="scrape-pages" value="" autocomplete="off" placeholder="예: 2-10, 2,3,5, 2" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;width:180px;">
+          </div>
+          <span style="font-size:0.72rem;color:var(--muted);">&#x203b; 비우면 전체 | 2-10: 2~10페이지 | 2,3,5: 특정페이지 | 2: 단일페이지</span>
+        </div>
+        <div id="sel-preview" style="font-size:0.75rem;color:var(--yellow);margin-bottom:6px;"></div>
 
         <div class="btn-row">
           <button class="btn b-blue"   id="btn-scrape" onclick="runScrape()">&#x1f50d; 수동 스크래핑</button>
@@ -383,14 +394,8 @@
           <button class="btn b-gray"   onclick="downloadExcel()" id="btn-excel">&#x1f4e5; 엑셀 다운로드</button>
         </div>
         <div class="opts">
-          <label>스크래핑 페이지 수</label>
-          <input type="text" id="max-pages" placeholder="전부" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:5px 9px;border-radius:5px;width:80px;font-size:0.82rem">
-          <span style="font-size:0.75rem;color:var(--muted)">&#x203b; 비워두면 전체 수집</span>
-          <label style="margin-left:10px">업로드 최대 개수</label>
-          <input type="number" id="max-upload" placeholder="전체" min="1" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:5px 9px;border-radius:5px;width:80px;font-size:0.82rem">
-        </div>
-        <div id="page-preview" style="margin-top:8px;font-size:0.78rem;color:var(--muted)">
-          &#x1f4c4; 현재 설정: <span id="page-preview-text" style="color:var(--yellow)">전체 페이지 수집</span>
+          <label>업로드 최대 개수</label>
+          <input type="number" id="max-upload" placeholder="전체" min="1" max="9999" value="" autocomplete="off" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:5px 9px;border-radius:5px;width:80px;font-size:0.82rem">
         </div>
         <!-- 진행 시간 표시 -->
         <div id="time-bar" style="display:none;margin-top:12px;background:#0d0d0a;border:1px solid var(--border);border-radius:8px;padding:12px 16px;">
@@ -1015,12 +1020,15 @@
 
         <!-- 업로드 컨트롤 -->
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;">
+          <button class="btn b-blue" id="btn-upload-check" onclick="runUploadCheck()" style="padding:9px 18px;">
+            &#x1f50d; 업로드 체크
+          </button>
           <button class="btn b-green" id="btn-cafe-upload" onclick="uploadSelected()" style="padding:9px 18px;">
             &#x1f4e4; 선택 상품 업로드 (<span id="cafe-sel-cnt">0</span>개)
           </button>
           <div style="display:flex;align-items:center;gap:6px;">
-            <label style="font-size:0.8rem;color:var(--muted);">최대 업로드 수</label>
-            <input type="number" id="cafe-max-upload" placeholder="전체" min="1"
+            <span style="font-size:0.8rem;color:var(--muted);">최대 업로드 수</span>
+            <input type="number" id="cafe-max-upload" placeholder="전체" min="1" autocomplete="off"
               style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:80px;font-size:0.82rem;">
           </div>
         </div>
@@ -1174,37 +1182,19 @@ function stopTimer() {
   }
 }
 
-function updatePagePreview() {
-  const val = document.getElementById("max-pages").value.trim();
-  const el  = document.getElementById("page-preview-text");
-  if (!val || val === "\uC804\uBD80") {
-    el.textContent = "\uC804\uCCB4 \uD398\uC774\uC9C0 \uC218\uC9D1 (\u30BB\u30FC\u30EB \uC804\uCCB4)";
-    el.style.color = "var(--green)";
-  } else if (!isNaN(val) && +val > 0) {
-    const products = +val * 40;
-    const estSec = products * 2.5 + 30;
-    el.textContent = `1\uD398\uC774\uC9C0 ~ ${val}\uD398\uC774\uC9C0\uAE4C\uC9C0 \uC218\uC9D1 (\uC57D ${products}\uAC1C \uC0C1\uD488 \uC608\uC0C1)`;
-    el.style.color = "var(--yellow)";
-    document.getElementById("time-bar").style.display = "block";
-    document.getElementById("t-estimated").textContent = fmtTime(estSec);
-  } else {
-    el.textContent = "\u26A0\uFE0F \uC22B\uC790 \uB610\uB294 \uBE44\uC6CC\uB450\uAE30(\uC804\uCCB4)\uB9CC \uC785\uB825 \uAC00\uB2A5";
-    el.style.color = "var(--red)";
-  }
-}
-
 async function runScrape() {
-  const raw = document.getElementById("max-pages").value.trim();
-  let maxPages = null;
-  if (raw && raw !== "\uC804\uBD80" && !isNaN(raw) && +raw > 0) maxPages = +raw;
   const siteId = document.getElementById("sel-site").value;
   const catId  = document.getElementById("sel-category").value;
   if (!siteId || !catId) { alert("사이트와 카테고리를 선택하세요"); return; }
+  const keyword = document.getElementById("scrape-keyword").value.trim();
+  const pagesRaw = document.getElementById("scrape-pages").value.trim();
   checkedIndices.clear();
   updateSelCount();
-  const products = maxPages ? maxPages * 40 : 3000;
-  startTimer(products);
-  await post("/run/scrape", { max_pages: maxPages, site_id: siteId, category_id: catId });
+  startTimer(3000);
+  const body = { site_id: siteId, category_id: catId };
+  if (keyword) body.keyword = keyword;
+  if (pagesRaw) body.pages = pagesRaw;
+  await post("/run/scrape", body);
 }
 
 async function runUpload() { await uploadSelected(); }
@@ -1268,14 +1258,16 @@ async function loadCafeProducts(page = 1) {
       const jpy = p.price_jpy ? `¥${p.price_jpy.toLocaleString()}` : "-";
       const krw = p.price_info ? `${p.price_info.price_final.toLocaleString()}원` : "-";
       const cafeStatus = p.cafe_status || "대기";
+      const dupDate = p.cafe_dup_date || "";
       const statusColors = {"대기":"#64748b","완료":"#22c55e","중복":"#f59e0b"};
       const sc = statusColors[cafeStatus] || "#64748b";
+      const dupLabel = (cafeStatus === "중복" && dupDate) ? `<div style="font-size:9px;color:#f59e0b;margin-top:2px;">${dupDate} 등록</div>` : "";
       const statusSelect = `<select data-code="${p.product_code}" onchange="changeStatus(this)"
         style="padding:3px 6px;border-radius:8px;border:1px solid ${sc}44;background:${sc}18;color:${sc};font-size:11px;font-weight:600;cursor:pointer;outline:none;">
         <option value="대기" ${cafeStatus==="대기"?"selected":""}>대기</option>
         <option value="완료" ${cafeStatus==="완료"?"selected":""}>완료</option>
         <option value="중복" ${cafeStatus==="중복"?"selected":""}>중복</option>
-      </select>`;
+      </select>${dupLabel}`;
       const rowOpacity = cafeStatus === "완료" ? "opacity:0.7;" : cafeStatus === "중복" ? "opacity:0.5;" : "";
       return `<tr class="${isChecked?'selected-row':''}" style="border-bottom:1px solid var(--border);${rowOpacity}">
         <td style="padding:6px"><input type="checkbox" class="cafe-row-chk" data-idx="${globalIdx}" ${isChecked?'checked':''} onchange="onCafeRowCheck(this)"></td>
@@ -1338,6 +1330,30 @@ function renderCafePager(cur, total) {
   if (end < total) h += `<span style="color:var(--muted)">...</span><button onclick="loadCafeProducts(${total})" style="${btnStyle}">${total}</button>`;
   h += `<button onclick="loadCafeProducts(${cur+1})" ${cur===total?"disabled":""} style="${btnStyle}">▶</button>`;
   pg.innerHTML = h;
+}
+
+async function runUploadCheck() {
+  const btn = document.getElementById("btn-upload-check");
+  btn.disabled = true;
+  btn.textContent = "🔍 체크 중...";
+  try {
+    const res = await fetch(PREFIX + "/run/upload-check", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"});
+    const d = await res.json();
+    addLog(`🔍 ${d.message}`, "info");
+    // 백그라운드 실행 — 주기적으로 목록 갱신
+    const refreshInterval = setInterval(() => loadCafeProducts(cafePage), 5000);
+    // 30초 후 자동 정지 + 버튼 복원
+    setTimeout(() => {
+      clearInterval(refreshInterval);
+      loadCafeProducts(cafePage);
+      btn.disabled = false;
+      btn.textContent = "🔍 업로드 체크";
+    }, 60000);
+  } catch(e) {
+    addLog("❌ 체크 오류: " + e, "error");
+    btn.disabled = false;
+    btn.textContent = "🔍 업로드 체크";
+  }
 }
 
 async function uploadSelected() {
@@ -2241,7 +2257,6 @@ loadSites();
 loadScrapeHistory();
 setInterval(refreshStatus, 10000);
 setInterval(() => { loadProducts(curPage); loadBrands(); }, 30000);
-document.getElementById("max-pages")?.addEventListener("input", updatePagePreview);
 updatePagePreview();
 calcExample();
 </script>
