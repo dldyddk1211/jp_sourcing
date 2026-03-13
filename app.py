@@ -29,6 +29,7 @@ from exchange import get_jpy_to_krw_rate, get_cached_rate, calc_buying_price, se
 from post_generator import get_ai_config, set_ai_config
 from site_config import get_sites_for_ui
 from scrape_history import get_history as get_scrape_history
+from product_db import init_db as init_product_db, get_stats as bigdata_get_stats, search_products as bigdata_search, get_brands as bigdata_get_brands, delete_all as bigdata_delete_all, delete_by_site as bigdata_delete_site, get_total_count as bigdata_total
 
 # =============================================
 # 앱 초기화
@@ -626,6 +627,54 @@ def api_scrape_history():
     return jsonify(get_scrape_history(limit))
 
 
+# ── 빅데이터 관리 API ──────────────────────────
+
+@app.route(f"{URL_PREFIX}/bigdata/stats", methods=["GET"])
+@login_required
+def api_bigdata_stats():
+    """빅데이터 통계"""
+    return jsonify(bigdata_get_stats())
+
+
+@app.route(f"{URL_PREFIX}/bigdata/products", methods=["GET"])
+@login_required
+def api_bigdata_products():
+    """빅데이터 상품 검색"""
+    return jsonify(bigdata_search(
+        query=request.args.get("q", ""),
+        site_id=request.args.get("site_id", ""),
+        category_id=request.args.get("category_id", ""),
+        brand=request.args.get("brand", ""),
+        page=request.args.get("page", 1, type=int),
+        per_page=request.args.get("per_page", 50, type=int),
+    ))
+
+
+@app.route(f"{URL_PREFIX}/bigdata/brands", methods=["GET"])
+@login_required
+def api_bigdata_brands():
+    """빅데이터 브랜드 목록"""
+    return jsonify(bigdata_get_brands())
+
+
+@app.route(f"{URL_PREFIX}/bigdata/delete", methods=["POST"])
+@login_required
+def api_bigdata_delete():
+    """빅데이터 삭제"""
+    data = request.json or {}
+    scope = data.get("scope", "")
+    if scope == "all":
+        count = bigdata_delete_all()
+        return jsonify({"ok": True, "deleted": count, "message": f"전체 {count}개 삭제"})
+    elif scope == "site":
+        site_id = data.get("site_id", "")
+        if not site_id:
+            return jsonify({"ok": False, "message": "site_id 필요"})
+        count = bigdata_delete_site(site_id)
+        return jsonify({"ok": True, "deleted": count, "message": f"{site_id} {count}개 삭제"})
+    return jsonify({"ok": False, "message": "scope 지정 필요 (all 또는 site)"})
+
+
 @app.route(f"{URL_PREFIX}/run/upload", methods=["POST"])
 @login_required
 def manual_upload():
@@ -1027,6 +1076,12 @@ if __name__ == "__main__":
         # 외부 저장소 미연결 시 로컬 fallback
         os.makedirs("output", exist_ok=True)
         os.makedirs("logs", exist_ok=True)
+
+    # 빅데이터 DB 초기화
+    try:
+        init_product_db()
+    except Exception as e:
+        print(f"⚠️ 빅데이터 DB 초기화 실패: {e}")
 
     print(f"\n  Xebio Dashboard: http://{SERVER_HOST}:{SERVER_PORT}{URL_PREFIX}\n")
 

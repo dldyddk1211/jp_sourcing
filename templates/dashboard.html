@@ -294,6 +294,10 @@
         <span class="nav-icon">&#x1f4ec;</span>
         <span>텔레그램 알림</span>
       </div>
+      <div class="nav-item" data-page="bigdata" onclick="showPage('bigdata')">
+        <span class="nav-icon">&#x1f4be;</span>
+        <span>빅데이터 관리</span>
+      </div>
     </div>
   </nav>
 
@@ -759,6 +763,101 @@
       </div>
     </div>
 
+    <!-- ═══ 빅데이터 관리 ═══ -->
+    <div class="page-section" id="page-bigdata">
+      <!-- 통계 카드 -->
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="lbl">전체 누적 상품</div>
+          <div class="val c-blue" id="bd-total">0</div>
+          <div class="hint">빅데이터 DB 전체</div>
+        </div>
+        <div class="stat-card">
+          <div class="lbl">오늘 수집</div>
+          <div class="val c-green" id="bd-today">0</div>
+          <div class="hint">금일 신규 등록</div>
+        </div>
+        <div class="stat-card">
+          <div class="lbl">이번주 수집</div>
+          <div class="val c-yellow" id="bd-week">0</div>
+          <div class="hint">최근 7일</div>
+        </div>
+        <div class="stat-card">
+          <div class="lbl">브랜드 수</div>
+          <div class="val c-purple" id="bd-brands">0</div>
+          <div class="hint">고유 브랜드</div>
+        </div>
+      </div>
+
+      <!-- 사이트별 현황 -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>&#x1f4ca; 사이트별 현황</span>
+          <button class="btn b-gray" onclick="loadBigdataStats()" style="padding:4px 10px;font-size:0.75rem">&#x1f504; 새로고침</button>
+        </div>
+        <div id="bd-site-breakdown" style="font-size:0.85rem;color:var(--muted);padding:8px 0;">
+          로딩 중...
+        </div>
+      </div>
+
+      <!-- Top 브랜드 -->
+      <div class="panel">
+        <div class="panel-title"><span>&#x1f3c6; Top 브랜드</span></div>
+        <div id="bd-top-brands" style="display:flex;flex-wrap:wrap;gap:8px;padding:8px 0;">
+        </div>
+      </div>
+
+      <!-- 상품 검색 & 테이블 -->
+      <div class="panel">
+        <div class="panel-title"><span>&#x1f50d; 상품 검색</span></div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+          <input type="text" id="bd-search" placeholder="상품명, 품번, 브랜드 검색..." style="flex:1;min-width:200px;background:#0f1117;border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:6px;font-size:0.82rem">
+          <select id="bd-site-filter" style="background:#0f1117;border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:0.82rem">
+            <option value="">전체 사이트</option>
+          </select>
+          <select id="bd-brand-filter" style="background:#0f1117;border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:0.82rem">
+            <option value="">전체 브랜드</option>
+          </select>
+          <button class="btn b-blue" onclick="loadBigdataProducts(1)" style="padding:7px 16px;font-size:0.82rem">검색</button>
+        </div>
+
+        <div style="overflow-x:auto;">
+          <table class="tbl" id="tbl-bigdata" style="font-size:0.8rem;">
+            <thead>
+              <tr>
+                <th style="width:50px">이미지</th>
+                <th>브랜드</th>
+                <th>상품명</th>
+                <th style="width:100px">품번</th>
+                <th style="width:80px">일본가</th>
+                <th style="width:70px">사이트</th>
+                <th style="width:110px">수집일</th>
+              </tr>
+            </thead>
+            <tbody id="bd-products-body">
+              <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px;">데이터가 없습니다</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 페이지네이션 -->
+        <div id="bd-pagination" style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:12px;">
+        </div>
+      </div>
+
+      <!-- 관리 -->
+      <div class="panel">
+        <div class="panel-title"><span>&#x1f5d1;&#xfe0f; 데이터 관리</span></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn b-red" onclick="deleteBigdata('all')" style="padding:8px 16px;font-size:0.82rem">&#x1f5d1;&#xfe0f; 전체 초기화</button>
+          <button class="btn b-yellow" onclick="deleteBigdataSite()" style="padding:8px 16px;font-size:0.82rem">&#x1f5d1;&#xfe0f; 사이트별 삭제</button>
+        </div>
+        <div style="margin-top:8px;font-size:0.75rem;color:var(--muted);">
+          &#x26a0;&#xfe0f; 삭제된 데이터는 복구할 수 없습니다. 삭제 후 같은 상품이 다시 수집될 수 있습니다.
+        </div>
+      </div>
+    </div>
+
     <!-- ═══ 5. 번역 단어장 ═══ -->
     <div class="page-section" id="page-dictionary">
       <div class="panel">
@@ -947,6 +1046,7 @@ const pageTitles = {
   "data-path": "Setting \u203A \uD83D\uDCC1 \uB370\uC774\uD130 \uC800\uC7A5 \uACBD\uB85C",
   "ai-settings": "Setting \u203A \uD83E\uDD16 AI \uAE00\uC4F0\uAE30 \uC124\uC815",
   "telegram": "Setting \u203A \uD83D\uDCEC \uD154\uB808\uADF8\uB7A8 \uC54C\uB9BC",
+  "bigdata": "Setting \u203A \uD83D\uDCBE \uBE45\uB370\uC774\uD130 \uAD00\uB9AC",
   "cafe-upload": "Sport \u203A \u2615 \uB124\uC774\uBC84\uCE74\uD398 \uC5C5\uB85C\uB4DC",
 };
 
@@ -965,6 +1065,7 @@ function showPage(page) {
   if (page === "data-path") loadDataPath();
   if (page === "ai-settings") loadAiSettings();
   if (page === "telegram") loadTelegramSettings();
+  if (page === "bigdata") { loadBigdataStats(); loadBigdataProducts(1); }
   if (page === "cafe-upload") {
     checkNaverStatus();
     document.getElementById("cafe-sel-cnt").textContent = checkedIndices.size;
@@ -1913,6 +2014,130 @@ async function loadScrapeHistory() {
     }).join("");
   } catch(e) { console.error("이력 로드 실패", e); }
 }
+
+// ── 빅데이터 관리 ─────────────────────────────
+let bdPage = 1;
+
+async function loadBigdataStats() {
+  try {
+    const res = await fetch(PREFIX + "/bigdata/stats");
+    const d = await res.json();
+    document.getElementById("bd-total").textContent = (d.total || 0).toLocaleString();
+    document.getElementById("bd-today").textContent = (d.today || 0).toLocaleString();
+    document.getElementById("bd-week").textContent = (d.week || 0).toLocaleString();
+    document.getElementById("bd-brands").textContent = (d.top_brands || []).length;
+
+    // 사이트별 현황
+    const breakdown = document.getElementById("bd-site-breakdown");
+    const sites = d.by_site || {};
+    if (Object.keys(sites).length === 0) {
+      breakdown.innerHTML = '<span style="color:var(--muted)">수집된 데이터가 없습니다</span>';
+    } else {
+      let html = '<table class="tbl" style="font-size:0.8rem;"><thead><tr><th>사이트</th><th>카테고리</th><th>수량</th></tr></thead><tbody>';
+      for (const [sid, info] of Object.entries(sites)) {
+        for (const [cid, cnt] of Object.entries(info.categories || {})) {
+          html += `<tr><td>${sid}</td><td>${cid}</td><td style="text-align:center;font-weight:600;color:var(--blue)">${cnt.toLocaleString()}개</td></tr>`;
+        }
+        html += `<tr style="border-top:1px solid var(--border)"><td colspan="2" style="font-weight:600">${sid} 합계</td><td style="text-align:center;font-weight:700;color:var(--accent)">${info.total.toLocaleString()}개</td></tr>`;
+      }
+      html += '</tbody></table>';
+      breakdown.innerHTML = html;
+    }
+
+    // Top 브랜드
+    const brandsDiv = document.getElementById("bd-top-brands");
+    brandsDiv.innerHTML = (d.top_brands || []).map(b =>
+      `<span style="background:var(--accent)18;color:var(--accent);border:1px solid var(--accent)44;padding:4px 10px;border-radius:12px;font-size:0.78rem;">${b.brand} (${b.count})</span>`
+    ).join("") || '<span style="color:var(--muted)">데이터 없음</span>';
+
+    // 사이트 필터 드롭다운 업데이트
+    const siteFilter = document.getElementById("bd-site-filter");
+    const currentVal = siteFilter.value;
+    siteFilter.innerHTML = '<option value="">전체 사이트</option>';
+    for (const sid of Object.keys(sites)) {
+      siteFilter.innerHTML += `<option value="${sid}" ${sid===currentVal?'selected':''}>${sid}</option>`;
+    }
+
+    // 브랜드 필터 드롭다운
+    const brandFilter = document.getElementById("bd-brand-filter");
+    const currentBrand = brandFilter.value;
+    brandFilter.innerHTML = '<option value="">전체 브랜드</option>';
+    (d.top_brands || []).forEach(b => {
+      brandFilter.innerHTML += `<option value="${b.brand}" ${b.brand===currentBrand?'selected':''}>${b.brand} (${b.count})</option>`;
+    });
+  } catch(e) { console.error("빅데이터 통계 로드 실패", e); }
+}
+
+async function loadBigdataProducts(page) {
+  bdPage = page || 1;
+  const q = (document.getElementById("bd-search")?.value || "").trim();
+  const siteId = document.getElementById("bd-site-filter")?.value || "";
+  const brand = document.getElementById("bd-brand-filter")?.value || "";
+  try {
+    const params = new URLSearchParams({page: bdPage, per_page: 30});
+    if (q) params.set("q", q);
+    if (siteId) params.set("site_id", siteId);
+    if (brand) params.set("brand", brand);
+    const res = await fetch(PREFIX + "/bigdata/products?" + params);
+    const d = await res.json();
+    const tbody = document.getElementById("bd-products-body");
+
+    if (!d.products || d.products.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px;">데이터가 없습니다</td></tr>';
+      document.getElementById("bd-pagination").innerHTML = "";
+      return;
+    }
+
+    tbody.innerHTML = d.products.map(p => {
+      const img = p.img_url ? `<img src="${p.img_url}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;" onerror="this.style.display='none'">` : '-';
+      const price = p.price_jpy ? `&yen;${p.price_jpy.toLocaleString()}` : '-';
+      const date = (p.created_at || "").slice(0, 16);
+      return `<tr>
+        <td>${img}</td>
+        <td style="font-weight:600">${p.brand_ko || '-'}</td>
+        <td><a href="${p.link || '#'}" target="_blank" style="color:var(--accent);text-decoration:none;">${(p.name_ko || '-').slice(0,40)}</a></td>
+        <td style="font-family:monospace;font-size:0.75rem">${p.product_code || '-'}</td>
+        <td style="color:var(--yellow)">${price}</td>
+        <td>${p.site_id || '-'}</td>
+        <td style="font-size:0.73rem;color:var(--muted)">${date}</td>
+      </tr>`;
+    }).join("");
+
+    // 페이지네이션
+    const pg = document.getElementById("bd-pagination");
+    let pgHtml = "";
+    if (d.page > 1) pgHtml += `<button class="btn b-gray" onclick="loadBigdataProducts(${d.page-1})" style="padding:4px 12px;font-size:0.78rem">이전</button>`;
+    pgHtml += `<span style="font-size:0.82rem;color:var(--text)">${d.page} / ${d.pages} (${d.total.toLocaleString()}개)</span>`;
+    if (d.page < d.pages) pgHtml += `<button class="btn b-gray" onclick="loadBigdataProducts(${d.page+1})" style="padding:4px 12px;font-size:0.78rem">다음</button>`;
+    pg.innerHTML = pgHtml;
+  } catch(e) { console.error("빅데이터 상품 로드 실패", e); }
+}
+
+async function deleteBigdata(scope) {
+  const total = document.getElementById("bd-total").textContent;
+  if (!confirm(`정말 전체 ${total}개 데이터를 삭제하시겠습니까?\n삭제 후 동일 상품이 다시 수집될 수 있습니다.`)) return;
+  const res = await fetch(PREFIX + "/bigdata/delete", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({scope:"all"})});
+  const d = await res.json();
+  alert(d.message || "삭제 완료");
+  loadBigdataStats();
+  loadBigdataProducts(1);
+}
+
+async function deleteBigdataSite() {
+  const siteId = document.getElementById("bd-site-filter").value;
+  if (!siteId) { alert("사이트를 먼저 선택하세요"); return; }
+  if (!confirm(`${siteId}의 모든 데이터를 삭제하시겠습니까?`)) return;
+  const res = await fetch(PREFIX + "/bigdata/delete", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({scope:"site",site_id:siteId})});
+  const d = await res.json();
+  alert(d.message || "삭제 완료");
+  loadBigdataStats();
+  loadBigdataProducts(1);
+}
+
+// 검색 엔터키
+document.getElementById("bd-search")?.addEventListener("keydown", e => {
+  if (e.key === "Enter") loadBigdataProducts(1);
+});
 
 // ── 초기화 ───────────────────────────────────
 refreshStatus();

@@ -287,6 +287,24 @@ async def scrape_nike_sale(status_callback=None, max_pages=None,
             p["site_id"] = site_id
             p["category_id"] = category_id
 
+        # ── 빅데이터 DB 중복 체크 & 필터링 ──────────
+        try:
+            from product_db import bulk_exists, insert_products
+            existing = bulk_exists(site_id, products)
+            if existing:
+                before = len(products)
+                products = [
+                    p for p in products
+                    if (p.get("product_code", ""), p.get("price_jpy", 0)) not in existing
+                ]
+                skipped = before - len(products)
+                log(f"   🔍 빅데이터 중복 체크: {skipped}개 중복 제외 → {len(products)}개 신규")
+            # DB에 누적 저장
+            new_count = insert_products(products)
+            log(f"   💾 빅데이터 DB: {new_count}개 신규 저장")
+        except Exception as e:
+            logger.warning(f"빅데이터 DB 처리 실패: {e}")
+
         save_products(products)
 
         # 수집 이력 기록
