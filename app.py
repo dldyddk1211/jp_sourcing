@@ -27,6 +27,8 @@ from xebio_search import scrape_nike_sale, load_latest_products, set_app_status,
 from cafe_uploader import upload_products, naver_manual_login, has_saved_cookies, delete_cookies
 from exchange import get_jpy_to_krw_rate, get_cached_rate, calc_buying_price, set_margin_rate, get_margin_rate, set_price_config, get_price_config
 from post_generator import get_ai_config, set_ai_config
+from site_config import get_sites_for_ui
+from scrape_history import get_history as get_scrape_history
 
 # =============================================
 # 앱 초기화
@@ -122,7 +124,7 @@ def push_log(msg: str):
 # 스크래핑 / 업로드 실행 함수 (백그라운드)
 # =============================================
 
-def run_scrape(max_pages=None):
+def run_scrape(max_pages=None, site_id="xebio", category_id="sale"):
     """백그라운드 스레드에서 스크래핑 실행"""
     if status["scraping"]:
         push_log("⚠️ 이미 스크래핑이 진행 중입니다")
@@ -132,7 +134,9 @@ def run_scrape(max_pages=None):
     try:
         products = asyncio.run(scrape_nike_sale(
             status_callback=push_log,
-            max_pages=max_pages
+            max_pages=max_pages,
+            site_id=site_id,
+            category_id=category_id,
         ))
         status["product_count"] = len(products)
         status["last_scrape"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -592,10 +596,34 @@ def get_status():
 @login_required
 def manual_scrape():
     """수동 스크래핑 실행"""
-    max_pages = request.json.get("max_pages") if request.json else None
-    thread = threading.Thread(target=run_scrape, args=(max_pages,), daemon=True)
+    data = request.json or {}
+    max_pages = data.get("max_pages")
+    site_id = data.get("site_id", "xebio")
+    category_id = data.get("category_id", "sale")
+    thread = threading.Thread(
+        target=run_scrape,
+        args=(max_pages, site_id, category_id),
+        daemon=True,
+    )
     thread.start()
-    return jsonify({"ok": True, "message": "스크래핑 시작됨"})
+    return jsonify({"ok": True, "message": f"스크래핑 시작됨 ({site_id} › {category_id})"})
+
+
+# ── 사이트/카테고리 API ────────────────────────
+
+@app.route(f"{URL_PREFIX}/sites", methods=["GET"])
+@login_required
+def api_sites():
+    """사이트/카테고리 트리 반환"""
+    return jsonify(get_sites_for_ui())
+
+
+@app.route(f"{URL_PREFIX}/scrape-history", methods=["GET"])
+@login_required
+def api_scrape_history():
+    """수집 이력 반환"""
+    limit = request.args.get("limit", 50, type=int)
+    return jsonify(get_scrape_history(limit))
 
 
 @app.route(f"{URL_PREFIX}/run/upload", methods=["POST"])

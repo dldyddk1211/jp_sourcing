@@ -349,6 +349,24 @@
       <!-- 실행 컨트롤 -->
       <div class="panel">
         <div class="panel-title">&#x2699;&#xfe0f; 실행 컨트롤</div>
+
+        <!-- 사이트/카테고리 선택 -->
+        <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <label style="font-size:0.82rem;color:var(--muted);white-space:nowrap;">사이트</label>
+            <select id="sel-site" onchange="onSiteChange()" style="background:#0f1117;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;min-width:140px;">
+              <option value="">로딩중...</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <label style="font-size:0.82rem;color:var(--muted);white-space:nowrap;">카테고리</label>
+            <select id="sel-category" style="background:#0f1117;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;min-width:140px;">
+              <option value="">사이트를 선택하세요</option>
+            </select>
+          </div>
+          <span id="sel-preview" style="font-size:0.75rem;color:var(--yellow);"></span>
+        </div>
+
         <div class="btn-row">
           <button class="btn b-blue"   id="btn-scrape" onclick="runScrape()">&#x1f50d; 수동 스크래핑</button>
           <button class="btn b-green"  id="btn-upload" onclick="runUpload()">&#x1f4e4; 선택 상품 업로드</button>
@@ -391,6 +409,31 @@
           </div>
         </div>
         <div class="schedule-pill"><div class="dot"></div> 자동 스케줄 활성화 &#x2014; 매일 <span id="s-schedule">-</span> 실행</div>
+      </div>
+
+      <!-- 수집 이력 -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>&#x1f4ca; 수집 이력</span>
+          <button onclick="loadScrapeHistory()" class="btn b-gray" style="padding:4px 10px;font-size:0.75rem">&#x1f504; 새로고침</button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="tbl" id="tbl-history" style="font-size:0.8rem;">
+            <thead>
+              <tr>
+                <th style="width:130px">날짜</th>
+                <th>사이트</th>
+                <th>카테고리</th>
+                <th style="width:80px">수집</th>
+                <th style="width:80px">업로드</th>
+                <th style="width:80px">상태</th>
+              </tr>
+            </thead>
+            <tbody id="history-body">
+              <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px;">이력이 없습니다</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- 미니 로그 -->
@@ -1014,11 +1057,14 @@ async function runScrape() {
   const raw = document.getElementById("max-pages").value.trim();
   let maxPages = null;
   if (raw && raw !== "\uC804\uBD80" && !isNaN(raw) && +raw > 0) maxPages = +raw;
+  const siteId = document.getElementById("sel-site").value;
+  const catId  = document.getElementById("sel-category").value;
+  if (!siteId || !catId) { alert("사이트와 카테고리를 선택하세요"); return; }
   checkedIndices.clear();
   updateSelCount();
   const products = maxPages ? maxPages * 40 : 3000;
   startTimer(products);
-  await post("/run/scrape", { max_pages: maxPages });
+  await post("/run/scrape", { max_pages: maxPages, site_id: siteId, category_id: catId });
 }
 
 async function runUpload() { await uploadSelected(); }
@@ -1802,11 +1848,79 @@ function calcExample() {
     </div>`;
 }
 
+// ── 사이트/카테고리 로드 ───────────────────────
+let _sitesData = [];
+
+async function loadSites() {
+  try {
+    const res = await fetch(PREFIX + "/sites");
+    _sitesData = await res.json();
+    const sel = document.getElementById("sel-site");
+    sel.innerHTML = "";
+    _sitesData.forEach(s => {
+      const o = document.createElement("option");
+      o.value = s.id; o.textContent = s.name;
+      sel.appendChild(o);
+    });
+    onSiteChange();
+  } catch(e) { console.error("사이트 로드 실패", e); }
+}
+
+function onSiteChange() {
+  const siteId = document.getElementById("sel-site").value;
+  const catSel = document.getElementById("sel-category");
+  catSel.innerHTML = "";
+  const site = _sitesData.find(s => s.id === siteId);
+  if (!site) return;
+  site.categories.forEach(c => {
+    const o = document.createElement("option");
+    o.value = c.id; o.textContent = c.name;
+    catSel.appendChild(o);
+  });
+  updateSelPreview();
+  catSel.onchange = updateSelPreview;
+}
+
+function updateSelPreview() {
+  const siteSel = document.getElementById("sel-site");
+  const catSel  = document.getElementById("sel-category");
+  const preview = document.getElementById("sel-preview");
+  if (siteSel.selectedOptions[0] && catSel.selectedOptions[0]) {
+    preview.textContent = siteSel.selectedOptions[0].text + " > " + catSel.selectedOptions[0].text;
+  }
+}
+
+// ── 수집 이력 ─────────────────────────────────
+async function loadScrapeHistory() {
+  try {
+    const res = await fetch(PREFIX + "/scrape-history?limit=20");
+    const history = await res.json();
+    const tbody = document.getElementById("history-body");
+    if (!history.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px;">이력이 없습니다</td></tr>';
+      return;
+    }
+    tbody.innerHTML = history.map(h => {
+      const stColor = h.status === "업로드완료" ? "var(--green)" : "var(--blue)";
+      return `<tr>
+        <td>${h.date}</td>
+        <td>${h.site_name}</td>
+        <td>${h.category_name}</td>
+        <td style="text-align:center;font-weight:600;color:var(--blue)">${h.product_count}개</td>
+        <td style="text-align:center;font-weight:600;color:var(--green)">${h.uploaded_count || 0}개</td>
+        <td style="text-align:center;color:${stColor};font-size:0.75rem">${h.status}</td>
+      </tr>`;
+    }).join("");
+  } catch(e) { console.error("이력 로드 실패", e); }
+}
+
 // ── 초기화 ───────────────────────────────────
 refreshStatus();
 loadProducts(1);
 loadBrands();
 loadPriceSettings();
+loadSites();
+loadScrapeHistory();
 setInterval(refreshStatus, 10000);
 setInterval(() => { loadProducts(curPage); loadBrands(); }, 30000);
 document.getElementById("max-pages")?.addEventListener("input", updatePagePreview);

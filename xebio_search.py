@@ -15,6 +15,7 @@ from config import (
     XEBIO_BASE_URL, XEBIO_DOMAIN, SCRAPE_DELAY, OUTPUT_DIR, IMAGE_DIR
 )
 from translator import translate_ja_ko, translate_brand
+from site_config import get_site, get_category, build_url
 
 logger = logging.getLogger(__name__)
 
@@ -60,13 +61,16 @@ async def force_close_browser():
 # 메인 스크래핑 함수
 # =============================================
 
-async def scrape_nike_sale(status_callback=None, max_pages=None):
+async def scrape_nike_sale(status_callback=None, max_pages=None,
+                           site_id="xebio", category_id="sale"):
     """
-    Xebio 메인 → セール → NIKE 브랜드 필터 → 전체 상품 수집
+    지정 사이트/카테고리에서 상품 수집
 
     Args:
         status_callback : 진행상황 문자열을 실시간으로 전달할 콜백 함수
         max_pages       : 테스트용 최대 페이지 수 (None = 전체 수집)
+        site_id         : 사이트 ID (예: "xebio")
+        category_id     : 카테고리 ID (예: "sale", "running")
 
     Returns:
         list: 수집된 상품 딕셔너리 리스트
@@ -101,29 +105,39 @@ async def scrape_nike_sale(status_callback=None, max_pages=None):
         page = await context.new_page()
 
         try:
-            # ── STEP 1: Xebio 메인 접속 ──────────────────
+            # ── 사이트/카테고리 URL 결정 ─────────────────
+            site_info = get_site(site_id)
+            cat_info = get_category(site_id, category_id)
+            CATEGORY_URL = build_url(site_id, category_id)
+            site_name = site_info["name"] if site_info else "Xebio"
+            cat_name = cat_info["name"] if cat_info else "세일"
+            base_url = site_info["base_url"] if site_info else XEBIO_BASE_URL
+
+            # fallback: site_config에 없으면 기존 세일 URL 사용
+            if not CATEGORY_URL:
+                CATEGORY_URL = "https://www.supersports.com/ja-jp/xebio/products/?discount=sale"
+                base_url = XEBIO_BASE_URL
+
+            # ── STEP 1: 메인 접속 ──────────────────
             log("━" * 45)
-            log("🚀 [STEP 1/4] Xebio 메인 페이지 접속 중...")
-            log(f"   🌐 접속 URL: {XEBIO_BASE_URL}")
-            await page.goto(XEBIO_BASE_URL, wait_until="domcontentloaded", timeout=30000)
+            log(f"🚀 [STEP 1/4] {site_name} 메인 페이지 접속 중...")
+            log(f"   🌐 접속 URL: {base_url}")
+            await page.goto(base_url, wait_until="domcontentloaded", timeout=30000)
             await asyncio.sleep(2)
             log("   ✅ 메인 페이지 접속 완료!")
 
-            # ── STEP 2: セール 카테고리 직접 이동 ────────
+            # ── STEP 2: 카테고리 이동 ────────
             log("━" * 45)
-            log("🏷️  [STEP 2/4] セール 페이지로 직접 이동 중...")
-
-            # 직접 세일 URL로 이동 (클릭 방식 제거)
-            SALE_URL = "https://www.supersports.com/ja-jp/xebio/products/?discount=sale"
-            await page.goto(SALE_URL, wait_until="domcontentloaded", timeout=30000)
+            log(f"🏷️  [STEP 2/4] {cat_name} 페이지로 이동 중...")
+            await page.goto(CATEGORY_URL, wait_until="domcontentloaded", timeout=30000)
             await asyncio.sleep(3)
-            log("   ✅ セール 페이지 이동 완료!")
+            log(f"   ✅ {cat_name} 페이지 이동 완료!")
             log(f"   🔗 현재 URL: {page.url}")
 
-            # ── STEP 3: 세일 전체 상품 수집 준비 ────────
+            # ── STEP 3: 수집 준비 ────────
             log("━" * 45)
-            log("🛍️  [STEP 3/4] 세일 전체 상품 수집 준비 중...")
-            log("   📋 브랜드 필터 없이 전체 세일 상품을 수집합니다")
+            log(f"🛍️  [STEP 3/4] {site_name} › {cat_name} 상품 수집 준비 중...")
+            log("   📋 브랜드 필터 없이 전체 상품을 수집합니다")
             log(f"   ✅ 준비 완료! 현재 URL: {page.url}")
 
             # ── STEP 4: 페이지 순회하며 상품 수집 ──────────
@@ -133,7 +147,7 @@ async def scrape_nike_sale(status_callback=None, max_pages=None):
             if total:
                 log(f"   📊 총 수집 대상: 약 {total:,}개 상품")
 
-            SALE_BASE = "https://www.supersports.com/ja-jp/xebio/products/?discount=sale"
+            SALE_BASE = CATEGORY_URL
             current_page = 1
             prev_product_links = set()  # 중복 감지용
 
@@ -268,7 +282,20 @@ async def scrape_nike_sale(status_callback=None, max_pages=None):
             _playwright = None
 
     if products:
+        # 상품에 사이트/카테고리 정보 태깅
+        for p in products:
+            p["site_id"] = site_id
+            p["category_id"] = category_id
+
         save_products(products)
+
+        # 수집 이력 기록
+        try:
+            from scrape_history import add_history
+            add_history(site_id, category_id, len(products))
+        except Exception as e:
+            logger.warning(f"수집 이력 저장 실패: {e}")
+
         log("━" * 45)
         log(f"🎉 전체 수집 완료!")
         log(f"   📦 총 수집: {len(products):,}개 상품 (목록 + 상세)")
