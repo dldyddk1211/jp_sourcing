@@ -263,9 +263,9 @@ async def upload_products(products: list, status_callback=None, max_upload=None)
                         log(f"   ⚠️ 업로드 실패")
                         notify_upload_error(name_short, "업로드 실패")
 
-                    # 게시글 간 랜덤 딜레이 (20~30분) — 네이버 봇 탐지 방지
+                    # 게시글 간 랜덤 딜레이 (8~13분) — 네이버 봇 탐지 방지
                     if i < len(upload_list):
-                        delay_min = random.randint(20, 30)
+                        delay_min = random.randint(8, 13)
                         delay_sec = delay_min * 60
                         next_name = (upload_list[i].get("name_ko") or upload_list[i].get("name", ""))[:30]
                         log(f"   ⏳ 다음 게시글까지 {delay_min}분 대기...")
@@ -416,7 +416,152 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
         if tags:
             await input_tags_iframe(frame_locator, tags, _log)
 
-        # ── 8단계: 등록 버튼 클릭 ──
+        # ── 8단계: 등록 전 검증 ──────────────────────
+        _log("━" * 40)
+        _log("   🔍 등록 전 검증 시작...")
+        await asyncio.sleep(1)
+
+        verify_ok = True
+
+        # [검증 1] 제목 확인
+        try:
+            title_val = ""
+            for sel in ["textarea.textarea_input", "textarea[placeholder*='제목']"]:
+                try:
+                    el = frame_locator.locator(sel).first
+                    if await el.count() > 0:
+                        title_val = (await el.input_value()).strip()
+                        break
+                except Exception:
+                    continue
+            if title_val:
+                _log(f"   ✅ [검증] 제목: {title_val[:40]}...")
+            else:
+                _log(f"   ❌ [검증] 제목이 비어있습니다!")
+                verify_ok = False
+        except Exception as e:
+            _log(f"   ⚠️ [검증] 제목 확인 실패: {e}")
+
+        # [검증 2] 본문 확인 — 에디터 영역 내 텍스트 길이 체크
+        try:
+            body_text = ""
+            body_selectors = [
+                ".se-content",
+                ".se-component-content",
+                "[contenteditable='true']",
+                ".editor_content",
+                ".se-text-paragraph",
+            ]
+            for sel in body_selectors:
+                try:
+                    el = frame_locator.locator(sel).first
+                    if await el.count() > 0:
+                        body_text = (await el.inner_text()).strip()
+                        if len(body_text) > 10:
+                            break
+                except Exception:
+                    continue
+
+            if len(body_text) > 30:
+                _log(f"   ✅ [검증] 본문: {len(body_text)}자 입력됨")
+            elif len(body_text) > 0:
+                _log(f"   ⚠️ [검증] 본문이 너무 짧습니다 ({len(body_text)}자)")
+            else:
+                _log(f"   ❌ [검증] 본문이 비어있습니다!")
+                verify_ok = False
+        except Exception as e:
+            _log(f"   ⚠️ [검증] 본문 확인 실패: {e}")
+
+        # [검증 3] 이미지 확인 — 에디터 내 img 태그 수
+        try:
+            img_count = 0
+            img_selectors = [
+                "img.se-image-resource",
+                ".se-component-image img",
+                ".se-image img",
+                "img[src*='pstatic']",
+                "img[src*='naver']",
+            ]
+            for sel in img_selectors:
+                try:
+                    cnt = await frame_locator.locator(sel).count()
+                    if cnt > img_count:
+                        img_count = cnt
+                except Exception:
+                    continue
+
+            expected_img = len(detail_images) if detail_images else 0
+            if img_count > 0:
+                _log(f"   ✅ [검증] 이미지: {img_count}개 삽입됨 (예상: {expected_img}개)")
+            elif expected_img > 0:
+                _log(f"   ⚠️ [검증] 이미지 0개 — 예상 {expected_img}개인데 삽입 안됨")
+                # 이미지 재시도
+                _log(f"   🔄 [재시도] 이미지 다시 업로드 시도...")
+                for retry_idx, retry_url in enumerate(detail_images[:3]):
+                    _log(f"   📷 재시도 이미지 [{retry_idx+1}/{min(len(detail_images),3)}]")
+                    await upload_image_from_url_iframe(page, frame_locator, retry_url, _log)
+                    await asyncio.sleep(2)
+            else:
+                _log(f"   ⬚ [검증] 이미지: 없음 (원본 이미지 없음)")
+        except Exception as e:
+            _log(f"   ⚠️ [검증] 이미지 확인 실패: {e}")
+
+        # [검증 4] 태그 확인
+        try:
+            tag_count = 0
+            tag_selectors = [
+                ".tag_item", ".se-tag", "[class*='tag_']",
+                "li[class*='tag']", "span[class*='tag']",
+            ]
+            for sel in tag_selectors:
+                try:
+                    cnt = await frame_locator.locator(sel).count()
+                    if cnt > tag_count:
+                        tag_count = cnt
+                except Exception:
+                    continue
+            if tag_count > 0:
+                _log(f"   ✅ [검증] 태그: {tag_count}개")
+            elif tags:
+                _log(f"   ⚠️ [검증] 태그가 입력되지 않았을 수 있음")
+            else:
+                _log(f"   ⬚ [검증] 태그: 없음")
+        except Exception as e:
+            _log(f"   ⚠️ [검증] 태그 확인 실패: {e}")
+
+        # [검증 5] 게시판 확인
+        try:
+            board_name = ""
+            board_selectors = [
+                "a.board_name", "[class*='board_name']",
+                "[class*='BoardSelectButton']", "[class*='board_select']",
+            ]
+            for sel in board_selectors:
+                try:
+                    el = frame_locator.locator(sel).first
+                    if await el.count() > 0:
+                        board_name = (await el.inner_text()).strip()
+                        if board_name:
+                            break
+                except Exception:
+                    continue
+            if board_name:
+                _log(f"   ✅ [검증] 게시판: {board_name}")
+            else:
+                _log(f"   ⬚ [검증] 게시판 이름 확인 불가")
+        except Exception as e:
+            _log(f"   ⚠️ [검증] 게시판 확인 실패: {e}")
+
+        # 검증 결과 종합
+        if verify_ok:
+            _log("   ✅ 검증 완료 — 등록 진행합니다")
+        else:
+            _log("   ⚠️ 일부 항목 누락 — 그래도 등록 시도합니다")
+        _log("━" * 40)
+
+        await asyncio.sleep(1)
+
+        # ── 9단계: 등록 버튼 클릭 ──
         submit_selectors = [
             "button.BaseButton--submit",
             "button:has-text('등록')",
@@ -845,18 +990,29 @@ async def _insert_link_via_editor(page, frame_locator, editor_el, url: str, text
 
 
 async def upload_image_from_url_iframe(page, frame_locator, img_url: str, log=None):
-    """iframe 내 이미지 업로드"""
+    """네이버 카페 에디터(iframe)에 이미지 업로드
+
+    Smart Editor 3 구조:
+    - 에디터가 iframe#cafe_main 내부에 있음
+    - 이미지 버튼 클릭 → file_chooser 이벤트 발생
+    - file input이 iframe 안 또는 바깥에 존재할 수 있음
+    """
     if not img_url:
         return
 
+    # ── 이미지 다운로드 ──────────────────────
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         res = requests.get(img_url, headers=headers, timeout=15)
         if res.status_code != 200:
             logger.warning(f"이미지 다운로드 실패: {res.status_code}")
+            if log:
+                log(f"   ⚠️ 이미지 다운로드 실패 ({res.status_code})")
             return
     except Exception as e:
         logger.warning(f"이미지 다운로드 오류: {e}")
+        if log:
+            log(f"   ⚠️ 이미지 다운로드 오류: {e}")
         return
 
     ext = "jpg"
@@ -874,43 +1030,132 @@ async def upload_image_from_url_iframe(page, frame_locator, img_url: str, log=No
     logger.info(f"이미지 저장: {tmp_path} ({len(res.content):,} bytes)")
 
     try:
-        # iframe 내 file input 찾기
+        # ── 방법 1: iframe 내 이미지 버튼 클릭 → file_chooser ──
+        # Smart Editor 3 툴바 사진 버튼 셀렉터
+        img_btn_selectors = [
+            "button[data-name='image']",
+            "button[data-type='image']",
+            "button.se-image-toolbar-button",
+            "button[class*='image']",
+            "button[aria-label*='사진']",
+            "button[aria-label*='이미지']",
+            "button[aria-label*='Photo']",
+            "button[title*='사진']",
+            "button[title*='이미지']",
+            ".se-toolbar-item-image button",
+            "li.se-toolbar-item-image button",
+            "button.tool_photo",
+            "a.se-oglink-toolbar-button",
+        ]
+
+        for sel in img_btn_selectors:
+            try:
+                el = frame_locator.locator(sel).first
+                if await el.count() > 0:
+                    logger.info(f"이미지 버튼 발견 (iframe): {sel}")
+                    async with page.expect_file_chooser(timeout=5000) as fc_info:
+                        await el.click()
+                    fc = await fc_info.value
+                    await fc.set_files(tmp_path)
+                    await asyncio.sleep(3)
+                    logger.info(f"이미지 업로드 완료 (iframe 버튼): {sel}")
+                    if log:
+                        log(f"   ✅ 이미지 업로드 완료")
+                    return
+            except Exception as e:
+                logger.debug(f"iframe 이미지 버튼 시도 실패 ({sel}): {e}")
+                continue
+
+        # ── 방법 2: 메인 페이지에서 이미지 버튼 찾기 ──
+        # iframe 바깥(상위 페이지)에 에디터 툴바가 있는 경우
+        for sel in img_btn_selectors:
+            try:
+                el = page.locator(sel).first
+                if await el.count() > 0:
+                    logger.info(f"이미지 버튼 발견 (메인): {sel}")
+                    async with page.expect_file_chooser(timeout=5000) as fc_info:
+                        await el.click()
+                    fc = await fc_info.value
+                    await fc.set_files(tmp_path)
+                    await asyncio.sleep(3)
+                    logger.info(f"이미지 업로드 완료 (메인 버튼): {sel}")
+                    if log:
+                        log(f"   ✅ 이미지 업로드 완료")
+                    return
+            except Exception as e:
+                logger.debug(f"메인 이미지 버튼 시도 실패 ({sel}): {e}")
+                continue
+
+        # ── 방법 3: iframe 내 file input 직접 ──
         for sel in ["input[type='file'][accept*='image']", "input[type='file']"]:
             try:
                 el = frame_locator.locator(sel).first
                 if await el.count() > 0:
                     await el.set_input_files(tmp_path)
-                    await asyncio.sleep(2)
-                    logger.info(f"이미지 업로드 완료 (iframe): {sel}")
+                    await asyncio.sleep(3)
+                    logger.info(f"이미지 업로드 완료 (iframe file input): {sel}")
                     if log:
                         log(f"   ✅ 이미지 업로드 완료")
                     return
             except Exception:
                 continue
 
-        # 이미지 버튼 클릭 → file_chooser
-        img_btn_selectors = [
-            "button[data-name='image']",
-            "button[aria-label*='사진']",
-            "button[aria-label*='이미지']",
-        ]
-        for sel in img_btn_selectors:
+        # ── 방법 4: 메인 페이지 file input 직접 ──
+        for sel in ["input[type='file'][accept*='image']", "input[type='file']"]:
             try:
-                el = frame_locator.locator(sel).first
+                el = page.locator(sel).first
                 if await el.count() > 0:
-                    async with page.expect_file_chooser(timeout=4000) as fc_info:
-                        await el.click()
-                    fc = await fc_info.value
-                    await fc.set_files(tmp_path)
-                    await asyncio.sleep(2)
-                    logger.info(f"이미지 업로드 완료 (버튼): {sel}")
+                    await el.set_input_files(tmp_path)
+                    await asyncio.sleep(3)
+                    logger.info(f"이미지 업로드 완료 (메인 file input): {sel}")
                     if log:
                         log(f"   ✅ 이미지 업로드 완료")
                     return
             except Exception:
                 continue
 
-        logger.warning("이미지 업로드: file input을 찾지 못했습니다")
+        # ── 방법 5: JavaScript로 file input 생성 후 트리거 ──
+        try:
+            # iframe 내부 프레임 직접 접근
+            frames = page.frames
+            editor_frame = None
+            for f in frames:
+                if "cafe_main" in (f.name or "") or "cafe" in (f.url or ""):
+                    editor_frame = f
+                    break
+
+            if editor_frame:
+                # 숨겨진 file input 찾기
+                file_inputs = await editor_frame.query_selector_all("input[type='file']")
+                if file_inputs:
+                    await file_inputs[0].set_input_files(tmp_path)
+                    await asyncio.sleep(3)
+                    logger.info("이미지 업로드 완료 (frame query)")
+                    if log:
+                        log(f"   ✅ 이미지 업로드 완료")
+                    return
+        except Exception as e:
+            logger.debug(f"frame query 시도 실패: {e}")
+
+        logger.warning("이미지 업로드: 모든 방법 실패 — file input을 찾지 못했습니다")
+        if log:
+            log(f"   ⚠️ 이미지 업로드 실패 — 에디터에서 이미지 버튼을 찾지 못했습니다")
+
+        # 디버그: 현재 페이지 구조 출력
+        try:
+            btn_count = await frame_locator.locator("button").count()
+            input_count = await frame_locator.locator("input[type='file']").count()
+            logger.info(f"디버그: iframe 내 button={btn_count}개, file input={input_count}개")
+            # 툴바 버튼 목록 출력
+            for i in range(min(btn_count, 20)):
+                btn = frame_locator.locator("button").nth(i)
+                attrs = await btn.evaluate(
+                    "el => ({tag: el.tagName, cls: el.className, name: el.getAttribute('data-name'), aria: el.getAttribute('aria-label'), title: el.title, text: el.textContent?.trim()?.slice(0,30)})"
+                )
+                logger.info(f"  button[{i}]: {attrs}")
+        except Exception:
+            pass
+
     finally:
         try:
             os.remove(tmp_path)
