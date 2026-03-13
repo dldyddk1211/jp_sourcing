@@ -726,7 +726,7 @@ async def type_content_to_editor_iframe(page, frame_locator, content: str, log=N
 
     # 패턴 정의
     url_pattern = re.compile(r'^https?://\S+$')
-    heading_pattern = re.compile(r'핵심 포인트')
+    section_heading_pattern = re.compile(r'^(🔍\s*상품 상세 정보|💎\s*핵심 구매 포인트|⚠️\s*구매 전 확인 사항)$')
     numbered_pattern = re.compile(r'^\d+\.\s')
 
     try:
@@ -736,9 +736,9 @@ async def type_content_to_editor_iframe(page, frame_locator, content: str, log=N
         for i, line in enumerate(lines):
             stripped = line.strip()
 
-            # ── 핵심 포인트 제목: 볼드 + 폰트 24 ──
-            if stripped and heading_pattern.search(stripped):
-                await _set_font_size(frame_locator, "24", log)
+            # ── 섹션 제목 (🔍/💎/⚠️): 폰트 19 + 볼드 ──
+            if stripped and section_heading_pattern.match(stripped):
+                await _set_font_size(frame_locator, "19", log)
                 await _toggle_bold(frame_locator, target_el, on=True)
                 await target_el.type(stripped, delay=10)
                 await _toggle_bold(frame_locator, target_el, on=False)
@@ -783,10 +783,79 @@ async def type_content_to_editor_iframe(page, frame_locator, content: str, log=N
         logger.info(f"본문 입력 완료 (줄 단위 타이핑, {len(lines)}줄)")
         if log:
             log(f"   ✅ 본문 입력 완료 ({len(lines)}줄)")
+
+        # ── 전체 선택 후 줄간격 210% 적용 ──
+        await _set_line_spacing(page, frame_locator, target_el, "2.1", log)
+
     except Exception as e:
         logger.warning(f"본문 타이핑 실패: {e}")
         if log:
             log(f"   ⚠️ 본문 입력 실패: {e}")
+
+
+async def _set_line_spacing(page, frame_locator, editor_el, spacing: str, log=None):
+    """본문 전체 선택 후 줄간격 설정 (Smart Editor 3)"""
+    try:
+        # 전체 선택 (Ctrl+A)
+        await editor_el.press("Control+a")
+        await asyncio.sleep(0.5)
+
+        # 줄간격 버튼 찾기
+        spacing_btn_selectors = [
+            "button[data-name='lineHeight']",
+            "button[aria-label*='줄간격']",
+            "button[aria-label*='줄 간격']",
+            "button[title*='줄간격']",
+            "button[title*='줄 간격']",
+            "button[class*='line_height']",
+            "button[class*='lineHeight']",
+        ]
+        for sel in spacing_btn_selectors:
+            try:
+                btn = frame_locator.locator(sel).first
+                if await btn.count() > 0:
+                    await btn.click()
+                    await asyncio.sleep(0.8)
+
+                    # 드롭다운에서 210% 옵션 찾기
+                    option_selectors = [
+                        f"li:has-text('210')",
+                        f"button:has-text('210')",
+                        f"div[data-value='2.1']",
+                        f"li[data-value='2.1']",
+                        f"span:has-text('210%')",
+                        f"div:has-text('210')",
+                    ]
+                    for opt_sel in option_selectors:
+                        try:
+                            opt = frame_locator.locator(opt_sel).first
+                            if await opt.count() > 0:
+                                await opt.click()
+                                await asyncio.sleep(0.5)
+                                logger.info("줄간격 210% 설정 완료")
+                                if log:
+                                    log("   ✅ 줄간격 210% 설정 완료")
+                                # 선택 해제
+                                await editor_el.press("End")
+                                return
+                        except Exception:
+                            continue
+
+                    # 드롭다운 닫기
+                    await editor_el.press("Escape")
+                    break
+            except Exception:
+                continue
+
+        logger.warning("줄간격 210% 설정 실패")
+        if log:
+            log("   ⚠️ 줄간격 설정 실패 — 기본값 사용")
+        # 선택 해제
+        await editor_el.press("End")
+    except Exception as e:
+        logger.warning(f"줄간격 설정 오류: {e}")
+        if log:
+            log(f"   ⚠️ 줄간격 설정 오류: {e}")
 
 
 async def _set_font_size(frame_locator, size: str, log=None):
