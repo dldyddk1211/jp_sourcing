@@ -334,93 +334,100 @@ async def search_cafe_by_browser(page, keyword: str, nickname: str = "", days: i
         import time as _time
         ts = int(_time.time() * 1000)
         search_url = f"https://cafe.naver.com/f-e/cafes/{CAFE_ID}/menus/0?q={quote(keyword)}&t={ts}"
+        if log:
+            log(f"      🔍 검색: {keyword}")
         await page.goto(search_url, wait_until="domcontentloaded", timeout=15000)
-        await asyncio.sleep(3)
+        await asyncio.sleep(4)
 
-        # 검색 결과 로딩 대기
-        try:
-            await page.wait_for_selector("a[class*='article'], a[class*='Article'], div[class*='article'], li[class*='article']", timeout=5000)
-        except Exception:
-            # 결과 없음 = 카페에 해당 품번 글 없음
-            return None
-
-        # 검색 결과 전체 텍스트에서 파싱
-        # 방법1: 게시글 목록 항목 찾기
-        article_selectors = [
-            "li[class*='article']",
+        # 검색 결과 로딩 대기 — 여러 셀렉터 시도
+        result_loaded = False
+        load_selectors = [
+            "a[class*='article']", "a[class*='Article']",
+            "div[class*='article']", "li[class*='article']",
             "div[class*='ArticleItem']",
-            "a[class*='article']",
-            "div[class*='item']",
-            "ul[class*='list'] > li",
-            "div[class*='search'] li",
-            "div[class*='Article'] > div",
+            "div[class*='item_area']", "div[class*='list_area']",
+            "ul[class*='list'] li",
+            "div[class*='search_list'] li",
+            "div[class*='inner_list']",
         ]
-        items = []
-        for sel in article_selectors:
-            items = await page.query_selector_all(sel)
-            if len(items) >= 1:
+        for sel in load_selectors:
+            try:
+                await page.wait_for_selector(sel, timeout=2000)
+                result_loaded = True
                 break
+            except Exception:
+                continue
 
-        # 방법2: 전체 페이지 텍스트에서 닉네임+날짜 검색
-        if not items:
-            page_text = await page.inner_text("body")
-            if nickname and nickname in page_text:
-                # 날짜 패턴 매칭
-                date_match = re.search(r'(\d{4})\.(\d{2})\.(\d{2})', page_text[page_text.index(nickname):])
+        # 전체 페이지 텍스트로 폴백 파싱
+        page_text = await page.inner_text("body")
+
+        # "검색 결과가 없습니다" 류 체크
+        no_result_keywords = ["검색 결과가 없습니다", "게시글이 없습니다", "결과가 없습니다", "No results"]
+        for nk in no_result_keywords:
+            if nk in page_text:
+                return None
+
+        # 닉네임이 페이지에 있는지 전체 텍스트 확인
+        if nickname and nickname in page_text:
+            # 닉네임 주변 텍스트에서 날짜 추출
+            now = datetime.now()
+            # 닉네임이 등장하는 모든 위치 검사
+            search_text = page_text
+            start = 0
+            while True:
+                idx = search_text.find(nickname, start)
+                if idx == -1:
+                    break
+
+                # 닉네임 주변 ±200자에서 날짜 검색
+                context_start = max(0, idx - 200)
+                context_end = min(len(search_text), idx + len(nickname) + 200)
+                context = search_text[context_start:context_end]
+
+                # YYYY.MM.DD 형식
+                date_match = re.search(r'(\d{4})\.(\d{2})\.(\d{2})', context)
                 if date_match:
                     y, m, d = int(date_match.group(1)), int(date_match.group(2)), int(date_match.group(3))
-                    write_date = datetime(y, m, d)
-                    diff_days = (datetime.now() - write_date).days
-                    if diff_days <= days:
-                        return {
-                            "title": keyword,
-                            "writer": nickname,
-                            "write_date": write_date.strftime("%Y-%m-%d"),
-                        }
-            return None
-
-        now = datetime.now()
-        for item in items:
-            text = await item.inner_text()
-            if not text.strip() or len(text.strip()) < 5:
-                continue
-
-            # 닉네임 필터
-            if nickname and nickname not in text:
-                continue
-
-            # 날짜 추출 (YYYY.MM.DD 형식)
-            date_match = re.search(r'(\d{4})\.(\d{2})\.(\d{2})', text)
-            if date_match:
-                y, m, d = int(date_match.group(1)), int(date_match.group(2)), int(date_match.group(3))
-                write_date = datetime(y, m, d)
-            else:
-                # MM.DD. 형식 (올해)
-                date_match2 = re.search(r'(\d{2})\.(\d{2})\.', text)
-                if date_match2:
-                    month, day = int(date_match2.group(1)), int(date_match2.group(2))
-                    write_date = datetime(now.year, month, day)
+                    try:
+                        write_date = datetime(y, m, d)
+                    except ValueError:
+                        start = idx + 1
+                        continue
                 else:
-                    continue
+                    # MM.DD. 형식 (올해)
+                    date_match2 = re.search(r'(\d{2})\.(\d{2})\.', context)
+                    if date_match2:
+                        month, day = int(date_match2.group(1)), int(date_match2.group(2))
+                        try:
+                            write_date = datetime(now.year, month, day)
+                        except ValueError:
+                            start = idx + 1
+                            continue
+                    else:
+                        start = idx + 1
+                        continue
 
-            diff_days = (now - write_date).days
-            if diff_days > days:
-                continue
+                diff_days = (now - write_date).days
+                if 0 <= diff_days <= days:
+                    # 제목 추출 — 닉네임 위쪽 줄에서 찾기
+                    before_text = search_text[max(0, idx - 300):idx]
+                    lines = [l.strip() for l in before_text.split("\n") if l.strip() and len(l.strip()) > 3]
+                    title = lines[-1] if lines else keyword
 
-            # 제목 추출 — 첫 번째 줄 또는 링크 텍스트
-            title_el = await item.query_selector("a")
-            title = (await title_el.inner_text()).strip() if title_el else text.split("\n")[0].strip()
+                    return {
+                        "title": title[:50],
+                        "writer": nickname,
+                        "write_date": write_date.strftime("%Y-%m-%d"),
+                    }
 
-            return {
-                "title": title[:50],
-                "writer": nickname,
-                "write_date": write_date.strftime("%Y-%m-%d"),
-            }
+                start = idx + 1
 
         return None
 
     except Exception as e:
         logger.debug(f"카페 브라우저 검색 오류 ({keyword}): {e}")
+        if log:
+            log(f"      ⚠️ 검색 오류: {keyword} — {e}")
         return None
 
 
