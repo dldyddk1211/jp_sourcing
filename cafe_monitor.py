@@ -389,28 +389,39 @@ async def search_cafe_by_browser(page, keyword: str, nickname: str = "", days: i
                 context_end = min(len(search_text), idx + len(nickname) + 200)
                 context = search_text[context_start:context_end]
 
+                # 상대 날짜 ("오늘", "어제", "N분 전", "N시간 전", "방금")
+                write_date = None
+                if re.search(r'오늘|방금|분\s*전|시간\s*전', context):
+                    write_date = now
+                elif '어제' in context:
+                    write_date = now - __import__('datetime').timedelta(days=1)
+                elif re.search(r'(\d+)일\s*전', context):
+                    d_ago = int(re.search(r'(\d+)일\s*전', context).group(1))
+                    write_date = now - __import__('datetime').timedelta(days=d_ago)
+
                 # YYYY.MM.DD 형식
-                date_match = re.search(r'(\d{4})\.(\d{2})\.(\d{2})', context)
-                if date_match:
-                    y, m, d = int(date_match.group(1)), int(date_match.group(2)), int(date_match.group(3))
-                    try:
-                        write_date = datetime(y, m, d)
-                    except ValueError:
-                        start = idx + 1
-                        continue
-                else:
-                    # MM.DD. 형식 (올해)
+                if not write_date:
+                    date_match = re.search(r'(\d{4})\.(\d{2})\.(\d{2})', context)
+                    if date_match:
+                        y, m, d = int(date_match.group(1)), int(date_match.group(2)), int(date_match.group(3))
+                        try:
+                            write_date = datetime(y, m, d)
+                        except ValueError:
+                            pass
+
+                # MM.DD. 형식 (올해)
+                if not write_date:
                     date_match2 = re.search(r'(\d{2})\.(\d{2})\.', context)
                     if date_match2:
                         month, day = int(date_match2.group(1)), int(date_match2.group(2))
                         try:
                             write_date = datetime(now.year, month, day)
                         except ValueError:
-                            start = idx + 1
-                            continue
-                    else:
-                        start = idx + 1
-                        continue
+                            pass
+
+                if not write_date:
+                    start = idx + 1
+                    continue
 
                 diff_days = (now - write_date).days
                 if 0 <= diff_days <= days:
