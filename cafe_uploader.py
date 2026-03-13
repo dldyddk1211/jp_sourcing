@@ -754,17 +754,27 @@ async def type_content_to_editor_iframe(page, frame_locator, content: str, log=N
                 await target_el.press("Enter")  # 빈 줄
                 await asyncio.sleep(0.05)
 
-            # ── URL: 클릭 가능한 링크 삽입 ──
+            # ── URL: 텍스트로 먼저 입력 후 링크 삽입 시도 ──
             if stripped and url_pattern.match(stripped):
-                inserted = await _insert_link_via_editor(
-                    page, frame_locator, target_el, stripped, stripped, log
-                )
-                if not inserted:
-                    await target_el.type(stripped, delay=10)
-                    await target_el.press("Space")
-                    await asyncio.sleep(0.5)
+                # 1) URL 텍스트를 먼저 타이핑 (항상 보이도록)
+                await target_el.type(stripped, delay=10)
+                await asyncio.sleep(0.3)
+                # 2) 방금 입력한 URL 텍스트를 선택 (Shift+Home)
+                await target_el.press("End")
+                await target_el.press("Home+Shift+End", delay=50) if False else None
+                # 전체 URL 길이만큼 Shift+Left로 선택
+                for _ in range(len(stripped)):
+                    await target_el.press("Shift+ArrowLeft")
+                await asyncio.sleep(0.2)
+                # 3) 선택된 텍스트에 링크 걸기
+                linked = await _insert_link_on_selection(page, frame_locator, stripped, log)
+                if not linked:
+                    # 링크 실패해도 텍스트는 이미 입력됨
+                    await target_el.press("End")  # 커서를 끝으로
                     if log:
-                        log(f"   🔗 URL 입력 (자동 링크 감지): {stripped}")
+                        log(f"   🔗 URL 텍스트 입력 (링크 미적용): {stripped}")
+                else:
+                    await target_el.press("End")  # 커서를 끝으로
             elif stripped:
                 await target_el.type(line, delay=10)
 
@@ -844,6 +854,75 @@ async def _toggle_bold(frame_locator, editor_el, on=True):
         logger.info(f"볼드 {'ON' if on else 'OFF'}")
     except Exception as e:
         logger.warning(f"볼드 토글 실패: {e}")
+
+
+async def _insert_link_on_selection(page, frame_locator, url: str, log=None) -> bool:
+    """선택된 텍스트에 링크를 거는 함수 (툴바 링크 버튼 사용)"""
+    try:
+        link_btn_selectors = [
+            "button[data-name='link']",
+            ".se-toolbar button.se-link-toolbar-button",
+            "button[aria-label*='링크']",
+            "button[title*='링크']",
+        ]
+        for sel in link_btn_selectors:
+            try:
+                btn = frame_locator.locator(sel).first
+                if await btn.count() > 0:
+                    await btn.click()
+                    await asyncio.sleep(1.5)
+
+                    # URL 입력란 찾기
+                    url_input_selectors = [
+                        "input[placeholder*='URL']",
+                        "input[placeholder*='url']",
+                        "input[placeholder*='링크']",
+                        "input[placeholder*='주소']",
+                        ".se-popup-link input[type='text']",
+                        "input.se-popup-link-input",
+                    ]
+                    for inp_sel in url_input_selectors:
+                        try:
+                            url_input = frame_locator.locator(inp_sel).first
+                            if await url_input.count() > 0:
+                                await url_input.click()
+                                await url_input.fill("")
+                                await asyncio.sleep(0.3)
+                                await url_input.type(url, delay=5)
+                                await asyncio.sleep(0.5)
+
+                                # 확인 버튼
+                                for cfm_sel in ["button:has-text('확인')", "button:has-text('적용')", "button.se-popup-button-confirm"]:
+                                    try:
+                                        cfm = frame_locator.locator(cfm_sel).first
+                                        if await cfm.count() > 0:
+                                            await cfm.click()
+                                            await asyncio.sleep(1)
+                                            logger.info(f"링크 삽입 완료 (선택 텍스트): {url}")
+                                            if log:
+                                                log(f"   🔗 링크 삽입 완료: {url}")
+                                            return True
+                                    except Exception:
+                                        continue
+                        except Exception:
+                            continue
+
+                    # 팝업 닫기
+                    for close_sel in ["button:has-text('취소')", "button[class*='cancel']", ".se-popup-close"]:
+                        try:
+                            cb = frame_locator.locator(close_sel).first
+                            if await cb.count() > 0:
+                                await cb.click()
+                                break
+                        except Exception:
+                            continue
+                    break
+            except Exception:
+                continue
+    except Exception as e:
+        logger.warning(f"선택 텍스트 링크 삽입 실패: {e}")
+
+    return False
 
 
 async def _insert_link_via_editor(page, frame_locator, editor_el, url: str, text: str, log=None) -> bool:
