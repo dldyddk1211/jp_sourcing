@@ -384,9 +384,9 @@ async def search_cafe_by_browser(page, keyword: str, nickname: str = "", days: i
                 if idx == -1:
                     break
 
-                # 닉네임 주변 ±200자에서 날짜 검색
-                context_start = max(0, idx - 200)
-                context_end = min(len(search_text), idx + len(nickname) + 200)
+                # 닉네임 주변 ±500자에서 날짜 검색
+                context_start = max(0, idx - 500)
+                context_end = min(len(search_text), idx + len(nickname) + 500)
                 context = search_text[context_start:context_end]
 
                 # 상대 날짜 ("오늘", "어제", "N분 전", "N시간 전", "방금", "HH:MM")
