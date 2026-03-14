@@ -1036,6 +1036,11 @@
           <button class="btn b-green" id="btn-cafe-upload" onclick="uploadSelected()" style="padding:9px 18px;">
             &#x1f4e4; 선택 상품 업로드 (<span id="cafe-sel-cnt">0</span>개)
           </button>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:0.82rem;color:var(--muted);">
+            <input type="checkbox" id="cafe-shuffle-brands" checked
+              style="width:16px;height:16px;accent-color:var(--green);">
+            &#x1F500; 브랜드 랜덤
+          </label>
           <div style="display:flex;align-items:center;gap:6px;opacity:0.4;pointer-events:none;">
             <span style="font-size:0.8rem;color:var(--muted);">최대 업로드 수</span>
             <input type="number" id="cafe-max-upload" placeholder="전체" min="1" autocomplete="off" max="9999" disabled
@@ -1601,8 +1606,9 @@ async function uploadSelected() {
     body: JSON.stringify({ selected_codes: [...checkedCodes] })
   });
   const mu = document.getElementById("cafe-max-upload").value;
-  addLog(`📤 ${checkedCodes.size}개 상품 업로드 시작...`, "info");
-  await post("/run/upload", { max_upload: mu ? +mu : null });
+  const shuffle = document.getElementById("cafe-shuffle-brands").checked;
+  addLog(`📤 ${checkedCodes.size}개 상품 업로드 시작...${shuffle ? " (브랜드 랜덤)":""}`, "info");
+  await post("/run/upload", { max_upload: mu ? +mu : null, shuffle_brands: shuffle });
 }
 
 function _showUploadProgress(cur, total, detail) {

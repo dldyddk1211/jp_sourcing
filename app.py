@@ -152,7 +152,40 @@ def run_scrape(site_id="xebio", category_id="sale", keyword="", pages=""):
         status["scraping"] = False
 
 
-def run_upload(max_upload=None):
+def _shuffle_by_brand(products: list) -> list:
+    """브랜드가 연속되지 않도록 섞기 — 라운드로빈 방식"""
+    import random
+    from collections import defaultdict
+
+    brand_buckets = defaultdict(list)
+    for p in products:
+        brand = (p.get("brand_ko") or p.get("brand") or "기타").strip()
+        brand_buckets[brand].append(p)
+
+    # 각 브랜드 내부도 랜덤
+    for brand in brand_buckets:
+        random.shuffle(brand_buckets[brand])
+
+    # 브랜드 키 랜덤 순서
+    brand_keys = list(brand_buckets.keys())
+    random.shuffle(brand_keys)
+
+    # 라운드로빈으로 섞기
+    result = []
+    while brand_keys:
+        empty_brands = []
+        for brand in brand_keys:
+            if brand_buckets[brand]:
+                result.append(brand_buckets[brand].pop(0))
+            else:
+                empty_brands.append(brand)
+        for b in empty_brands:
+            brand_keys.remove(b)
+
+    return result
+
+
+def run_upload(max_upload=None, shuffle_brands=False):
     """백그라운드 스레드에서 업로드 실행 - 선택된 상품만"""
     if status["uploading"]:
         push_log("⚠️ 이미 업로드가 진행 중입니다")
@@ -168,6 +201,12 @@ def run_upload(max_upload=None):
     if not selected:
         push_log("⚠️ 선택된 상품이 없습니다. 체크박스로 상품을 선택해주세요")
         return
+
+    # 브랜드 랜덤 섞기
+    if shuffle_brands:
+        selected = _shuffle_by_brand(selected)
+        brands_order = [p.get("brand_ko") or p.get("brand", "") for p in selected[:10]]
+        push_log(f"🔀 브랜드 랜덤 적용: {' → '.join(brands_order[:5])}...")
 
     push_log(f"📋 선택된 상품 {len(selected)}개 업로드 시작")
     status["uploading"] = True
@@ -271,6 +310,10 @@ def run_scheduled_upload(slot_id: str, brand: str, quantity: int):
     if not waiting:
         push_log(f"⏰ [{slot_id}] 조건에 맞는 대기 상품이 없습니다 (브랜드: {brand})")
         return
+
+    # 브랜드 ALL이면 랜덤 섞기
+    if brand == "ALL":
+        waiting = _shuffle_by_brand(waiting)
 
     # 수량 제한
     to_upload = waiting[:quantity]
@@ -996,8 +1039,10 @@ def api_save_schedule():
 @login_required
 def manual_upload():
     """수동 업로드 실행"""
-    max_upload = request.json.get("max_upload") if request.json else None
-    thread = threading.Thread(target=run_upload, args=(max_upload,), daemon=True)
+    data = request.json or {}
+    max_upload = data.get("max_upload")
+    shuffle_brands = data.get("shuffle_brands", False)
+    thread = threading.Thread(target=run_upload, args=(max_upload, shuffle_brands), daemon=True)
     thread.start()
     return jsonify({"ok": True, "message": "업로드 시작됨"})
 
