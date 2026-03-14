@@ -1054,6 +1054,13 @@
             </select>
             <button class="btn b-gray" onclick="cafeSel(true)" style="padding:5px 10px;font-size:0.78rem;">전체선택</button>
             <button class="btn b-gray" onclick="cafeSel(false)" style="padding:5px 10px;font-size:0.78rem;">선택해제</button>
+            <select id="bulk-status-select" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.78rem;">
+              <option value="">상태 일괄 변경</option>
+              <option value="대기">대기</option>
+              <option value="완료">완료</option>
+              <option value="중복">중복</option>
+            </select>
+            <button class="btn b-yellow" onclick="bulkChangeStatus()" style="padding:5px 10px;font-size:0.78rem;">적용</button>
             <span style="font-size:0.78rem;color:var(--muted)" id="cafe-filter-result"></span>
           </div>
           <div style="overflow-x:auto;">
@@ -1348,6 +1355,27 @@ async function changeStatus(sel) {
       loadCafeProducts(cafePage);
     }
   } catch(e) { console.error(e); }
+}
+
+async function bulkChangeStatus() {
+  const newStatus = document.getElementById("bulk-status-select").value;
+  if (!newStatus) { alert("변경할 상태를 선택하세요"); return; }
+  if (checkedCodes.size === 0) { alert("상품을 선택하세요"); return; }
+  if (!confirm(`선택한 ${checkedCodes.size}개 상품을 '${newStatus}'로 변경하시겠습니까?`)) return;
+  try {
+    const res = await fetch(PREFIX + "/products/bulk-status", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({codes: [...checkedCodes], status: newStatus})
+    }).then(r => r.json());
+    if (res.ok) {
+      addLog(`✅ ${res.count}개 상품 상태 → '${newStatus}' 변경 완료`, "ok");
+      checkedCodes.clear();
+      document.getElementById("cafe-sel-cnt").textContent = "0";
+      document.getElementById("bulk-status-select").value = "";
+      loadCafeProducts(cafePage);
+    }
+  } catch(e) { addLog("❌ 일괄 변경 오류: " + e, "error"); }
 }
 
 function onCafeRowCheck(chk) {

@@ -587,6 +587,36 @@ def update_product_status():
     return jsonify({"ok": True, "product_code": product_code, "status": new_status})
 
 
+@app.route(f"{URL_PREFIX}/products/bulk-status", methods=["POST"])
+@login_required
+def bulk_update_product_status():
+    """체크된 상품의 cafe_status 일괄 변경"""
+    data = request.json or {}
+    codes = data.get("codes", [])
+    new_status = data.get("status", "").strip()
+
+    if not codes or new_status not in ("대기", "완료", "중복"):
+        return jsonify({"ok": False, "message": "잘못된 요청입니다"})
+
+    products = load_latest_products()
+    code_set = set(codes)
+    count = 0
+    for p in products:
+        if p.get("product_code") in code_set:
+            p["cafe_status"] = new_status
+            if new_status == "완료":
+                p["cafe_uploaded"] = True
+                p["cafe_uploaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            elif new_status == "대기":
+                p["cafe_uploaded"] = False
+                p.pop("cafe_uploaded_at", None)
+            count += 1
+
+    from xebio_search import save_products
+    save_products(products)
+    return jsonify({"ok": True, "count": count, "status": new_status})
+
+
 @app.route(f"{URL_PREFIX}/status")
 @login_required
 def get_status():
