@@ -254,11 +254,13 @@ async def upload_products(products: list, status_callback=None, max_upload=None)
                 try:
                     name_short = (product.get("name_ko") or product.get("name", ""))[:30]
                     log(f"📤 [{i}/{len(upload_list)}] 업로드 중: {name_short}")
-                    ok = await upload_single_product(page, product, log)
-                    if ok:
+                    result = await upload_single_product(page, product, log)
+                    if result:
                         success_count += 1
+                        post_url = result if isinstance(result, str) else ""
                         log(f"   ✅ 업로드 성공 ({success_count}개 완료)")
-                        notify_upload_success(name_short, i, len(upload_list))
+                        # 매 건마다 게시글 URL 포함 텔레그램 알림
+                        notify_upload_success(name_short, success_count, len(upload_list), post_url)
                     else:
                         log(f"   ⚠️ 업로드 실패")
                         notify_upload_error(name_short, "업로드 실패")
@@ -333,23 +335,70 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
             _log("   ❌ 에디터 로딩 시간 초과 (20초)")
             return False
 
+        # ── 에디터 본문 영역 높이 확장 ──
+        try:
+            await frame_locator.locator(".se-content, .se-component-content").first.evaluate(
+                """el => {
+                    el.style.minHeight = '800px';
+                    // 상위 컨테이너도 확장
+                    let parent = el.closest('.se-section-text, .se-module-text, .se-editor');
+                    if (parent) parent.style.minHeight = '800px';
+                }"""
+            )
+        except Exception:
+            pass
+
         # ── 게시판 선택 (드롭다운에서 게시판 선택) ──
         try:
             board_btn = frame_locator.locator(
-                "a.board_name, "
-                "button[class*='select_board'], "
-                "[class*='BoardSelectButton'], "
-                "[class*='board_select'], "
-                "a:has-text('게시판을 선택')"
+                "button:has-text('게시판을 선택해 주세요')"
             ).first
             if await board_btn.count() > 0:
                 await board_btn.click()
                 await asyncio.sleep(1)
-                menu_item = frame_locator.locator(f"text={CAFE_MENU_NAME}").first
-                if await menu_item.count() > 0:
-                    await menu_item.click()
+
+                # 드롭다운 목록 영역 찾기
+                dropdown = frame_locator.locator(
+                    "ul[role='listbox'], .select_list, [class*='selectbox'] ul, "
+                    "[class*='menu_list'], [class*='board_list']"
+                ).first
+
+                # 스크롤하면서 메뉴 항목 찾기
+                found = False
+                for scroll_try in range(10):
+                    menu_item = frame_locator.locator(
+                        f"li:has-text('{CAFE_MENU_NAME}'), "
+                        f"a:has-text('{CAFE_MENU_NAME}'), "
+                        f"button:has-text('{CAFE_MENU_NAME}'), "
+                        f"span:has-text('{CAFE_MENU_NAME}')"
+                    ).first
+                    if await menu_item.count() > 0:
+                        try:
+                            await menu_item.scroll_into_view_if_needed()
+                            await asyncio.sleep(0.3)
+                            await menu_item.click()
+                            found = True
+                            break
+                        except Exception:
+                            pass
+
+                    # 드롭다운 스크롤 다운
+                    if await dropdown.count() > 0:
+                        await dropdown.evaluate("el => el.scrollTop += 150")
+                    else:
+                        # 드롭다운을 못 찾으면 키보드로 스크롤
+                        await board_btn.press("ArrowDown")
+                        await board_btn.press("ArrowDown")
+                        await board_btn.press("ArrowDown")
+                    await asyncio.sleep(0.3)
+
+                if found:
                     await asyncio.sleep(1)
                     _log(f"   ✅ 게시판 선택: {CAFE_MENU_NAME}")
+                else:
+                    _log(f"   ⚠️ '{CAFE_MENU_NAME}' 메뉴 항목을 찾지 못했습니다")
+            else:
+                _log("   ⚠️ 게시판 선택 버튼을 찾지 못했습니다")
         except Exception as e:
             _log(f"   ⚠️ 게시판 선택 시도: {e}")
 
@@ -400,9 +449,9 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
             await upload_image_from_url_iframe(page, frame_locator, detail_images[0], _log)
             await asyncio.sleep(1)
 
-        # ── 5단계: 줄간격 200% 설정 후 본문 입력 ──
-        await set_line_spacing_200(frame_locator, _log)
-        await type_content_to_editor_iframe(page, frame_locator, content, _log)
+        # ── 5단계: 에디터 툴바 탐색 + 본문 입력 ──
+        toolbar_locator = await _find_toolbar_locator(page, frame_locator, _log)
+        await type_content_to_editor_iframe(page, frame_locator, content, _log, toolbar_locator=toolbar_locator)
 
         # ── 6단계: 나머지 상세 이미지 업로드 ──
         remaining_images = detail_images[1:] if len(detail_images) > 1 else []
@@ -464,8 +513,29 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
 
             if len(body_text) > 30:
                 _log(f"   ✅ [검증] 본문: {len(body_text)}자 입력됨")
+
+                # 구조 검증: 필수 섹션이 올바른 순서로 있는지 확인
+                required_sections = ["🔍 상품 상세 정보", "💎 핵심 구매 포인트", "👉 구매 문의"]
+                positions = []
+                for sec in required_sections:
+                    pos = body_text.find(sec)
+                    positions.append(pos)
+                    if pos == -1:
+                        _log(f"   ⚠️ [검증] 누락된 섹션: {sec}")
+
+                # 순서 확인 (찾은 것들만)
+                found_positions = [(p, s) for p, s in zip(positions, required_sections) if p >= 0]
+                if found_positions:
+                    is_ordered = all(found_positions[i][0] <= found_positions[i+1][0]
+                                   for i in range(len(found_positions)-1))
+                    if is_ordered:
+                        _log(f"   ✅ [검증] 섹션 순서 정상")
+                    else:
+                        _log(f"   ❌ [검증] 섹션 순서 이상! 등록 중단")
+                        verify_ok = False
             elif len(body_text) > 0:
                 _log(f"   ⚠️ [검증] 본문이 너무 짧습니다 ({len(body_text)}자)")
+                verify_ok = False
             else:
                 _log(f"   ❌ [검증] 본문이 비어있습니다!")
                 verify_ok = False
@@ -556,18 +626,19 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
         if verify_ok:
             _log("   ✅ 검증 완료 — 등록 진행합니다")
         else:
-            _log("   ⚠️ 일부 항목 누락 — 그래도 등록 시도합니다")
+            _log("   ❌ 검증 실패 — 등록 중단! (본문 구조 또는 내용 이상)")
+            _log("━" * 40)
+            return False
         _log("━" * 40)
 
         await asyncio.sleep(1)
 
         # ── 9단계: 등록 버튼 클릭 ──
         submit_selectors = [
-            "button.BaseButton--submit",
+            "a.BaseButton--skinGreen:has-text('등록')",
+            "a.BaseButton:has-text('등록')",
             "button:has-text('등록')",
-            "button:has-text('확인')",
-            "a.btn_upload",
-            "button[class*='submit']",
+            "a:has-text('등록')",
         ]
         for sel in submit_selectors:
             try:
@@ -575,8 +646,32 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
                 if await el.count() > 0:
                     await el.click()
                     _log(f"   ✅ 등록 버튼 클릭")
-                    await asyncio.sleep(3)
-                    return True
+
+                    # 등록 후 게시글 페이지로 이동 대기 (URL이 /articles/숫자로 변경될 때까지)
+                    post_url = ""
+                    for _ in range(15):  # 최대 15초 대기
+                        await asyncio.sleep(1)
+                        current_url = page.url
+                        if "/articles/" in current_url and "write" not in current_url:
+                            post_url = current_url
+                            break
+
+                    if not post_url:
+                        # iframe 내부 URL 확인
+                        try:
+                            for frm in page.frames:
+                                if "/articles/" in frm.url and "write" not in frm.url:
+                                    post_url = frm.url
+                                    break
+                        except Exception:
+                            pass
+
+                    if post_url:
+                        _log(f"   🔗 게시글 URL: {post_url}")
+                    else:
+                        _log(f"   ⚠️ 게시글 URL 확인 실패")
+
+                    return post_url or True
             except Exception:
                 continue
 
@@ -610,6 +705,94 @@ async def select_cafe_menu(frame):
     except Exception:
         pass
     return False
+
+
+async def _find_toolbar_locator(page, frame_locator, log=None):
+    """
+    Smart Editor 3 툴바가 어디에 있는지 탐색
+    iframe 안 또는 page 레벨에서 탐색하여 올바른 locator 반환
+    """
+    # 툴바 버튼 테스트 셀렉터 (실제 Smart Editor 3 HTML 기준)
+    test_selectors = [
+        "button[data-name='font-size']",
+        "button[data-name='bold']",
+        "button[data-name='line-height']",
+        ".se-font-size-code-toolbar-button",
+        ".se-bold-toolbar-button",
+    ]
+
+    # 1) iframe 안에서 탐색
+    for sel in test_selectors:
+        try:
+            btn = frame_locator.locator(sel).first
+            if await btn.count() > 0:
+                if log:
+                    log(f"   🔧 툴바 발견: iframe 내부 ({sel})")
+                return frame_locator
+        except Exception:
+            continue
+
+    # 2) iframe 밖 page 레벨에서 탐색
+    for sel in test_selectors:
+        try:
+            btn = page.locator(sel).first
+            if await btn.count() > 0:
+                if log:
+                    log(f"   🔧 툴바 발견: page 레벨 ({sel})")
+                return page
+        except Exception:
+            continue
+
+    # 3) 중첩 iframe 탐색 — cafe_main 안의 다른 iframe
+    try:
+        iframes = frame_locator.locator("iframe")
+        count = await iframes.count()
+        if log:
+            log(f"   🔧 cafe_main 내 iframe 수: {count}")
+        for idx in range(count):
+            inner_frame = frame_locator.frame_locator(f"iframe >> nth={idx}")
+            for sel in test_selectors:
+                try:
+                    btn = inner_frame.locator(sel).first
+                    if await btn.count() > 0:
+                        if log:
+                            log(f"   🔧 툴바 발견: 중첩 iframe #{idx} ({sel})")
+                        return inner_frame
+                except Exception:
+                    continue
+    except Exception as e:
+        if log:
+            log(f"   ⚠️ 중첩 iframe 탐색 오류: {e}")
+
+    # 4) page 레벨에서 모든 iframe 탐색
+    try:
+        page_iframes = page.locator("iframe")
+        pcount = await page_iframes.count()
+        if log:
+            log(f"   🔧 page 레벨 iframe 수: {pcount}")
+        for idx in range(pcount):
+            try:
+                pframe = page.frame_locator(f"iframe >> nth={idx}")
+                for sel in test_selectors:
+                    try:
+                        btn = pframe.locator(sel).first
+                        if await btn.count() > 0:
+                            iframe_name = await page_iframes.nth(idx).get_attribute("name") or ""
+                            iframe_id = await page_iframes.nth(idx).get_attribute("id") or ""
+                            if log:
+                                log(f"   🔧 툴바 발견: page iframe #{idx} name={iframe_name} id={iframe_id} ({sel})")
+                            return pframe
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+    except Exception as e:
+        if log:
+            log(f"   ⚠️ page iframe 탐색 오류: {e}")
+
+    if log:
+        log("   ❌ 툴바를 어디서도 찾지 못했습니다")
+    return frame_locator  # fallback
 
 
 async def set_line_spacing_200(frame_locator, log=None):
@@ -687,10 +870,11 @@ async def set_line_spacing_200(frame_locator, log=None):
             log(f"   ⚠️ 줄간격 설정 오류: {e}")
 
 
-async def type_content_to_editor_iframe(page, frame_locator, content: str, log=None):
+async def type_content_to_editor_iframe(page, frame_locator, content: str, log=None, toolbar_locator=None):
     """
     iframe 내 Smart Editor 3 본문 입력
     줄 단위로 타이핑 + Enter (사람이 직접 치는 것처럼)
+    toolbar_locator: 툴바가 있는 locator (frame_locator와 다를 수 있음)
     """
     import re
     plain = re.sub(r'<img\s+src="([^"]+)"[^>]*>', '', content)
@@ -724,68 +908,105 @@ async def type_content_to_editor_iframe(page, frame_locator, content: str, log=N
 
     await asyncio.sleep(0.5)
 
+    # 툴바 locator (frame_locator와 다를 수 있음)
+    tb = toolbar_locator if toolbar_locator else frame_locator
+
     # 패턴 정의
     url_pattern = re.compile(r'^https?://\S+$')
-    section_heading_pattern = re.compile(r'^(🔍\s*상품 상세 정보|💎\s*핵심 구매 포인트|⚠️\s*구매 전 확인 사항)$')
+    section_heading_pattern = re.compile(r'^(🔍\s*상품 상세 정보|💎\s*핵심 구매 포인트|⚠️\s*구매 전 확인 사항|👉\s*구매 문의.*진행 방법)$')
     numbered_pattern = re.compile(r'^\d+\.\s')
+
+    # 헤딩 줄 번호 기록 (나중에 서식 적용)
+    heading_line_numbers = []
 
     try:
         lines = plain.split("\n")
-        prev_was_empty = False
 
+        # ════════════════════════════════════════
+        # 1단계: 모든 텍스트를 일반 서식으로 천천히 입력
+        # ════════════════════════════════════════
+        if log:
+            log(f"   📝 본문 입력 시작 ({len(lines)}줄)...")
+
+        line_num = 0  # 에디터 내 실제 줄 번호
         for i, line in enumerate(lines):
             stripped = line.strip()
 
-            # ── 섹션 제목 (🔍/💎/⚠️): 폰트 19 + 볼드 ──
-            if stripped and section_heading_pattern.match(stripped):
-                await _set_font_size(frame_locator, "19", log)
-                await _toggle_bold(frame_locator, target_el, on=True)
-                await target_el.type(stripped, delay=10)
-                await _toggle_bold(frame_locator, target_el, on=False)
-                await _reset_font_size(frame_locator, log)
-                await target_el.press("Enter")
-                await target_el.press("Enter")  # 빈 줄
-                await asyncio.sleep(0.1)
-                prev_was_empty = True
-                continue
+            # 첫 줄 또는 섹션 제목 기록
+            is_first_line = (i == 0 and stripped)
+            is_heading = (stripped and section_heading_pattern.match(stripped))
+            if is_first_line or is_heading:
+                heading_line_numbers.append(line_num)
 
-            # ── 번호 항목 (1. 2. 3.): 앞에 빈 줄 추가 ──
-            if stripped and numbered_pattern.match(stripped) and not prev_was_empty:
-                await target_el.press("Enter")  # 빈 줄
-                await asyncio.sleep(0.05)
-
-            # ── URL: 붙여넣기로 삽입 (OG 미리보기 카드 생성) ──
+            # URL: 붙여넣기로 삽입 (OG 미리보기 카드 생성)
             if stripped and url_pattern.match(stripped):
                 try:
-                    # 클립보드에 URL 복사 후 붙여넣기 → 네이버 에디터가 OG 프리뷰 자동 생성
                     await page.evaluate(f"navigator.clipboard.writeText('{stripped}')")
-                    await asyncio.sleep(0.2)
+                    await asyncio.sleep(0.3)
                     await target_el.press("Control+v")
-                    await asyncio.sleep(3)  # OG 미리보기 로딩 대기
+                    await asyncio.sleep(4)  # OG 미리보기 로딩 대기
                     if log:
                         log(f"   🔗 URL 붙여넣기 (OG 미리보기): {stripped}")
                 except Exception:
-                    # 클립보드 실패 시 타이핑 폴백
-                    await target_el.type(stripped, delay=10)
-                    await target_el.press("Space")
+                    await target_el.type(stripped, delay=30)
                     await asyncio.sleep(2)
-                    if log:
-                        log(f"   🔗 URL 입력 (타이핑): {stripped}")
             elif stripped:
-                await target_el.type(line, delay=10)
-
-            prev_was_empty = (not stripped)
+                await target_el.type(stripped, delay=30)
+                await asyncio.sleep(0.1)
 
             if i < len(lines) - 1:
                 await target_el.press("Enter")
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.1)
 
-        logger.info(f"본문 입력 완료 (줄 단위 타이핑, {len(lines)}줄)")
+            line_num += 1
+
+        logger.info(f"본문 입력 완료 ({len(lines)}줄)")
         if log:
             log(f"   ✅ 본문 입력 완료 ({len(lines)}줄)")
 
-        # ── 전체 선택 후 줄간격 210% 적용 ──
-        await _set_line_spacing(page, frame_locator, target_el, "2.1", log)
+        await asyncio.sleep(1)
+
+        # ════════════════════════════════════════
+        # 2단계: 헤딩 줄에 서식 적용 (폰트 19 + 볼드)
+        # ════════════════════════════════════════
+        if heading_line_numbers:
+            if log:
+                log(f"   🎨 서식 적용 시작 (헤딩 {len(heading_line_numbers)}개)")
+
+            # 맨 위로 이동
+            await target_el.press("Control+Home")
+            await asyncio.sleep(0.5)
+
+            current_line = 0
+            for h_line in heading_line_numbers:
+                # 해당 줄까지 이동
+                while current_line < h_line:
+                    await target_el.press("ArrowDown")
+                    await asyncio.sleep(0.05)
+                    current_line += 1
+
+                # 줄 전체 선택 (Home → Shift+End)
+                await target_el.press("Home")
+                await asyncio.sleep(0.1)
+                await target_el.press("Shift+End")
+                await asyncio.sleep(0.5)
+
+                # 서식 적용
+                font_ok = await _set_font_size(page, "19", log)
+                await target_el.press("Control+b")
+                await asyncio.sleep(0.3)
+
+                if log:
+                    log(f"      🎨 줄 {h_line}: 폰트19={'✅' if font_ok else '❌'} + 볼드")
+
+                # 선택 해제
+                await target_el.press("End")
+                await asyncio.sleep(0.2)
+
+        # ════════════════════════════════════════
+        # 3단계: 전체 선택 후 줄간격 200% 적용
+        # ════════════════════════════════════════
+        await _set_line_spacing(page, target_el, "200", log)
 
     except Exception as e:
         logger.warning(f"본문 타이핑 실패: {e}")
@@ -793,64 +1014,64 @@ async def type_content_to_editor_iframe(page, frame_locator, content: str, log=N
             log(f"   ⚠️ 본문 입력 실패: {e}")
 
 
-async def _set_line_spacing(page, frame_locator, editor_el, spacing: str, log=None):
-    """본문 전체 선택 후 줄간격 설정 (Smart Editor 3)"""
+async def _set_line_spacing(page, editor_el, spacing_value: str, log=None):
+    """본문 전체 선택 후 줄간격 설정 — page의 모든 frame 탐색"""
     try:
         # 전체 선택 (Ctrl+A)
         await editor_el.press("Control+a")
         await asyncio.sleep(0.5)
 
-        # 줄간격 버튼 찾기
-        spacing_btn_selectors = [
-            "button[data-name='lineHeight']",
-            "button[aria-label*='줄간격']",
-            "button[aria-label*='줄 간격']",
-            "button[title*='줄간격']",
-            "button[title*='줄 간격']",
-            "button[class*='line_height']",
-            "button[class*='lineHeight']",
-        ]
-        for sel in spacing_btn_selectors:
+        # 줄간격 버튼 탐색 (모든 frame)
+        btn = None
+        for frame in page.frames:
             try:
-                btn = frame_locator.locator(sel).first
-                if await btn.count() > 0:
-                    await btn.click()
-                    await asyncio.sleep(0.8)
-
-                    # 드롭다운에서 210% 옵션 찾기
-                    option_selectors = [
-                        f"li:has-text('210')",
-                        f"button:has-text('210')",
-                        f"div[data-value='2.1']",
-                        f"li[data-value='2.1']",
-                        f"span:has-text('210%')",
-                        f"div:has-text('210')",
-                    ]
-                    for opt_sel in option_selectors:
-                        try:
-                            opt = frame_locator.locator(opt_sel).first
-                            if await opt.count() > 0:
-                                await opt.click()
-                                await asyncio.sleep(0.5)
-                                logger.info("줄간격 210% 설정 완료")
-                                if log:
-                                    log("   ✅ 줄간격 210% 설정 완료")
-                                # 선택 해제
-                                await editor_el.press("End")
-                                return
-                        except Exception:
-                            continue
-
-                    # 드롭다운 닫기
-                    await editor_el.press("Escape")
+                candidate = frame.locator("button[data-name='line-height']").first
+                if await candidate.count() > 0:
+                    btn = candidate
+                    break
+                candidate = frame.locator(".se-line-height-toolbar-button").first
+                if await candidate.count() > 0:
+                    btn = candidate
                     break
             except Exception:
                 continue
 
-        logger.warning("줄간격 210% 설정 실패")
-        if log:
-            log("   ⚠️ 줄간격 설정 실패 — 기본값 사용")
-        # 선택 해제
+        if not btn:
+            logger.warning("줄간격 버튼 못 찾음")
+            if log:
+                log("   ❌ 줄간격 버튼을 찾지 못했습니다")
+            await editor_el.press("End")
+            return
+
+        await btn.click()
+        await asyncio.sleep(0.8)
+
+        # 200% 옵션 탐색 (모든 frame)
+        opt = None
+        for frame in page.frames:
+            try:
+                candidate = frame.locator(f"button[data-value='{spacing_value}'][data-name='line-height']").first
+                if await candidate.count() > 0:
+                    opt = candidate
+                    break
+                candidate = frame.locator(f".se-toolbar-option-line-height-{spacing_value}-button").first
+                if await candidate.count() > 0:
+                    opt = candidate
+                    break
+            except Exception:
+                continue
+
+        if opt:
+            await opt.click()
+            await asyncio.sleep(0.5)
+            logger.info(f"줄간격 {spacing_value}% 설정 완료")
+            if log:
+                log(f"   ✅ 줄간격 {spacing_value}% 설정 완료")
+        else:
+            if log:
+                log(f"   ⚠️ 줄간격 {spacing_value}% 옵션 못 찾음")
+            await editor_el.press("Escape")
+
         await editor_el.press("End")
     except Exception as e:
         logger.warning(f"줄간격 설정 오류: {e}")
@@ -858,56 +1079,84 @@ async def _set_line_spacing(page, frame_locator, editor_el, spacing: str, log=No
             log(f"   ⚠️ 줄간격 설정 오류: {e}")
 
 
-async def _set_font_size(frame_locator, size: str, log=None):
-    """Smart Editor 3 폰트 크기 변경"""
+async def _set_font_size(page, size: str, log=None) -> bool:
+    """Smart Editor 3 폰트 크기 변경 — page의 모든 frame에서 프로퍼티 툴바 탐색"""
     try:
-        font_btn_selectors = [
-            "button[data-name='fontSize']",
-            "button[aria-label*='글자 크기']",
-            "button[aria-label*='글꼴 크기']",
-            "button[title*='글자 크기']",
-            "button[class*='font_size']",
-            "button[class*='fontSize']",
-        ]
-        for sel in font_btn_selectors:
+        btn = None
+        # page의 모든 frame에서 폰트 크기 버튼 탐색
+        for frame in page.frames:
             try:
-                btn = frame_locator.locator(sel).first
-                if await btn.count() > 0:
-                    await btn.click()
-                    await asyncio.sleep(0.8)
+                candidate = frame.locator("button[data-name='font-size']").first
+                if await candidate.count() > 0:
+                    try:
+                        await candidate.wait_for(state="visible", timeout=1500)
+                        btn = candidate
+                        break
+                    except Exception:
+                        pass
+            except Exception:
+                continue
 
-                    # 사이즈 옵션 선택
-                    option_selectors = [
-                        f"[data-value='{size}']",
-                        f"li:has-text('{size}')",
-                        f"button:has-text('{size}')",
-                        f"span:has-text('{size}')",
-                    ]
-                    for opt_sel in option_selectors:
+        if not btn:
+            # 클래스명으로 재탐색
+            for frame in page.frames:
+                try:
+                    candidate = frame.locator(".se-font-size-code-toolbar-button").first
+                    if await candidate.count() > 0:
                         try:
-                            opt = frame_locator.locator(opt_sel).first
-                            if await opt.count() > 0:
-                                await opt.click()
-                                await asyncio.sleep(0.3)
-                                logger.info(f"폰트 크기 {size} 설정")
-                                return
+                            await candidate.wait_for(state="visible", timeout=1000)
+                            btn = candidate
+                            break
                         except Exception:
-                            continue
+                            pass
+                except Exception:
+                    continue
 
-                    # 드롭다운 닫기
-                    await btn.click()
-                    await asyncio.sleep(0.3)
+        if not btn:
+            logger.warning("폰트 크기 버튼 못 찾음")
+            if log:
+                log("      ❌ 폰트 크기 버튼 없음")
+            return False
+
+        await btn.click()
+        await asyncio.sleep(0.8)
+
+        # 드롭다운에서 사이즈 옵션 선택 (모든 frame 탐색)
+        opt = None
+        for frame in page.frames:
+            try:
+                candidate = frame.locator(f"button[data-value='{size}'][data-name='font-size']").first
+                if await candidate.count() > 0:
+                    opt = candidate
+                    break
+                candidate = frame.locator(f"[data-value='{size}'][data-role='option']").first
+                if await candidate.count() > 0:
+                    opt = candidate
                     break
             except Exception:
                 continue
-        logger.warning(f"폰트 크기 버튼 못 찾음")
+
+        if opt:
+            await opt.click()
+            await asyncio.sleep(0.3)
+            logger.info(f"폰트 크기 {size} 설정")
+            if log:
+                log(f"      ✅ 폰트 {size} 적용 완료")
+            return True
+
+        if log:
+            log(f"      ⚠️ 폰트 {size} 옵션 못 찾음")
+        await btn.click()
+        await asyncio.sleep(0.3)
+        return False
     except Exception as e:
         logger.warning(f"폰트 크기 설정 오류: {e}")
+        return False
 
 
-async def _reset_font_size(frame_locator, log=None):
+async def _reset_font_size(page, log=None):
     """폰트 크기를 기본값(13 또는 15)으로 복원"""
-    await _set_font_size(frame_locator, "13", log)
+    return await _set_font_size(page, "13", log)
 
 
 async def _toggle_bold(frame_locator, editor_el, on=True):
@@ -1171,7 +1420,22 @@ async def upload_image_from_url_iframe(page, frame_locator, img_url: str, log=No
     with open(tmp_path, "wb") as f:
         f.write(res.content)
 
-    logger.info(f"이미지 저장: {tmp_path} ({len(res.content):,} bytes)")
+    # 이미지 리사이즈 (가로 최대 800px)
+    try:
+        from PIL import Image
+        with Image.open(tmp_path) as img:
+            if img.width > 800:
+                ratio = 800 / img.width
+                new_size = (800, int(img.height * ratio))
+                img = img.resize(new_size, Image.LANCZOS)
+                img.save(tmp_path, quality=85)
+                logger.info(f"이미지 리사이즈: → {new_size[0]}x{new_size[1]}")
+    except ImportError:
+        logger.warning("Pillow 미설치 — 이미지 리사이즈 건너뜀")
+    except Exception as e:
+        logger.warning(f"이미지 리사이즈 실패: {e}")
+
+    logger.info(f"이미지 저장: {tmp_path} ({os.path.getsize(tmp_path):,} bytes)")
 
     try:
         # ── 방법 1: iframe 내 이미지 버튼 클릭 → file_chooser ──
@@ -1319,28 +1583,54 @@ async def input_tags_iframe(frame_locator, tags: list, log=None):
         "input[id*='tag']",
     ]
 
+    tag_el = None
     for sel in tag_selectors:
         try:
             el = frame_locator.locator(sel).first
             if await el.count() > 0:
-                for tag in tags:
-                    await el.click()
-                    await asyncio.sleep(0.3)
-                    await el.type(tag, delay=30)
-                    await asyncio.sleep(0.3)
-                    # Enter로 태그 확정
-                    await el.press("Enter")
-                    await asyncio.sleep(0.5)
-                if log:
-                    log(f"   ✅ 태그 입력 완료: {' '.join('#' + t for t in tags)}")
-                return
-        except Exception as e:
-            if log:
-                log(f"   ⚠️ 태그 입력 시도 ({sel}): {e}")
+                tag_el = el
+                break
+        except Exception:
             continue
 
-    if log:
-        log("   ⚠️ 태그 입력란을 찾지 못했습니다")
+    if not tag_el:
+        if log:
+            log("   ⚠️ 태그 입력란을 찾지 못했습니다")
+        return
+
+    try:
+        entered = 0
+        for tag in tags:
+            # 매번 입력란을 다시 찾기 (Enter 후 DOM이 변경될 수 있음)
+            current_el = None
+            for sel in tag_selectors:
+                try:
+                    el = frame_locator.locator(sel).first
+                    if await el.count() > 0:
+                        current_el = el
+                        break
+                except Exception:
+                    continue
+            if not current_el:
+                current_el = tag_el
+
+            await current_el.click()
+            await asyncio.sleep(0.3)
+            # 기존 내용 지우기
+            await current_el.press("Control+a")
+            await asyncio.sleep(0.1)
+            await current_el.type(tag, delay=30)
+            await asyncio.sleep(0.5)
+            await current_el.press("Enter")
+            await asyncio.sleep(1)
+            entered += 1
+            if log:
+                log(f"   🏷️ 태그 {entered}/{len(tags)}: #{tag}")
+        if log:
+            log(f"   ✅ 태그 입력 완료: {entered}개")
+    except Exception as e:
+        if log:
+            log(f"   ⚠️ 태그 입력 실패 ({entered}/{len(tags)}): {e}")
 
 
 async def type_content_to_editor(page, content: str):

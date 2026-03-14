@@ -54,7 +54,7 @@ _claude_client = None
 
 
 def set_ai_config(provider=None, gemini_key=None, claude_key=None):
-    """대시보드에서 AI 설정 변경"""
+    """대시보드에서 AI 설정 변경 + .env 파일에 영구 저장"""
     global _gemini_client, _claude_client
     if provider is not None:
         _ai_config["provider"] = provider.lower()
@@ -65,6 +65,38 @@ def set_ai_config(provider=None, gemini_key=None, claude_key=None):
         _ai_config["claude_key"] = claude_key
         _claude_client = None
     logger.info(f"AI 설정 변경: provider={_ai_config['provider']}")
+
+    # .env 파일에 영구 저장
+    _save_ai_config_to_env()
+
+
+def _save_ai_config_to_env():
+    """현재 AI 설정을 .env 파일에 저장 (서버 재시작 시에도 유지)"""
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    env_vars = {}
+
+    # 기존 .env 읽기
+    if os.path.exists(env_path):
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    env_vars[k.strip()] = v.strip()
+
+    # AI 설정 업데이트
+    env_vars["AI_PROVIDER"] = _ai_config["provider"]
+    if _ai_config["gemini_key"]:
+        env_vars["GEMINI_API_KEY"] = _ai_config["gemini_key"]
+    if _ai_config["claude_key"]:
+        env_vars["ANTHROPIC_API_KEY"] = _ai_config["claude_key"]
+
+    # .env 파일 쓰기
+    with open(env_path, "w", encoding="utf-8") as f:
+        for k, v in env_vars.items():
+            f.write(f"{k}={v}\n")
+
+    logger.info("💾 AI 설정 .env 저장 완료")
 
 
 def get_ai_config() -> dict:
@@ -249,7 +281,11 @@ def _gemini_translate_name(text: str) -> str:
     """
     if not _has_japanese(text):
         return text
-    if _ai_config["provider"] == "none" or not _ai_config["gemini_key"]:
+
+    provider = _ai_config["provider"]
+    has_key = (provider == "gemini" and _ai_config["gemini_key"]) or \
+              (provider == "claude" and _ai_config["claude_key"])
+    if provider == "none" or not has_key:
         return text
 
     # 번역 전 일본어 단어 추출
@@ -261,17 +297,20 @@ def _gemini_translate_name(text: str) -> str:
 번역 결과만 출력하세요. 설명이나 부연은 절대 쓰지 마세요.
 
 상품명: {text}"""
-        result = _call_gemini(prompt)
+        if provider == "gemini":
+            result = _call_gemini(prompt)
+        else:
+            result = _call_claude(prompt)
         result = result.strip().split("\n")[0].strip()  # 첫 줄만
         if result and not _has_japanese(result):
-            logger.info(f"Gemini 번역: {text} → {result}")
+            logger.info(f"AI 번역: {text} → {result}")
 
             # 단어별 매핑 추출하여 사전 자동 저장
             _auto_save_translations(text, result, ja_words)
 
             return result
     except Exception as e:
-        logger.warning(f"Gemini 번역 실패: {e}")
+        logger.warning(f"AI 번역 실패: {e}")
 
     return text
 
@@ -344,7 +383,7 @@ def make_title(product: dict) -> str:
 
 
 def make_tags(product: dict) -> list:
-    """태그: #일본구매대행 #브랜드명 #품번"""
+    """태그: #일본구매대행 #브랜드명 #품번 (기본 3개)"""
     tags = ["일본구매대행"]
     brand = product.get("brand_ko", "") or product.get("brand", "")
     if brand:
@@ -353,6 +392,30 @@ def make_tags(product: dict) -> list:
     if code:
         tags.append(code)
     return tags
+
+
+def _extract_ai_tags(content: str) -> list:
+    """AI 응답 마지막에서 [추천태그] 줄을 파싱하여 태그 리스트 반환"""
+    import re
+    for line in reversed(content.strip().split("\n")):
+        line = line.strip()
+        m = re.match(r'\[추천태그\]\s*(.+)', line)
+        if m:
+            raw = m.group(1)
+            tags = [t.strip().lstrip("#") for t in raw.split(",") if t.strip()]
+            return tags[:5]  # 최대 5개
+    return []
+
+
+def _remove_tag_line(content: str) -> str:
+    """본문에서 [추천태그] 줄 제거"""
+    lines = content.strip().split("\n")
+    result = []
+    for line in lines:
+        if "[추천태그]" in line:
+            continue
+        result.append(line)
+    return "\n".join(result).strip()
 
 
 # ── 프롬프트 생성 ──────────────────────────
@@ -421,6 +484,7 @@ def _build_prompt(product: dict, price_info: dict) -> str:
 주문 가능 사이즈
 {size_text}
 
+
 🔍 상품 상세 정보
 
 (여기에 모델명, 특징, 적합 용도, 스펙을 간결한 표 형식으로 정리. 예:
@@ -434,10 +498,17 @@ def _build_prompt(product: dict, price_info: dict) -> str:
 
 💎 핵심 구매 포인트
 
-(여기에 3~4가지 셀링 포인트를 구체적으로 설명)
+(여기에 3~4가지 셀링 포인트를 짧고 핵심만 담아 작성. 예:
+✔ 극강의 쿠셔닝 — ReactX + ZoomX 이중 폼으로 부드럽고 반발력 있는 착화감
+✔ 부드러운 무게 이동 — 향상된 트랙션 패턴으로 발뒤꿈치→발가락 자연스러운 전환
+✔ 뛰어난 통기성 — 엔지니어드 메쉬 어퍼로 쾌적한 러닝
+✔ 레이스 트레이닝 최적화 — 장거리 훈련부터 대회까지 활용 가능
+이런 식으로 ✔ 키워드 — 한 줄 설명 형태로 간결하게)
 
 ⚠️ 구매 전 확인 사항
-사이즈 추천: (정사이즈 또는 반업 추천 등)
+사이즈 추천: (상품 특성에 맞게 작성. 내용이 길면 자연스럽게 줄바꿈하세요)
+(예시: 농구화 특성상 발을 안정적으로 잡아주는 핏이므로 정사이즈 주문을 권장합니다.
+발볼이 넓으신 분은 반 사이즈 업도 고려해 보세요.)
 정품 안내: 일본 공식 유통 정품이며, 미개봉 새상품으로 발송됩니다.
 해외 구매대행 상품이라 교환/반품이 어려울 수 있는 점 유의 부탁드려요!!
 
@@ -448,10 +519,13 @@ def _build_prompt(product: dict, price_info: dict) -> str:
 {NAVER_FORM_URL}
 
 위 형식에서 (🔍 상품 상세 정보)와 (💎 핵심 구매 포인트) 부분만 채워서 전체를 출력하세요.
-⚠️ 구매 전 확인 사항의 사이즈 추천도 상품에 맞게 채워주세요.
+⚠️ 구매 전 확인 사항의 사이즈 추천도 상품에 맞게 상세하게 채워주세요.
 마크다운 문법은 절대 쓰지 마세요.
 일본어는 절대 출력하지 마세요.
-공급사/매입처(Xebio, SuperSports 등) 이름은 절대 언급하지 마세요."""
+공급사/매입처(Xebio, SuperSports 등) 이름은 절대 언급하지 마세요.
+
+마지막 줄에 추천 태그 5개를 쉼표로 구분해서 작성하세요 (검색 키워드용, #은 빼고).
+형식: [추천태그] 러닝화추천,나이키러닝,데일리러닝화,조깅화,쿠셔닝러닝화"""
 
 
 # ── AI 키 검증 ────────────────────────────
@@ -514,10 +588,13 @@ def _call_claude(prompt: str) -> str:
 
 
 def _translate_description(desc: str) -> str:
-    """상품 상세 설명(일본어)을 Gemini로 한국어 번역"""
+    """상품 상세 설명(일본어)을 AI로 한국어 번역"""
     if not _has_japanese(desc):
         return desc
-    if _ai_config["provider"] == "none" or not _ai_config["gemini_key"]:
+    provider = _ai_config["provider"]
+    has_key = (provider == "gemini" and _ai_config["gemini_key"]) or \
+              (provider == "claude" and _ai_config["claude_key"])
+    if provider == "none" or not has_key:
         return desc
 
     try:
@@ -527,7 +604,7 @@ def _translate_description(desc: str) -> str:
 번역 결과만 출력하세요.
 
 {desc[:800]}"""
-        result = _call_gemini(prompt)
+        result = _call_gemini(prompt) if provider == "gemini" else _call_claude(prompt)
         result = result.strip()
         if result and not _has_japanese(result):
             logger.info(f"✅ 상세 설명 번역 완료 ({len(desc)}자 → {len(result)}자)")
@@ -542,10 +619,13 @@ def _translate_description(desc: str) -> str:
 
 
 def _retranslate_content(content: str) -> str:
-    """본문에 남은 일본어를 Gemini로 재번역"""
+    """본문에 남은 일본어를 AI로 재번역"""
     if not _has_japanese(content):
         return content
-    if _ai_config["provider"] == "none" or not _ai_config["gemini_key"]:
+    provider = _ai_config["provider"]
+    has_key = (provider == "gemini" and _ai_config["gemini_key"]) or \
+              (provider == "claude" and _ai_config["claude_key"])
+    if provider == "none" or not has_key:
         return content
 
     try:
@@ -555,7 +635,7 @@ def _retranslate_content(content: str) -> str:
 번역 결과만 출력하세요.
 
 {content}"""
-        result = _call_gemini(prompt)
+        result = _call_gemini(prompt) if provider == "gemini" else _call_claude(prompt)
         result = _clean_ai_response(result)
         if result and len(result) > len(content) * 0.5:
             # 재번역 결과에서도 일본어 단어를 사전에 저장
@@ -625,6 +705,14 @@ def generate_cafe_post(product: dict, price_info: dict) -> dict:
             logger.info(f"✅ [{code}] Claude 게시글 생성 완료 ({len(content)}자)")
 
         content = _clean_ai_response(content)
+
+        # AI 응답에서 추천 태그 추출
+        ai_tags = _extract_ai_tags(content)
+        if ai_tags:
+            tags.extend(ai_tags)
+            logger.info(f"🏷️ [{code}] 추천 태그 {len(ai_tags)}개 추가: {ai_tags}")
+            # 본문에서 태그 줄 제거
+            content = _remove_tag_line(content)
 
         # 본문에 일본어가 남아있으면 재번역 시도
         if _has_japanese(content):

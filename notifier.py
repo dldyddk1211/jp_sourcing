@@ -4,6 +4,7 @@ notifier.py
 """
 
 import logging
+import os
 import requests
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
@@ -17,11 +18,33 @@ _tg_config = {
 
 
 def set_telegram_config(bot_token: str = None, chat_id: str = None):
-    """텔레그램 설정 변경"""
+    """텔레그램 설정 변경 + .env 파일에 영구 저장"""
     if bot_token is not None:
         _tg_config["bot_token"] = bot_token.strip()
     if chat_id is not None:
         _tg_config["chat_id"] = chat_id.strip()
+    # .env 파일에 영구 저장
+    _save_to_env("TELEGRAM_BOT_TOKEN", _tg_config["bot_token"])
+    _save_to_env("TELEGRAM_CHAT_ID", _tg_config["chat_id"])
+
+
+def _save_to_env(key: str, value: str):
+    """키=값을 .env 파일에 저장 (기존 키면 업데이트, 없으면 추가)"""
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    lines = []
+    found = False
+    if os.path.exists(env_path):
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                if line.strip().startswith(f"{key}="):
+                    lines.append(f"{key}={value}\n")
+                    found = True
+                else:
+                    lines.append(line)
+    if not found:
+        lines.append(f"{key}={value}\n")
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
 
 
 def get_telegram_config() -> dict:
@@ -66,13 +89,15 @@ def send_telegram(message: str) -> bool:
         return False
 
 
-def notify_upload_success(product_name: str, idx: int, total: int):
+def notify_upload_success(product_name: str, idx: int, total: int, post_url: str = ""):
     """업로드 성공 알림"""
     msg = (
         f"✅ <b>카페 업로드 완료</b>\n"
         f"📦 {product_name}\n"
         f"📊 진행: {idx}/{total}"
     )
+    if post_url:
+        msg += f"\n🔗 {post_url}"
     send_telegram(msg)
 
 

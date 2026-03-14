@@ -34,7 +34,7 @@ def _save(history: list):
 
 
 def add_history(site_id: str, category_id: str, product_count: int,
-                uploaded_count: int = 0):
+                uploaded_count: int = 0, keyword: str = ""):
     """수집 이력 추가"""
     site = get_site(site_id)
     cat = get_category(site_id, category_id)
@@ -45,6 +45,7 @@ def add_history(site_id: str, category_id: str, product_count: int,
         "site_name": site["name"] if site else site_id,
         "category_id": category_id,
         "category_name": cat["name"] if cat else category_id,
+        "keyword": keyword or "",
         "product_count": product_count,
         "uploaded_count": uploaded_count,
         "status": "수집완료",

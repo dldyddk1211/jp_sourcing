@@ -194,23 +194,66 @@
     .spinner { display:inline-block; width:12px; height:12px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; }
     @keyframes spin { to{transform:rotate(360deg)} }
 
+    /* ── 햄버거 메뉴 버튼 (모바일) ── */
+    .hamburger {
+      display:none; position:fixed; top:10px; left:10px; z-index:200;
+      background:var(--card); border:1px solid var(--border); border-radius:8px;
+      padding:8px 10px; cursor:pointer; color:var(--text); font-size:1.4rem; line-height:1;
+    }
+    .sidebar-overlay {
+      display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:99;
+    }
+    .sidebar-overlay.show { display:block; }
+
     @media(max-width:900px) {
-      .sidebar { width:60px; }
-      .sidebar-banner .brand { font-size:0.9rem; }
-      .sidebar-banner .sub { display:none; }
-      .nav-category .cat-label, .nav-category .cat-arrow, .nav-category .coming-soon { display:none; }
-      .nav-item span:not(.nav-icon) { display:none; }
-      .nav-badge { display:none; }
-      .nav-item { padding-left:20px; }
-      .main { margin-left:60px; }
-      .stat-grid { grid-template-columns:repeat(2,1fr); }
+      .hamburger { display:block; }
+      .sidebar {
+        width:var(--sidebar-w); transform:translateX(-100%);
+        transition:transform .25s ease; box-shadow:none;
+      }
+      .sidebar.open {
+        transform:translateX(0);
+        box-shadow:4px 0 20px rgba(0,0,0,0.5);
+      }
+      .main { margin-left:0; }
+      .topbar { padding-left:52px; }
+      .content { padding:16px 12px; }
+      .stat-grid { grid-template-columns:repeat(2,1fr); gap:8px; }
+      .filter-bar { gap:6px; }
+      .search-input { width:100%; }
+      .select-bar { flex-wrap:wrap; gap:8px; font-size:0.78rem; }
+      .panel { padding:14px; }
+      .panel-title { font-size:0.85rem; }
+      .btn { padding:7px 12px; font-size:0.78rem; }
+      .btn-row { gap:6px; }
+      .log-box { height:300px; font-size:0.7rem; }
+      table { font-size:0.75rem; }
+      th,td { padding:6px 8px; }
+      .pimg { width:36px; height:36px; }
+      .rate-badge { font-size:0.75rem; padding:4px 10px; }
+      .topbar-title { font-size:0.85rem; }
+      .opts { gap:8px; }
+      .opts label { font-size:0.72rem; }
+    }
+
+    @media(max-width:480px) {
+      .stat-grid { grid-template-columns:1fr; }
+      .topbar-right { gap:8px; }
+      .rate-badge { display:none; }
+      table { font-size:0.7rem; }
+      th,td { padding:5px 6px; }
+      .pimg { width:30px; height:30px; }
     }
   </style>
 </head>
 <body>
 
+<!-- ═══════════ 햄버거 메뉴 (모바일) ═══════════ -->
+<button class="hamburger" onclick="toggleMobileMenu()">&#9776;</button>
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleMobileMenu()"></div>
+
 <!-- ═══════════ 사이드바 ═══════════ -->
-<aside class="sidebar">
+<aside class="sidebar" id="sidebar">
   <div class="sidebar-banner">
     <div class="brand">THE ONE</div>
     <div class="sub">JP Sourcing Platform</div>
@@ -435,6 +478,7 @@
                 <th style="width:130px">날짜</th>
                 <th>사이트</th>
                 <th>카테고리</th>
+                <th>키워드</th>
                 <th style="width:80px">수집</th>
                 <th style="width:80px">업로드</th>
                 <th style="width:80px">상태</th>
@@ -700,6 +744,7 @@
               <div style="display:flex;gap:8px">
                 <input id="ai-gemini-key" type="password" style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;background:var(--bg);color:var(--text);font-family:monospace" placeholder="AIzaSy...">
                 <button class="btn b-purple" onclick="saveAiKey('gemini')" style="padding:8px 16px;white-space:nowrap">저장</button>
+                <a href="https://aistudio.google.com/apikey" target="_blank" class="btn b-blue" style="padding:8px 12px;white-space:nowrap;text-decoration:none;font-size:0.8rem">🔗 키 발급</a>
               </div>
             </div>
             <div id="ai-claude-key-row">
@@ -710,6 +755,7 @@
               <div style="display:flex;gap:8px">
                 <input id="ai-claude-key" type="password" style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;background:var(--bg);color:var(--text);font-family:monospace" placeholder="sk-ant-...">
                 <button class="btn b-purple" onclick="saveAiKey('claude')" style="padding:8px 16px;white-space:nowrap">저장</button>
+                <a href="https://console.anthropic.com" target="_blank" class="btn b-blue" style="padding:8px 12px;white-space:nowrap;text-decoration:none;font-size:0.8rem">🔗 키 발급</a>
               </div>
             </div>
           </div>
@@ -983,9 +1029,9 @@
           <button class="btn b-green" id="btn-cafe-upload" onclick="uploadSelected()" style="padding:9px 18px;">
             &#x1f4e4; 선택 상품 업로드 (<span id="cafe-sel-cnt">0</span>개)
           </button>
-          <div style="display:flex;align-items:center;gap:6px;">
+          <div style="display:flex;align-items:center;gap:6px;opacity:0.4;pointer-events:none;">
             <span style="font-size:0.8rem;color:var(--muted);">최대 업로드 수</span>
-            <input type="number" id="cafe-max-upload" placeholder="전체" min="1" autocomplete="off" max="9999"
+            <input type="number" id="cafe-max-upload" placeholder="전체" min="1" autocomplete="off" max="9999" disabled
               style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:80px;font-size:0.82rem;">
           </div>
         </div>
@@ -1057,6 +1103,22 @@ let checkedCodes = new Set();   // 카페 업로드용 (product_code)
 let pageIndexMap = [];
 
 // ── 카테고리 토글 ──────────────────────────
+// ── 모바일 햄버거 메뉴 ──────────────────────
+function toggleMobileMenu() {
+  const sidebar = document.getElementById("sidebar");
+  const overlay = document.getElementById("sidebar-overlay");
+  sidebar.classList.toggle("open");
+  overlay.classList.toggle("show");
+}
+function closeMobileMenu() {
+  const sidebar = document.getElementById("sidebar");
+  const overlay = document.getElementById("sidebar-overlay");
+  if (sidebar.classList.contains("open")) {
+    sidebar.classList.remove("open");
+    overlay.classList.remove("show");
+  }
+}
+
 function toggleCategory(cat) {
   const sub = document.getElementById("sub-" + cat);
   const arrow = document.getElementById("arrow-" + cat);
@@ -1086,6 +1148,7 @@ const pageTitles = {
 };
 
 function showPage(page) {
+  closeMobileMenu();
   document.querySelectorAll(".page-section").forEach(el => el.classList.remove("active"));
   document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
   const section = document.getElementById("page-" + page);
@@ -2097,15 +2160,17 @@ async function loadScrapeHistory() {
     const history = await res.json();
     const tbody = document.getElementById("history-body");
     if (!history.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px;">이력이 없습니다</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px;">이력이 없습니다</td></tr>';
       return;
     }
     tbody.innerHTML = history.map(h => {
       const stColor = h.status === "업로드완료" ? "var(--green)" : "var(--blue)";
+      const kw = h.keyword ? `<span style="color:var(--accent);font-size:0.75rem">${h.keyword}</span>` : '<span style="color:var(--muted);font-size:0.72rem">-</span>';
       return `<tr>
         <td>${h.date}</td>
         <td>${h.site_name}</td>
         <td>${h.category_name}</td>
+        <td>${kw}</td>
         <td style="text-align:center;font-weight:600;color:var(--accent)">${h.product_count}개</td>
         <td style="text-align:center;font-weight:600;color:var(--green)">${h.uploaded_count || 0}개</td>
         <td style="text-align:center;color:${stColor};font-size:0.75rem">${h.status}</td>
