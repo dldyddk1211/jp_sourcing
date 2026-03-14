@@ -358,25 +358,58 @@ def _auto_save_translations(original: str, translated: str, ja_words: list):
 
 # ── 제목 / 태그 ────────────────────────────
 
+_TITLE_SUFFIXES = [
+    "직구로 만나보세요!",
+    "일본 직배송",
+    "한정 사이즈 안내",
+    "현지 직송 정품",
+    "재고 확인 완료!",
+    "무료배송",
+    "정품 구매 안내",
+    "지금 바로 구매 가능",
+    "사이즈 한정 수량!",
+    "일본 현지 정품",
+    "빠른 직배송",
+    "구매대행 추천",
+    "일본 한정 컬러",
+    "국내 미발매 모델",
+    "일본 정가 구매",
+    "사이즈 재고 있음",
+    "일본 직구 정품",
+    "한국 미출시 제품",
+    "일본 공식 스토어 정품",
+    "세일 가격 구매대행",
+    "일본 매장 직접 구매",
+    "정품 보장 직배송",
+]
+
+
 def make_title(product: dict) -> str:
-    """게시글 제목: 일본구매대행 브랜드명 상품명 품번"""
+    """게시글 제목: 키워드 배열 랜덤 + 자연스러운 마무리"""
     brand = product.get("brand_ko", "") or product.get("brand", "")
     name = product.get("name_ko", "") or product.get("name", "")
     code = product.get("product_code", "")
     name = _clean_name(name, code)
-    # 사전에 없는 일본어가 남아있으면 Gemini로 번역
     if _has_japanese(name):
         name = _gemini_translate_name(name)
 
-    parts = ["일본구매대행"]
-    if brand:
-        parts.append(brand)
-    if name:
-        parts.append(name)
-    if code:
-        parts.append(code)
+    # 핵심 키워드 조합 (빈 값 제외)
+    keywords = [k for k in ["일본구매대행", brand, name, code] if k]
 
-    title = " ".join(parts)
+    # 키워드 배열 랜덤 변경 (일본구매대행은 앞 2자리 내에서만 이동)
+    if len(keywords) >= 3:
+        first = keywords[0]  # 일본구매대행
+        rest = keywords[1:]
+        random.shuffle(rest)
+        insert_pos = random.choice([0, 1])
+        rest.insert(insert_pos, first)
+        keywords = rest
+
+    suffix = random.choice(_TITLE_SUFFIXES)
+    title = " ".join(keywords) + " " + suffix
+
+    # 연속 공백 정리
+    title = " ".join(title.split())
     if len(title) > 100:
         title = title[:97] + "..."
     return title
@@ -652,6 +685,40 @@ def _retranslate_content(content: str) -> str:
     return content
 
 
+def _ensure_naver_form(content: str) -> str:
+    """네이버 폼 URL이 본문에 없으면 👉 구매 문의 섹션과 함께 끝에 추가"""
+    if NAVER_FORM_URL in content:
+        return content
+
+    logger.warning("⚠️ 네이버 폼 URL 누락 — 강제 삽입")
+
+    # 👉 섹션이 있지만 URL만 빠진 경우
+    if "👉 구매 문의" in content:
+        # 👉 섹션 끝에 URL 추가
+        lines = content.split("\n")
+        result = []
+        inserted = False
+        for i, line in enumerate(lines):
+            result.append(line)
+            if "👉 구매 문의" in line and not inserted:
+                # 다음 줄에 설명 + URL 삽입
+                result.append("일본구매대행으로 구매 관심 있으신 분은 쪽지 또는 아래 네이버 폼 작성 부탁드려요!!")
+                result.append("")
+                result.append(NAVER_FORM_URL)
+                inserted = True
+        return "\n".join(result)
+
+    # 👉 섹션 자체가 없는 경우 — 전체 섹션 추가
+    content += f"""
+
+
+👉 구매 문의 & 진행 방법
+일본구매대행으로 구매 관심 있으신 분은 쪽지 또는 아래 네이버 폼 작성 부탁드려요!!
+
+{NAVER_FORM_URL}"""
+    return content
+
+
 def _clean_ai_response(content: str) -> str:
     """AI 응답에서 구분자 제거"""
     if content.startswith("---"):
@@ -720,6 +787,9 @@ def generate_cafe_post(product: dict, price_info: dict) -> dict:
             content = _retranslate_content(content)
         else:
             logger.info(f"✅ [{code}] 일본어 없음 — 번역 OK")
+
+        # 네이버 폼 URL이 누락되었으면 강제 삽입
+        content = _ensure_naver_form(content)
 
         return {"title": title, "content": content, "tags": tags}
 

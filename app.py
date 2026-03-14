@@ -29,6 +29,7 @@ from exchange import get_jpy_to_krw_rate, get_cached_rate, calc_buying_price, se
 from post_generator import get_ai_config, set_ai_config, verify_ai_key
 from site_config import get_sites_for_ui
 from scrape_history import get_history as get_scrape_history
+from cafe_schedule import load_schedule, save_schedule
 from product_db import init_db as init_product_db, get_stats as bigdata_get_stats, search_products as bigdata_search, get_brands as bigdata_get_brands, delete_all as bigdata_delete_all, delete_by_site as bigdata_delete_site, get_total_count as bigdata_total, export_all as bigdata_export
 from cafe_monitor import start_monitor, stop_monitor, is_monitoring, batch_check_cafe_duplicates
 from telegram_bot import start_bot, stop_bot, is_bot_running
@@ -247,19 +248,82 @@ def run_auto_pipeline():
         run_upload()
 
 
+def run_scheduled_upload(slot_id: str, brand: str, quantity: int):
+    """스케줄 슬롯에 의한 자동 카페 업로드"""
+    if status["uploading"]:
+        push_log(f"⚠️ [{slot_id}] 이미 업로드가 진행 중이라 스킵합니다")
+        return
+
+    products = load_latest_products()
+    if not products:
+        push_log(f"⏰ [{slot_id}] 업로드할 상품이 없습니다")
+        return
+
+    # 대기 상태만 필터
+    waiting = [p for p in products if (p.get("cafe_status") or "대기") == "대기"]
+
+    # 브랜드 필터
+    if brand and brand != "ALL":
+        waiting = [p for p in waiting
+                   if (p.get("brand_ko") or "").strip() == brand
+                   or (p.get("brand") or "").strip() == brand]
+
+    if not waiting:
+        push_log(f"⏰ [{slot_id}] 조건에 맞는 대기 상품이 없습니다 (브랜드: {brand})")
+        return
+
+    # 수량 제한
+    to_upload = waiting[:quantity]
+    push_log(f"⏰ [{slot_id}] 자동 업로드 시작 — {brand} {len(to_upload)}개")
+
+    status["uploading"] = True
+    try:
+        count = asyncio.run(upload_products(
+            products=to_upload,
+            status_callback=push_log,
+            max_upload=quantity
+        ))
+        status["uploaded_count"] = count
+        status["last_upload"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _save_upload_history(to_upload[:count])
+        _mark_uploaded_products(to_upload[:count])
+        push_log(f"⏰ [{slot_id}] 자동 업로드 완료: {count}개 성공")
+    except Exception as e:
+        push_log(f"❌ [{slot_id}] 자동 업로드 오류: {e}")
+    finally:
+        status["uploading"] = False
+
+
 # =============================================
 # 자동 스케줄러 설정
 # =============================================
 
 scheduler = BackgroundScheduler()
-scheduler.add_job(
-    func=run_auto_pipeline,
-    trigger="cron",
-    hour=AUTO_SCHEDULE_HOUR,
-    minute=AUTO_SCHEDULE_MINUTE,
-    id="auto_pipeline",
-    name=f"매일 {AUTO_SCHEDULE_HOUR:02d}:{AUTO_SCHEDULE_MINUTE:02d} 자동 실행"
-)
+
+
+def _register_schedule_jobs():
+    """스케줄 설정 파일을 읽어 APScheduler 잡 등록/갱신"""
+    slots = load_schedule()
+    for slot in slots:
+        job_id = f"cafe_schedule_{slot['id']}"
+        # 기존 잡 제거
+        if scheduler.get_job(job_id):
+            scheduler.remove_job(job_id)
+        if slot.get("enabled"):
+            scheduler.add_job(
+                func=run_scheduled_upload,
+                trigger="cron",
+                hour=slot["hour"],
+                minute=slot["minute"],
+                id=job_id,
+                name=f"카페 자동업로드 [{slot['label']}] {slot['hour']:02d}:{slot['minute']:02d}",
+                args=[slot["id"], slot.get("brand", "ALL"), slot.get("quantity", 5)],
+                replace_existing=True,
+            )
+            logger.info(f"📅 스케줄 등록: {slot['label']} {slot['hour']:02d}:{slot['minute']:02d} (브랜드={slot.get('brand','ALL')}, 수량={slot.get('quantity',5)})")
+
+
+_register_schedule_jobs()
 scheduler.start()
 set_app_status(status)  # xebio_search에 status 딕셔너리 주입
 
@@ -892,6 +956,40 @@ def api_monitor_stop():
     stop_monitor()
     stop_bot()
     return jsonify({"ok": True, "message": "모니터 & 봇 종료"})
+
+
+# ── 카페 업로드 스케줄 API ────────────────────
+
+@app.route(f"{URL_PREFIX}/cafe-schedule", methods=["GET"])
+@login_required
+def api_get_schedule():
+    """스케줄 설정 조회"""
+    slots = load_schedule()
+    # 현재 등록된 잡 상태도 포함
+    for slot in slots:
+        job_id = f"cafe_schedule_{slot['id']}"
+        job = scheduler.get_job(job_id)
+        slot["registered"] = job is not None
+        if job and job.next_run_time:
+            slot["next_run"] = job.next_run_time.strftime("%Y-%m-%d %H:%M")
+        else:
+            slot["next_run"] = None
+    return jsonify({"ok": True, "slots": slots})
+
+
+@app.route(f"{URL_PREFIX}/cafe-schedule", methods=["POST"])
+@login_required
+def api_save_schedule():
+    """스케줄 설정 저장 + 잡 재등록"""
+    data = request.json or {}
+    slots = data.get("slots", [])
+    if not isinstance(slots, list) or len(slots) != 4:
+        return jsonify({"ok": False, "error": "4개 슬롯 필요"}), 400
+
+    save_schedule(slots)
+    _register_schedule_jobs()
+    push_log("📅 카페 업로드 스케줄 설정이 저장되었습니다")
+    return jsonify({"ok": True})
 
 
 @app.route(f"{URL_PREFIX}/run/upload", methods=["POST"])

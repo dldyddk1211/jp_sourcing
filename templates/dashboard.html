@@ -284,6 +284,10 @@
         <span class="nav-icon">&#x2615;</span>
         <span>네이버카페 업로드</span>
       </div>
+      <div class="nav-item" data-page="cafe-schedule" onclick="showPage('cafe-schedule')">
+        <span class="nav-icon">&#x23F0;</span>
+        <span>자동 스케줄</span>
+      </div>
       <div class="nav-item" data-page="logs" onclick="showPage('logs')">
         <span class="nav-icon">&#x1f4cb;</span>
         <span>&#xc2e4;&#xc2dc;&#xac04; &#xb85c;&#xadf8;</span>
@@ -1085,6 +1089,49 @@
           <div id="cafe-pager" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:10px;"></div>
         </div>
       </div>
+
+      <!-- 카페 업로드 로그 -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>&#x1f4cb; 최근 로그</span>
+          <button onclick="showPage('logs')" class="btn b-gray" style="padding:4px 10px;font-size:0.75rem">전체 보기</button>
+        </div>
+        <div class="log-box log-mirror" style="height:250px">
+          <div class="log-line info">[시스템] 대시보드 연결됨.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 6-1. 자동 스케줄 설정 ═══ -->
+    <div class="page-section" id="page-cafe-schedule">
+      <div class="panel">
+        <div class="panel-title">
+          <span>&#x23F0; 카페 업로드 자동 스케줄</span>
+        </div>
+        <p style="font-size:0.8rem;color:var(--muted);margin-bottom:18px;line-height:1.6;">
+          설정한 시간에 자동으로 대기 상품을 네이버 카페에 업로드합니다.<br>
+          브랜드별로 수량을 지정하여 시간대별 자동 업로드가 가능합니다.
+        </p>
+
+        <div id="schedule-slots" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;">
+          <!-- 슬롯 4개가 JS로 렌더링됨 -->
+        </div>
+
+        <div style="margin-top:20px;display:flex;gap:10px;align-items:center;">
+          <button class="btn b-green" onclick="saveSchedule()" style="padding:10px 24px;">
+            &#x1f4be; 스케줄 저장
+          </button>
+          <span id="schedule-save-msg" style="font-size:0.8rem;color:var(--green);display:none;">저장되었습니다!</span>
+        </div>
+
+        <!-- 현재 등록된 잡 목록 -->
+        <div style="margin-top:24px;padding:16px;background:#0d0d0a;border:1px solid var(--border);border-radius:10px;">
+          <div style="font-size:0.85rem;font-weight:600;margin-bottom:10px;">&#x1f4cb; 등록된 스케줄 현황</div>
+          <div id="schedule-status-list" style="font-size:0.8rem;color:var(--muted);line-height:1.8;">
+            로딩 중...
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ═══ 7. 실시간 로그 ═══ -->
@@ -1155,6 +1202,7 @@ const pageTitles = {
   "telegram": "Setting \u203A \uD83D\uDCEC \uD154\uB808\uADF8\uB7A8 \uC54C\uB9BC",
   "bigdata": "Setting \u203A \uD83D\uDCBE \uBE45\uB370\uC774\uD130 \uAD00\uB9AC",
   "cafe-upload": "Sport \u203A \u2615 \uB124\uC774\uBC84\uCE74\uD398 \uC5C5\uB85C\uB4DC",
+  "cafe-schedule": "Sport \u203A \u23F0 \uC790\uB3D9 \uC2A4\uCF00\uC904",
 };
 
 function showPage(page) {
@@ -1178,6 +1226,7 @@ function showPage(page) {
     checkNaverStatus();
     document.getElementById("cafe-sel-cnt").textContent = checkedCodes.size;
   }
+  if (page === "cafe-schedule") loadSchedule();
 }
 
 // ── SSE 실시간 로그 ──────────────────────────
@@ -1201,6 +1250,8 @@ es.onmessage = e => {
   });
   // 업로드 체크 진행률 업데이트
   if (_uploadCheckActive) _updateCheckProgress(msg);
+  // 카페 업로드 진행률 업데이트
+  if (_cafeUploadActive) _updateUploadProgress(msg);
 };
 function clearLog() {
   document.querySelectorAll(".log-box").forEach(box => { box.innerHTML = ""; });
@@ -1514,6 +1565,10 @@ async function stopUploadCheck() {
   } catch(e) { console.error(e); }
 }
 
+let _cafeUploadActive = false;
+let _cafeUploadTotal = 0;
+let _cafeUploadStartTime = 0;
+
 async function uploadSelected() {
   if (checkedCodes.size === 0) {
     addLog("\u26A0\uFE0F \uC120\uD0DD\uB41C \uC0C1\uD488\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uCCB4\uD06C\uBC15\uC2A4\uB85C \uC0C1\uD488\uC744 \uC120\uD0DD\uD574\uC8FC\uC138\uC694", "warn");
@@ -1533,6 +1588,14 @@ async function uploadSelected() {
     addLog("⚠️ AI 키 검증 실패 — 업로드를 계속합니다", "warn");
   }
 
+  _cafeUploadTotal = checkedCodes.size;
+  _cafeUploadStartTime = Date.now();
+  _cafeUploadActive = true;
+  _showUploadProgress(0, _cafeUploadTotal, "업로드 준비 중...");
+
+  const uploadBtn = document.getElementById("btn-cafe-upload");
+  if (uploadBtn) { uploadBtn.disabled = true; uploadBtn.innerHTML = "📤 업로드 중... <span class='spinner'></span>"; }
+
   await fetch(PREFIX + "/products/update", {
     method: "POST", headers: {"Content-Type":"application/json"},
     body: JSON.stringify({ selected_codes: [...checkedCodes] })
@@ -1540,6 +1603,108 @@ async function uploadSelected() {
   const mu = document.getElementById("cafe-max-upload").value;
   addLog(`📤 ${checkedCodes.size}개 상품 업로드 시작...`, "info");
   await post("/run/upload", { max_upload: mu ? +mu : null });
+}
+
+function _showUploadProgress(cur, total, detail) {
+  let div = document.getElementById("cafe-upload-progress");
+  if (!div) {
+    div = document.createElement("div");
+    div.id = "cafe-upload-progress";
+    div.style.cssText = "margin-bottom:12px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-size:0.82rem;";
+    const btnRow = document.getElementById("btn-cafe-upload")?.parentElement;
+    if (btnRow) btnRow.after(div);
+  }
+  const pct = total > 0 ? Math.round(cur / total * 100) : 0;
+
+  // 남은 시간 계산
+  let etaText = "";
+  if (cur > 0 && cur < total) {
+    const elapsed = (Date.now() - _cafeUploadStartTime) / 1000;
+    const perItem = elapsed / cur;
+    const remaining = perItem * (total - cur);
+    if (remaining > 3600) {
+      etaText = `약 ${Math.round(remaining/3600)}시간 ${Math.round((remaining%3600)/60)}분 남음`;
+    } else if (remaining > 60) {
+      etaText = `약 ${Math.round(remaining/60)}분 남음`;
+    } else {
+      etaText = `약 ${Math.round(remaining)}초 남음`;
+    }
+  }
+
+  div.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <span style="display:flex;align-items:center;gap:8px;">
+      <span class="spinner"></span>
+      <span style="color:var(--green);font-weight:600;">업로드 ${cur}/${total} (${pct}%)</span>
+    </span>
+    <span style="font-size:0.75rem;color:var(--muted)">${etaText}</span>
+  </div>
+  <div style="background:#1a1a1a;border-radius:4px;height:8px;overflow:hidden;">
+    <div style="background:linear-gradient(90deg,var(--green),var(--accent));height:100%;width:${pct}%;transition:width 0.5s;border-radius:4px;"></div>
+  </div>
+  <div style="margin-top:6px;font-size:0.75rem;color:var(--muted);">${detail}</div>`;
+  div.style.display = "block";
+}
+
+function _updateUploadProgress(msg) {
+  if (!_cafeUploadActive) return;
+
+  // 📤 [1/5] 업로드 중: 상품명
+  const mUpload = msg.match(/📤\s*\[(\d+)\/(\d+)\]\s*업로드 중:\s*(.+)/);
+  if (mUpload) {
+    const cur = parseInt(mUpload[1]) - 1;  // 시작 중이므로 -1
+    _cafeUploadTotal = parseInt(mUpload[2]);
+    _showUploadProgress(cur, _cafeUploadTotal, `📤 ${mUpload[3]} 업로드 중...`);
+    return;
+  }
+
+  // ✅ 업로드 성공 (N개 완료)
+  const mSuccess = msg.match(/✅\s*업로드 성공\s*\((\d+)개 완료\)/);
+  if (mSuccess) {
+    const cur = parseInt(mSuccess[1]);
+    _showUploadProgress(cur, _cafeUploadTotal, `✅ ${cur}개 완료`);
+    return;
+  }
+
+  // ⏳ 다음 게시글까지 N분 대기
+  const mWait = msg.match(/⏳\s*다음 게시글까지\s*(\d+)분 대기/);
+  if (mWait) {
+    const mins = parseInt(mWait[1]);
+    const detail = document.getElementById("cafe-upload-progress");
+    if (detail) {
+      const lastLine = detail.querySelector("div:last-child");
+      if (lastLine) lastLine.textContent = `⏳ 다음 게시글까지 ${mins}분 대기 중...`;
+    }
+    return;
+  }
+
+  // 🎉 업로드 완료
+  if (msg.includes("업로드 완료") && msg.includes("🎉")) {
+    _finishCafeUpload();
+  }
+
+  // ❌ 오류
+  if (msg.includes("업로드 오류") || msg.includes("업로드 실패")) {
+    const detail = document.getElementById("cafe-upload-progress");
+    if (detail) {
+      const lastLine = detail.querySelector("div:last-child");
+      if (lastLine) lastLine.textContent = `⚠️ ${msg}`;
+    }
+  }
+}
+
+function _finishCafeUpload() {
+  _cafeUploadActive = false;
+  const div = document.getElementById("cafe-upload-progress");
+  if (div) {
+    div.innerHTML = `<div style="color:var(--green);font-weight:600;">✅ 업로드 완료!</div>`;
+    setTimeout(() => { div.style.display = "none"; }, 5000);
+  }
+  const uploadBtn = document.getElementById("btn-cafe-upload");
+  if (uploadBtn) {
+    uploadBtn.disabled = false;
+    uploadBtn.innerHTML = `📤 선택 상품 업로드 (<span id="cafe-sel-cnt">${checkedCodes.size}</span>개)`;
+  }
+  loadCafeProducts(cafePage);
 }
 
 // ── 네이버 로그인 (쿠키 기반) ─────────────
@@ -2421,6 +2586,131 @@ function downloadBigdataExcel() {
 document.getElementById("bd-search")?.addEventListener("keydown", e => {
   if (e.key === "Enter") loadBigdataProducts(1);
 });
+
+// ── 카페 자동 스케줄 ─────────────────────────
+let _scheduleSlots = [];
+
+async function loadSchedule() {
+  try {
+    const r = await fetch(PREFIX + "/cafe-schedule");
+    const d = await r.json();
+    if (!d.ok) return;
+    _scheduleSlots = d.slots;
+    renderScheduleSlots();
+  } catch(e) { console.error("스케줄 로드 실패:", e); }
+}
+
+function renderScheduleSlots() {
+  const container = document.getElementById("schedule-slots");
+  if (!container) return;
+
+  // 브랜드 목록 가져오기
+  fetch(PREFIX + "/products/brands").then(r => r.json()).then(bd => {
+    const brands = bd.brands || [];
+    container.innerHTML = _scheduleSlots.map((slot, i) => {
+      const brandOpts = brands.map(b =>
+        `<option value="${b}" ${slot.brand === b ? "selected" : ""}>${b}</option>`
+      ).join("");
+
+      const colorMap = { morning: "#4CAF50", afternoon: "#2196F3", evening: "#FF9800", night: "#9C27B0" };
+      const iconMap  = { morning: "&#x1F305;", afternoon: "&#x2600;&#xFE0F;", evening: "&#x1F307;", night: "&#x1F319;" };
+      const color = colorMap[slot.id] || "#666";
+      const icon  = iconMap[slot.id]  || "&#x23F0;";
+
+      return `
+        <div style="background:#0d0d0a;border:1px solid ${slot.enabled ? color : 'var(--border)'};border-radius:12px;padding:18px;transition:border-color 0.3s;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:1.3rem;">${icon}</span>
+              <span style="font-weight:600;font-size:0.95rem;">${slot.label}</span>
+            </div>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+              <input type="checkbox" id="sched-en-${i}" ${slot.enabled ? "checked" : ""}
+                onchange="_scheduleSlots[${i}].enabled=this.checked; renderScheduleSlots();"
+                style="width:18px;height:18px;accent-color:${color};">
+              <span style="font-size:0.8rem;color:${slot.enabled ? color : 'var(--muted)'};">${slot.enabled ? "활성" : "비활성"}</span>
+            </label>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div>
+              <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">시간</label>
+              <div style="display:flex;gap:4px;">
+                <select id="sched-hour-${i}" onchange="_scheduleSlots[${i}].hour=parseInt(this.value)"
+                  style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:0.82rem;flex:1;">
+                  ${Array.from({length:24}, (_,h) => `<option value="${h}" ${slot.hour===h?"selected":""}>${String(h).padStart(2,"0")}시</option>`).join("")}
+                </select>
+                <select id="sched-min-${i}" onchange="_scheduleSlots[${i}].minute=parseInt(this.value)"
+                  style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:0.82rem;width:70px;">
+                  ${[0,10,15,20,30,40,45,50].map(m => `<option value="${m}" ${slot.minute===m?"selected":""}>${String(m).padStart(2,"0")}분</option>`).join("")}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">수량</label>
+              <input type="number" id="sched-qty-${i}" value="${slot.quantity}" min="1" max="50"
+                onchange="_scheduleSlots[${i}].quantity=parseInt(this.value)||5"
+                style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;width:100%;">
+            </div>
+          </div>
+          <div style="margin-top:10px;">
+            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">브랜드</label>
+            <select id="sched-brand-${i}" onchange="_scheduleSlots[${i}].brand=this.value"
+              style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;width:100%;">
+              <option value="ALL" ${slot.brand==="ALL"?"selected":""}>전체 브랜드</option>
+              ${brandOpts}
+            </select>
+          </div>
+          ${slot.next_run ? `<div style="margin-top:10px;font-size:0.72rem;color:${color};">&#x25B6; 다음 실행: ${slot.next_run}</div>` : ""}
+        </div>`;
+    }).join("");
+  });
+
+  // 상태 목록 업데이트
+  const statusEl = document.getElementById("schedule-status-list");
+  if (statusEl) {
+    const active = _scheduleSlots.filter(s => s.enabled);
+    if (active.length === 0) {
+      statusEl.innerHTML = "활성화된 스케줄이 없습니다. 위에서 슬롯을 활성화하세요.";
+    } else {
+      statusEl.innerHTML = active.map(s => {
+        const next = s.next_run ? ` — 다음 실행: ${s.next_run}` : "";
+        return `&#x2705; <b>${s.label}</b> ${String(s.hour).padStart(2,"0")}:${String(s.minute).padStart(2,"0")} | 브랜드: ${s.brand} | 수량: ${s.quantity}개${next}`;
+      }).join("<br>");
+    }
+  }
+}
+
+async function saveSchedule() {
+  // UI에서 최신 값 수집
+  _scheduleSlots.forEach((slot, i) => {
+    const hourEl = document.getElementById(`sched-hour-${i}`);
+    const minEl  = document.getElementById(`sched-min-${i}`);
+    const qtyEl  = document.getElementById(`sched-qty-${i}`);
+    const brandEl = document.getElementById(`sched-brand-${i}`);
+    const enEl   = document.getElementById(`sched-en-${i}`);
+    if (hourEl)  slot.hour    = parseInt(hourEl.value);
+    if (minEl)   slot.minute  = parseInt(minEl.value);
+    if (qtyEl)   slot.quantity = parseInt(qtyEl.value) || 5;
+    if (brandEl) slot.brand   = brandEl.value;
+    if (enEl)    slot.enabled = enEl.checked;
+  });
+
+  try {
+    const r = await fetch(PREFIX + "/cafe-schedule", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ slots: _scheduleSlots })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      const msg = document.getElementById("schedule-save-msg");
+      msg.style.display = "inline";
+      setTimeout(() => msg.style.display = "none", 3000);
+      // 재로드해서 next_run 등 갱신
+      loadSchedule();
+    }
+  } catch(e) { alert("저장 실패: " + e); }
+}
 
 // ── 초기화 ───────────────────────────────────
 refreshStatus();

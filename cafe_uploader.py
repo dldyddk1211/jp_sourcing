@@ -321,8 +321,8 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
         # ── 1단계: 글쓰기 페이지로 직접 이동 ──
         write_url = f"https://cafe.naver.com/f-e/cafes/{CAFE_ID}/articles/write?menuId={CAFE_MENU_ID}"
         _log(f"   🌐 글쓰기 페이지 이동: {write_url}")
-        await page.goto(write_url, wait_until="domcontentloaded", timeout=20000)
-        await asyncio.sleep(2)
+        await page.goto(write_url, wait_until="domcontentloaded", timeout=30000)
+        await asyncio.sleep(3)
 
         # 로그인 페이지로 리다이렉트 됐는지 확인
         if "login" in page.url or "nidlogin" in page.url:
@@ -337,10 +337,10 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
         try:
             await frame_locator.locator(
                 "textarea.textarea_input, textarea[placeholder*='제목']"
-            ).first.wait_for(timeout=20000)
+            ).first.wait_for(timeout=30000)
             _log("   ✅ 에디터 로딩 완료 (iframe#cafe_main)")
         except PlaywrightTimeout:
-            _log("   ❌ 에디터 로딩 시간 초과 (20초)")
+            _log("   ❌ 에디터 로딩 시간 초과 (30초)")
             return False
 
         # ── 에디터 본문 영역 높이 확장 ──
@@ -541,6 +541,12 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
                     else:
                         _log(f"   ❌ [검증] 섹션 순서 이상! 등록 중단")
                         verify_ok = False
+
+                # 네이버 폼 URL 존재 확인
+                if "naver.me" in body_text or "네이버 폼" in body_text:
+                    _log(f"   ✅ [검증] 네이버 폼 링크 확인됨")
+                else:
+                    _log(f"   ⚠️ [검증] 네이버 폼 링크가 본문에 없을 수 있음 (OG 미리보기로 삽입된 경우 정상)")
             elif len(body_text) > 0:
                 _log(f"   ⚠️ [검증] 본문이 너무 짧습니다 ({len(body_text)}자)")
                 verify_ok = False
@@ -950,14 +956,14 @@ async def type_content_to_editor_iframe(page, frame_locator, content: str, log=N
             if stripped and url_pattern.match(stripped):
                 try:
                     await page.evaluate(f"navigator.clipboard.writeText('{stripped}')")
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(0.5)
                     await target_el.press("Control+v")
-                    await asyncio.sleep(4)  # OG 미리보기 로딩 대기
+                    await asyncio.sleep(6)  # OG 미리보기 로딩 대기 (넉넉히)
                     if log:
                         log(f"   🔗 URL 붙여넣기 (OG 미리보기): {stripped}")
                 except Exception:
                     await target_el.type(stripped, delay=30)
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(3)
             elif stripped:
                 await target_el.type(stripped, delay=30)
                 await asyncio.sleep(0.1)
@@ -972,7 +978,7 @@ async def type_content_to_editor_iframe(page, frame_locator, content: str, log=N
         if log:
             log(f"   ✅ 본문 입력 완료 ({len(lines)}줄)")
 
-        await asyncio.sleep(1)
+        await asyncio.sleep(2)  # 에디터 렌더링 안정화 대기
 
         # ════════════════════════════════════════
         # 2단계: 헤딩 줄에 서식 적용 (폰트 19 + 볼드)
