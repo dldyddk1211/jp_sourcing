@@ -666,8 +666,18 @@ def download_excel():
 @app.route(f"{URL_PREFIX}/products/brands")
 @login_required
 def get_brands():
-    """수집된 상품의 브랜드 목록 반환 (한국어 번역 우선)"""
+    """수집된 상품의 브랜드 목록 반환 (한국어 번역 우선, DB 미업로드 상품 포함)"""
     products = load_latest_products()
+
+    # DB 미업로드 상품 병합
+    from product_db import get_unuploaded_products
+    db_products = get_unuploaded_products()
+    existing_codes = {p.get("product_code", "") for p in products if p.get("product_code")}
+    for dp in db_products:
+        if dp.get("product_code") and dp["product_code"] not in existing_codes:
+            existing_codes.add(dp["product_code"])
+            products.append(dp)
+
     brand_map = {}  # 원문 → 한국어 매핑
     brand_counts = {}
 

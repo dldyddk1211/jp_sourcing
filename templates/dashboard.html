@@ -1108,6 +1108,7 @@
             <button class="btn b-yellow" onclick="bulkChangeStatus()" style="padding:5px 10px;font-size:0.78rem;">적용</button>
             <span style="font-size:0.78rem;color:var(--muted)" id="cafe-filter-result"></span>
           </div>
+          <div id="cafe-product-summary" style="display:none;margin-bottom:10px;padding:10px 14px;background:var(--card);border:1px solid var(--border);border-radius:8px;font-size:0.82rem;"></div>
           <div style="overflow-x:auto;">
             <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
               <thead>
@@ -1398,12 +1399,27 @@ async function loadCafeProducts(page = 1) {
     const url = `${PREFIX}/products?page=${page}&per_page=${PER}&brand=${encodeURIComponent(brand)}&search=${encodeURIComponent(search)}&status=${encodeURIComponent(statusFilter)}`;
     const d = await fetch(url).then(r => r.json());
     const tb = document.getElementById("cafe-tbody");
+    const cafeSummary = document.getElementById("cafe-product-summary");
     if (!d.products || d.products.length === 0) {
       tb.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px">상품이 없습니다.</td></tr>`;
       document.getElementById("cafe-filter-result").textContent = "0개";
+      cafeSummary.style.display = "none";
       return;
     }
     document.getElementById("cafe-filter-result").textContent = `총 ${d.total.toLocaleString()}개`;
+
+    // 카페 상품 요약 (총 개수 + 브랜드별)
+    const cbc = d.brand_counts || {};
+    const cbEntries = Object.entries(cbc).sort((a,b) => b[1] - a[1]);
+    if (cbEntries.length > 0) {
+      const cbTags = cbEntries.map(([b,c]) =>
+        `<span style="display:inline-block;margin:2px 4px;padding:3px 10px;background:var(--accent)18;color:var(--accent);border:1px solid var(--accent)44;border-radius:12px;font-size:0.76rem">${b} <b>${c}</b></span>`
+      ).join("");
+      cafeSummary.innerHTML = `<span style="font-weight:600;color:var(--text)">전체 ${(d.total_all||d.total).toLocaleString()}개</span> · <span style="color:var(--muted)">브랜드 ${cbEntries.length}종</span><div style="margin-top:6px">${cbTags}</div>`;
+      cafeSummary.style.display = "block";
+    } else {
+      cafeSummary.style.display = "none";
+    }
     tb.innerHTML = d.products.map((p, i) => {
       const code = p.product_code || "";
       const isChecked = checkedCodes.has(code);
