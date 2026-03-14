@@ -50,6 +50,8 @@ def init_db():
                 original_price INTEGER DEFAULT 0,
                 discount_rate INTEGER DEFAULT 0,
                 in_stock INTEGER DEFAULT 1,
+                cafe_status TEXT DEFAULT '',
+                cafe_uploaded_at TEXT DEFAULT '',
                 scraped_at TEXT DEFAULT '',
                 created_at TEXT DEFAULT (datetime('now','localtime')),
                 UNIQUE(site_id, product_code, price_jpy)
@@ -61,6 +63,19 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_code ON products(product_code);
         """)
         conn.commit()
+
+        # 기존 DB에 새 컬럼 추가 (마이그레이션)
+        try:
+            conn.execute("ALTER TABLE products ADD COLUMN cafe_status TEXT DEFAULT ''")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # 이미 존재
+        try:
+            conn.execute("ALTER TABLE products ADD COLUMN cafe_uploaded_at TEXT DEFAULT ''")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
         logger.info(f"빅데이터 DB 초기화 완료: {_DB_PATH}")
     finally:
         conn.close()
@@ -154,6 +169,72 @@ def insert_products(products: list) -> int:
         conn.commit()
         logger.info(f"빅데이터 DB: {inserted}개 신규 저장 (총 {len(products)}개 중)")
         return inserted
+    finally:
+        conn.close()
+
+
+def check_cafe_status(product_code: str) -> str:
+    """빅데이터 DB에서 해당 품번의 카페 업로드 상태 확인
+    Returns: '업로드완료', '중복', '' (미확인)
+    """
+    if not product_code:
+        return ""
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT cafe_status FROM products WHERE product_code=? AND cafe_status != '' "
+            "ORDER BY created_at DESC LIMIT 1",
+            (product_code,)
+        ).fetchone()
+        return row["cafe_status"] if row else ""
+    finally:
+        conn.close()
+
+
+def bulk_check_cafe_status(product_codes: list) -> dict:
+    """여러 품번의 카페 상태를 일괄 조회
+    Returns: {product_code: cafe_status} 딕셔너리
+    """
+    if not product_codes:
+        return {}
+    conn = _conn()
+    try:
+        result = {}
+        for i in range(0, len(product_codes), 100):
+            batch = product_codes[i:i+100]
+            placeholders = ",".join(["?" for _ in batch])
+            rows = conn.execute(
+                f"SELECT product_code, cafe_status FROM products "
+                f"WHERE product_code IN ({placeholders}) AND cafe_status != '' "
+                f"ORDER BY created_at DESC",
+                batch
+            ).fetchall()
+            for row in rows:
+                code = row["product_code"]
+                if code not in result:  # 최신 것만
+                    result[code] = row["cafe_status"]
+        return result
+    finally:
+        conn.close()
+
+
+def update_cafe_status(product_code: str, status: str, uploaded_at: str = ""):
+    """빅데이터 DB에서 해당 품번의 카페 상태 업데이트"""
+    if not product_code:
+        return
+    conn = _conn()
+    try:
+        if uploaded_at:
+            conn.execute(
+                "UPDATE products SET cafe_status=?, cafe_uploaded_at=? WHERE product_code=?",
+                (status, uploaded_at, product_code)
+            )
+        else:
+            conn.execute(
+                "UPDATE products SET cafe_status=? WHERE product_code=?",
+                (status, product_code)
+            )
+        conn.commit()
     finally:
         conn.close()
 

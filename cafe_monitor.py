@@ -457,14 +457,15 @@ async def search_cafe_by_browser(page, keyword: str, nickname: str = "", days: i
         return None
 
 
-async def batch_check_cafe_duplicates(products: list, nickname: str, days: int = 30, log=None):
-    """Playwright 브라우저로 상품 목록의 카페 중복 일괄 체크
+async def batch_check_cafe_duplicates(products: list, nickname: str, days: int = 30, log=None, save_callback=None):
+    """빅데이터 DB 선 체크 → 네이버 카페 브라우저 체크
 
     Args:
         products: 체크할 상품 리스트 (cafe_status 직접 수정됨)
         nickname: 작성자 닉네임
         days: 최근 N일
         log: 로그 콜백
+        save_callback: 1건 체크 후 저장 콜백
 
     Returns:
         (checked, duplicates) 튜플
@@ -475,6 +476,43 @@ async def batch_check_cafe_duplicates(products: list, nickname: str, days: int =
     total = len(products)
     checked = 0
     duplicates = 0
+
+    # ── 1단계: 빅데이터 DB 선 체크 ──
+    try:
+        from product_db import bulk_check_cafe_status, update_cafe_status
+        codes = [p.get("product_code", "") for p in products if p.get("product_code")]
+        db_statuses = bulk_check_cafe_status(codes)
+
+        db_hits = 0
+        remaining = []
+        for prod in products:
+            code = prod.get("product_code", "")
+            if code and code in db_statuses:
+                status = db_statuses[code]
+                if status in ("업로드완료", "중복"):
+                    prod["cafe_status"] = "중복"
+                    checked += 1
+                    duplicates += 1
+                    db_hits += 1
+                    if log:
+                        log(f"   🗄️ [{checked}/{total}] {code} — DB에서 중복 확인")
+                    if save_callback:
+                        try:
+                            save_callback()
+                        except Exception:
+                            pass
+                    continue
+            remaining.append(prod)
+
+        if db_hits > 0 and log:
+            log(f"   📊 빅데이터 DB 체크: {db_hits}개 중복 발견, {len(remaining)}개 카페 검색 필요")
+    except Exception as e:
+        remaining = list(products)
+        if log:
+            log(f"   ⚠️ 빅데이터 DB 체크 실패: {e} — 전체 카페 검색 진행")
+
+    if not remaining:
+        return checked, duplicates
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -516,7 +554,7 @@ async def batch_check_cafe_duplicates(products: list, nickname: str, days: int =
         page = await context.new_page()
 
         try:
-            for prod in products:
+            for prod in remaining:
                 code = prod.get("product_code", "")
                 if not code:
                     checked += 1
@@ -533,9 +571,21 @@ async def batch_check_cafe_duplicates(products: list, nickname: str, days: int =
                     duplicates += 1
                     if log:
                         log(f"   🔴 [{checked}/{total}] {code} — {result['write_date']} 등록 ({result['title'][:40]})")
+                    # 빅데이터 DB에도 상태 저장
+                    try:
+                        update_cafe_status(code, "중복")
+                    except Exception:
+                        pass
                 else:
                     if log:
                         log(f"   🟢 [{checked}/{total}] {code}")
+
+                # 1개 체크할 때마다 저장
+                if save_callback:
+                    try:
+                        save_callback()
+                    except Exception:
+                        pass
 
                 await asyncio.sleep(1)
 

@@ -887,6 +887,8 @@ def _run_upload_check():
 
     push_log(f"🔍 업로드 체크 시작: {len(waiting)}개 상품 — 브라우저로 카페 검색 중...")
 
+    from xebio_search import save_products
+
     try:
         checked, duplicates = asyncio.run(
             batch_check_cafe_duplicates(
@@ -894,11 +896,11 @@ def _run_upload_check():
                 nickname=CAFE_MY_NICKNAME,
                 days=30,
                 log=push_log,
+                save_callback=lambda: save_products(products),
             )
         )
 
-        # 결과 저장
-        from xebio_search import save_products
+        # 최종 저장
         save_products(products)
 
         push_log(f"✅ 체크 완료: {checked}개 확인, {duplicates}개 중복 발견")

@@ -261,6 +261,14 @@ async def upload_products(products: list, status_callback=None, max_upload=None)
                         log(f"   ✅ 업로드 성공 ({success_count}개 완료)")
                         # 매 건마다 게시글 URL 포함 텔레그램 알림
                         notify_upload_success(name_short, success_count, len(upload_list), post_url)
+                        # 빅데이터 DB에 업로드 상태 저장
+                        try:
+                            from product_db import update_cafe_status
+                            code = product.get("product_code", "")
+                            if code:
+                                update_cafe_status(code, "업로드완료", datetime.now().isoformat())
+                        except Exception:
+                            pass
                     else:
                         log(f"   ⚠️ 업로드 실패")
                         notify_upload_error(name_short, "업로드 실패")
