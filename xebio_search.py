@@ -92,7 +92,7 @@ def _parse_pages(pages_str: str) -> list:
 
 async def scrape_nike_sale(status_callback=None,
                            site_id="xebio", category_id="sale",
-                           keyword="", pages=""):
+                           keyword="", pages="", brand_code=""):
     """
     지정 사이트/카테고리에서 상품 수집
 
@@ -102,6 +102,7 @@ async def scrape_nike_sale(status_callback=None,
         category_id     : 카테고리 ID (예: "sale", "running")
         keyword         : 검색 키워드 (비어있으면 전체)
         pages           : 페이지 지정 (예: "2-10", "2,3,5", "2", 비우면 전체)
+        brand_code      : 브랜드 코드 (예: "004278" = 나이키, 비우면 전체)
 
     Returns:
         list: 수집된 상품 딕셔너리 리스트
@@ -139,9 +140,14 @@ async def scrape_nike_sale(status_callback=None,
             # ── 사이트/카테고리 URL 결정 ─────────────────
             site_info = get_site(site_id)
             cat_info = get_category(site_id, category_id)
-            CATEGORY_URL = build_url(site_id, category_id)  # 키워드 없이 카테고리만
+            CATEGORY_URL = build_url(site_id, category_id, brand_code)
             site_name = site_info["name"] if site_info else "Xebio"
             cat_name = cat_info["name"] if cat_info else "세일"
+            if brand_code:
+                from site_config import get_brands
+                brand_names = get_brands(site_id)
+                brand_label = brand_names.get(brand_code, brand_code)
+                cat_name = f"{cat_name} + {brand_label}"
             base_url = site_info["base_url"] if site_info else XEBIO_BASE_URL
 
             # 페이지 지정 파싱

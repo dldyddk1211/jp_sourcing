@@ -128,7 +128,7 @@ def push_log(msg: str):
 # 스크래핑 / 업로드 실행 함수 (백그라운드)
 # =============================================
 
-def run_scrape(site_id="xebio", category_id="sale", keyword="", pages=""):
+def run_scrape(site_id="xebio", category_id="sale", keyword="", pages="", brand_code=""):
     """백그라운드 스레드에서 스크래핑 실행"""
     if status["scraping"]:
         push_log("⚠️ 이미 스크래핑이 진행 중입니다")
@@ -142,6 +142,7 @@ def run_scrape(site_id="xebio", category_id="sale", keyword="", pages=""):
             category_id=category_id,
             keyword=keyword,
             pages=pages,
+            brand_code=brand_code,
         ))
         status["product_count"] = len(products)
         status["last_scrape"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -182,8 +183,14 @@ def _shuffle_by_brand(products: list) -> list:
     return result
 
 
-def run_upload(max_upload=None, shuffle_brands=False):
-    """백그라운드 스레드에서 업로드 실행 - 선택된 상품만"""
+def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None):
+    """백그라운드 스레드에서 업로드 실행
+
+    우선순위:
+    1. checked_codes에 있는 상품 우선
+    2. 나머지는 대기(待機) 상품에서 랜덤으로 채움
+    3. max_upload 수량만큼만 업로드
+    """
     if status["uploading"]:
         push_log("⚠️ 이미 업로드가 진행 중입니다")
         return
@@ -193,10 +200,53 @@ def run_upload(max_upload=None, shuffle_brands=False):
         push_log("⚠️ 업로드할 상품이 없습니다. 먼저 스크래핑을 실행하세요")
         return
 
-    # 선택된 상품만 필터
-    selected = [p for p in products if p.get("selected", True)]
+    import random as _random
+
+    # 체크된 상품과 대기 상품 분리
+    checked_set = set(checked_codes) if checked_codes else set()
+    checked_products = []
+    waiting_products = []
+
+    for p in products:
+        code = p.get("product_code", "")
+        is_waiting = (p.get("cafe_status") or "대기") == "대기"
+        if code and code in checked_set:
+            checked_products.append(p)
+        elif is_waiting:
+            waiting_products.append(p)
+
+    # 업로드 대상 결정
+    if checked_set:
+        # 체크된 상품이 있는 경우
+        if max_upload and len(checked_products) >= max_upload:
+            # 체크 수 >= 업로드 수량 → 체크된 것만 수량만큼
+            selected = checked_products[:max_upload]
+            push_log(f"📋 체크 상품 {len(checked_products)}개 중 {max_upload}개만 업로드")
+        elif max_upload and len(checked_products) < max_upload:
+            # 체크 수 < 업로드 수량 → 체크 우선 + 나머지 대기에서 랜덤
+            remaining = max_upload - len(checked_products)
+            _random.shuffle(waiting_products)
+            filler = waiting_products[:remaining]
+            selected = checked_products + filler
+            push_log(f"📋 체크 {len(checked_products)}개 우선 + 대기 {len(filler)}개 랜덤 = 총 {len(selected)}개 업로드")
+        else:
+            # 수량 지정 없음 → 체크된 것만
+            selected = checked_products
+            push_log(f"📋 체크된 상품 {len(selected)}개 업로드")
+    else:
+        # 체크 없음
+        if max_upload:
+            # 수량만 지정 → 대기 상품에서 랜덤
+            _random.shuffle(waiting_products)
+            selected = waiting_products[:max_upload]
+            push_log(f"📋 대기 상품에서 랜덤 {len(selected)}개 업로드")
+        else:
+            # 체크도 수량도 없음 → 기존 방식 (선택된 상품)
+            selected = [p for p in products if p.get("selected", True)]
+            push_log(f"📋 선택된 상품 {len(selected)}개 업로드")
+
     if not selected:
-        push_log("⚠️ 선택된 상품이 없습니다. 체크박스로 상품을 선택해주세요")
+        push_log("⚠️ 업로드할 상품이 없습니다")
         return
 
     # 브랜드 랜덤 섞기
@@ -205,7 +255,7 @@ def run_upload(max_upload=None, shuffle_brands=False):
         brands_order = [p.get("brand_ko") or p.get("brand", "") for p in selected[:10]]
         push_log(f"🔀 브랜드 랜덤 적용: {' → '.join(brands_order[:5])}...")
 
-    push_log(f"📋 선택된 상품 {len(selected)}개 업로드 시작")
+    push_log(f"📤 총 {len(selected)}개 업로드 시작")
     status["uploading"] = True
     try:
         count = asyncio.run(upload_products(
@@ -746,13 +796,16 @@ def manual_scrape():
     category_id = data.get("category_id", "sale")
     keyword = data.get("keyword", "")
     pages = data.get("pages", "")
+    brand_code = data.get("brand_code", "")
     thread = threading.Thread(
         target=run_scrape,
-        args=(site_id, category_id, keyword, pages),
+        args=(site_id, category_id, keyword, pages, brand_code),
         daemon=True,
     )
     thread.start()
     desc = f"{site_id} › {category_id}"
+    if brand_code:
+        desc += f" [{brand_code}]"
     if keyword:
         desc += f" [{keyword}]"
     if pages:
@@ -1039,7 +1092,12 @@ def manual_upload():
     data = request.json or {}
     max_upload = data.get("max_upload")
     shuffle_brands = data.get("shuffle_brands", False)
-    thread = threading.Thread(target=run_upload, args=(max_upload, shuffle_brands), daemon=True)
+    checked_codes = data.get("checked_codes")  # 체크된 상품 코드 배열
+    thread = threading.Thread(
+        target=run_upload,
+        args=(max_upload, shuffle_brands, checked_codes),
+        daemon=True,
+    )
     thread.start()
     return jsonify({"ok": True, "message": "업로드 시작됨"})
 

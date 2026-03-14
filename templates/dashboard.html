@@ -418,6 +418,12 @@
             </select>
           </div>
           <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-size:0.82rem;color:var(--muted);white-space:nowrap;">브랜드</span>
+            <select id="sel-brand" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;min-width:120px;">
+              <option value="">전체</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
             <span style="font-size:0.82rem;color:var(--muted);white-space:nowrap;">키워드</span>
             <input type="text" id="scrape-keyword" value="" autocomplete="off" placeholder="예: adidas, nike" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;width:160px;">
           </div>
@@ -1307,10 +1313,12 @@ async function runScrape() {
   if (!siteId || !catId) { alert("사이트와 카테고리를 선택하세요"); return; }
   const keyword = document.getElementById("scrape-keyword").value.trim();
   const pagesRaw = document.getElementById("scrape-pages").value.trim();
+  const brandCode = document.getElementById("sel-brand").value;
   checkedIndices.clear();
   updateSelCount();
   startTimer(3000);
   const body = { site_id: siteId, category_id: catId };
+  if (brandCode) body.brand_code = brandCode;
   if (keyword) body.keyword = keyword;
   if (pagesRaw) body.pages = pagesRaw;
   await post("/run/scrape", body);
@@ -1575,10 +1583,15 @@ let _cafeUploadTotal = 0;
 let _cafeUploadStartTime = 0;
 
 async function uploadSelected() {
-  if (checkedCodes.size === 0) {
-    addLog("\u26A0\uFE0F \uC120\uD0DD\uB41C \uC0C1\uD488\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uCCB4\uD06C\uBC15\uC2A4\uB85C \uC0C1\uD488\uC744 \uC120\uD0DD\uD574\uC8FC\uC138\uC694", "warn");
+  const mu = document.getElementById("cafe-max-upload").value;
+  const maxCount = mu ? +mu : null;
+
+  // 수량도 없고 체크도 없으면 차단
+  if (!maxCount && checkedCodes.size === 0) {
+    addLog("⚠️ 업로드 수량을 입력하거나 상품을 선택해주세요", "warn");
     return;
   }
+
   // AI API 키 사전 검증
   addLog("🔑 AI API 키 확인 중...", "info");
   try {
@@ -1593,22 +1606,24 @@ async function uploadSelected() {
     addLog("⚠️ AI 키 검증 실패 — 업로드를 계속합니다", "warn");
   }
 
-  _cafeUploadTotal = checkedCodes.size;
+  const uploadTotal = maxCount || checkedCodes.size;
+  _cafeUploadTotal = uploadTotal;
   _cafeUploadStartTime = Date.now();
   _cafeUploadActive = true;
-  _showUploadProgress(0, _cafeUploadTotal, "업로드 준비 중...");
+  _showUploadProgress(0, uploadTotal, "업로드 준비 중...");
 
   const uploadBtn = document.getElementById("btn-cafe-upload");
   if (uploadBtn) { uploadBtn.disabled = true; uploadBtn.innerHTML = "📤 업로드 중... <span class='spinner'></span>"; }
 
+  // 체크된 상품 정보 전달 (백엔드에서 우선순위 처리)
   await fetch(PREFIX + "/products/update", {
     method: "POST", headers: {"Content-Type":"application/json"},
     body: JSON.stringify({ selected_codes: [...checkedCodes] })
   });
-  const mu = document.getElementById("cafe-max-upload").value;
   const shuffle = document.getElementById("cafe-shuffle-brands").checked;
-  addLog(`📤 ${checkedCodes.size}개 상품 업로드 시작...${shuffle ? " (브랜드 랜덤)":""}`, "info");
-  await post("/run/upload", { max_upload: mu ? +mu : null, shuffle_brands: shuffle });
+  const desc = checkedCodes.size > 0 ? `체크 ${checkedCodes.size}개 우선` : "랜덤 선택";
+  addLog(`📤 업로드 시작 (${desc}, 총 ${uploadTotal}개)${shuffle ? " 브랜드 랜덤":""}`, "info");
+  await post("/run/upload", { max_upload: maxCount, shuffle_brands: shuffle, checked_codes: [...checkedCodes] });
 }
 
 function _showUploadProgress(cur, total, detail) {
@@ -2421,7 +2436,9 @@ async function loadSites() {
 function onSiteChange() {
   const siteId = document.getElementById("sel-site").value;
   const catSel = document.getElementById("sel-category");
+  const brandSel = document.getElementById("sel-brand");
   catSel.innerHTML = "";
+  brandSel.innerHTML = '<option value="">전체</option>';
   const site = _sitesData.find(s => s.id === siteId);
   if (!site) return;
   site.categories.forEach(c => {
@@ -2429,16 +2446,29 @@ function onSiteChange() {
     o.value = c.id; o.textContent = c.name;
     catSel.appendChild(o);
   });
+  if (site.brands) {
+    site.brands.forEach(b => {
+      const o = document.createElement("option");
+      o.value = b.code; o.textContent = b.name;
+      brandSel.appendChild(o);
+    });
+  }
   updateSelPreview();
   catSel.onchange = updateSelPreview;
+  brandSel.onchange = updateSelPreview;
 }
 
 function updateSelPreview() {
   const siteSel = document.getElementById("sel-site");
   const catSel  = document.getElementById("sel-category");
+  const brandSel = document.getElementById("sel-brand");
   const preview = document.getElementById("sel-preview");
   if (siteSel.selectedOptions[0] && catSel.selectedOptions[0]) {
-    preview.textContent = siteSel.selectedOptions[0].text + " > " + catSel.selectedOptions[0].text;
+    let text = siteSel.selectedOptions[0].text + " > " + catSel.selectedOptions[0].text;
+    if (brandSel.value) {
+      text += " > " + brandSel.selectedOptions[0].text;
+    }
+    preview.textContent = text;
   }
 }
 
