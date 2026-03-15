@@ -530,7 +530,7 @@ def _extract_ai_tags(content: str) -> list:
         if m:
             raw = m.group(1)
             tags = [t.strip().lstrip("#") for t in raw.split(",") if t.strip()]
-            return tags[:5]  # 최대 5개
+            return tags[:7]  # 최대 7개
     return []
 
 
@@ -644,8 +644,8 @@ def _build_prompt(product: dict, price_info: dict) -> str:
 일본어는 절대 출력하지 마세요.
 공급사/매입처(Xebio, SuperSports 등) 이름은 절대 언급하지 마세요.
 
-마지막 줄에 추천 태그 5개를 쉼표로 구분해서 작성하세요 (검색 키워드용, #은 빼고).
-형식: [추천태그] {random.choice(["러닝화","런닝화"])}추천,나이키{random.choice(["러닝","런닝"])},데일리{random.choice(["러닝화","런닝화"])},조깅화,쿠셔닝{random.choice(["러닝화","런닝화"])}"""
+마지막 줄에 추천 태그 7개를 쉼표로 구분해서 작성하세요 (검색 키워드용, #은 빼고).
+형식: [추천태그] {random.choice(["러닝화","런닝화"])}추천,나이키{random.choice(["러닝","런닝"])},데일리{random.choice(["러닝화","런닝화"])},조깅화,쿠셔닝{random.choice(["러닝화","런닝화"])},가벼운운동화,일본직구신발"""
 
 
 # ── AI 키 검증 ────────────────────────────
