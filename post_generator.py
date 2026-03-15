@@ -252,10 +252,10 @@ def _translate_katakana(name: str) -> str:
     return name
 
 
-# 한국어 표기 통일 (스크래퍼 번역 결과 보정)
-_KOREAN_FIX = {
-    "러닝화": "런닝화",
-    "러닝": "런닝",
+# 한국어 표기 랜덤 변환 (러닝화/런닝화 반반 사용)
+_KOREAN_RANDOM = {
+    "러닝화": ("러닝화", "런닝화"),
+    "러닝": ("러닝", "런닝"),
 }
 
 
@@ -312,7 +312,7 @@ def _pick_intro(product_name: str) -> tuple:
 
 # 상품명에서 제거할 카테고리 키워드
 _CATEGORY_REMOVE = [
-    "런닝화", "트레이닝화", "워킹화", "조깅화", "농구화", "축구화",
+    "런닝화", "러닝화", "트레이닝화", "워킹화", "조깅화", "농구화", "축구화",
     "테니스화", "골프화", "스니커즈", "슈즈",
     "클럽활동", "부활동",
     "ランニングシューズ", "トレーニングシューズ", "ウォーキングシューズ",
@@ -331,8 +331,9 @@ def _clean_name(name: str, product_code: str = "") -> str:
     if product_code:
         name = name.replace(product_code, '').strip()
     name = _translate_katakana(name)
-    for wrong, correct in _KOREAN_FIX.items():
-        name = name.replace(wrong, correct)
+    for key, (opt_a, opt_b) in _KOREAN_RANDOM.items():
+        if key in name:
+            name = name.replace(key, random.choice([opt_a, opt_b]))
     # 카테고리 키워드 제거 (런닝화, 트레이닝화, 클럽활동 등)
     for cat in _CATEGORY_REMOVE:
         name = name.replace(cat, '')
@@ -649,7 +650,7 @@ def _build_prompt(product: dict, price_info: dict) -> str:
 공급사/매입처(Xebio, SuperSports 등) 이름은 절대 언급하지 마세요.
 
 마지막 줄에 추천 태그 5개를 쉼표로 구분해서 작성하세요 (검색 키워드용, #은 빼고).
-형식: [추천태그] 러닝화추천,나이키러닝,데일리러닝화,조깅화,쿠셔닝러닝화"""
+형식: [추천태그] {random.choice(["러닝화","런닝화"])}추천,나이키{random.choice(["러닝","런닝"])},데일리{random.choice(["러닝화","런닝화"])},조깅화,쿠셔닝{random.choice(["러닝화","런닝화"])}"""
 
 
 # ── AI 키 검증 ────────────────────────────

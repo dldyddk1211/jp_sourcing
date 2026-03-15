@@ -627,28 +627,33 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
                     if target_ed:
                         # 에디터 끝으로 이동
                         try:
-                            await target_ed.press("Control+End")
+                            await target_ed.click()
                             await asyncio.sleep(0.3)
-                            await target_ed.press("Enter")
-                            await target_ed.press("Enter")
+                            await page.keyboard.press("Control+End")
+                            await asyncio.sleep(0.3)
+                            await page.keyboard.press("Enter")
+                            await page.keyboard.press("Enter")
                         except Exception:
                             pass
 
-                        # 재삽입 방법 1: 클립보드
+                        # 재삽입 방법 1: 클립보드 + Ctrl+V
                         try:
                             await page.evaluate(f"navigator.clipboard.writeText('{_FORM_URL}')")
-                            await asyncio.sleep(0.5)
-                            await target_ed.press("Control+v")
-                            await asyncio.sleep(6)
-                            # 검증
+                            await asyncio.sleep(0.3)
+                            await page.keyboard.press("Control+v")
+                            await asyncio.sleep(8)
+                            # 검증 (텍스트 또는 OG)
                             for fr in page.frames:
                                 try:
                                     txt = await fr.evaluate("document.body?.innerText || ''")
                                     if "naver.me" in txt:
                                         form_found = True
                                         break
-                                    found_a = await fr.evaluate("!!document.querySelector(\"a[href*='naver.me']\")")
-                                    if found_a:
+                                    found_og = await fr.evaluate("""(() => {
+                                        return !!(document.querySelector('.se-oglink, .se-module-oglink, [class*=oglink]')
+                                            || document.querySelector("a[href*='naver.me']"));
+                                    })()""")
+                                    if found_og:
                                         form_found = True
                                         break
                                 except Exception:
@@ -658,41 +663,28 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
                         except Exception:
                             pass
 
-                        # 재삽입 방법 2: execCommand
+                        # 재삽입 방법 2: 타이핑 + Enter (OG 트리거)
                         if not form_found:
                             try:
-                                for frame in page.frames:
-                                    try:
-                                        await frame.evaluate(f"document.execCommand('insertText', false, '{_FORM_URL}');")
-                                        await asyncio.sleep(6)
-                                        txt = await frame.evaluate("document.body?.innerText || ''")
-                                        if "naver.me" in txt:
-                                            form_found = True
-                                            _log(f"   🔄 [검증] 네이버 폼 URL execCommand 재삽입 성공")
-                                            break
-                                    except Exception:
-                                        continue
-                            except Exception:
-                                pass
-
-                        # 재삽입 방법 3: 타이핑
-                        if not form_found:
-                            try:
-                                await target_ed.type(_FORM_URL, delay=20)
-                                await asyncio.sleep(4)
+                                await target_ed.click()
+                                await asyncio.sleep(0.3)
+                                await target_ed.type(_FORM_URL, delay=15)
+                                await asyncio.sleep(1)
+                                await page.keyboard.press("Enter")
+                                await asyncio.sleep(8)
                                 for fr in page.frames:
                                     try:
                                         txt = await fr.evaluate("document.body?.innerText || ''")
                                         if "naver.me" in txt:
                                             form_found = True
-                                            _log(f"   🔄 [검증] 네이버 폼 URL 타이핑 재삽입 성공")
+                                            _log(f"   🔄 [검증] 네이버 폼 URL 타이핑+Enter 재삽입 성공")
                                             break
                                     except Exception:
                                         continue
                             except Exception:
                                 pass
 
-                        # 재삽입 방법 4: paste 이벤트
+                        # 재삽입 방법 3: paste 이벤트
                         if not form_found:
                             try:
                                 for frame in page.frames:
@@ -707,7 +699,7 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
                                                 el.dispatchEvent(evt);
                                             }}
                                         }})()""")
-                                        await asyncio.sleep(6)
+                                        await asyncio.sleep(8)
                                         txt = await frame.evaluate("document.body?.innerText || ''")
                                         if "naver.me" in txt:
                                             form_found = True
@@ -1163,85 +1155,114 @@ async def type_content_to_editor_iframe(page, frame_locator, content: str, log=N
             # URL: 붙여넣기로 삽입 (OG 미리보기 카드 생성)
             if stripped and url_pattern.match(stripped):
                 url_inserted = False
-                # URL 삽입 후 검증 헬퍼
-                async def _verify_url_in_editor(url_str):
+                og_detected = False
+
+                # URL/OG 검증 헬퍼
+                async def _verify_url_in_editor(url_str, check_og=False):
                     """에디터 본문에 URL이 실제로 들어갔는지 확인"""
                     await asyncio.sleep(1)
+                    text_found = False
                     for fr in page.frames:
                         try:
                             txt = await fr.evaluate("document.body?.innerText || ''")
                             if url_str in txt or "naver.me" in txt:
-                                return True
+                                text_found = True
+                                break
                         except Exception:
                             continue
-                    # OG 카드로 변환된 경우 — href 확인
+                    # OG 카드 확인 (href 또는 og-card 요소)
+                    og_found = False
                     for fr in page.frames:
                         try:
-                            found = await fr.evaluate(f"!!document.querySelector(\"a[href*='naver.me']\")")
-                            if found:
-                                return True
+                            og_found = await fr.evaluate("""(() => {
+                                const ogCard = document.querySelector('.se-oglink, .se-module-oglink, [class*=oglink], [data-module=oglink]');
+                                if (ogCard) return true;
+                                const aTag = document.querySelector("a[href*='naver.me']");
+                                if (aTag) return true;
+                                return false;
+                            })()""")
+                            if og_found:
+                                break
                         except Exception:
                             continue
-                    return False
+                    if check_og:
+                        return og_found
+                    return text_found or og_found
 
-                # 방법 1: clipboard API (메인 페이지 컨텍스트)
+                # ── 방법 1: clipboard API + Ctrl+V (OG 미리보기 트리거) ──
                 try:
                     await page.evaluate(f"navigator.clipboard.writeText('{stripped}')")
-                    await asyncio.sleep(0.5)
-                    await target_el.press("Control+v")
-                    await asyncio.sleep(6)  # OG 미리보기 로딩 대기
-                    # 실제 삽입 검증
+                    await asyncio.sleep(0.3)
+                    # 에디터에 포커스 확실히
+                    await target_el.click()
+                    await asyncio.sleep(0.3)
+                    await page.keyboard.press("Control+v")
+                    await asyncio.sleep(8)  # OG 미리보기 로딩 대기 (넉넉히)
                     if await _verify_url_in_editor(stripped):
                         url_inserted = True
+                        og_detected = await _verify_url_in_editor(stripped, check_og=True)
                         if log:
-                            log(f"   🔗 URL 붙여넣기 (OG 미리보기): {stripped}")
+                            og_mark = "✅ OG 미리보기" if og_detected else "⚠️ 텍스트만"
+                            log(f"   🔗 URL 붙여넣기 ({og_mark}): {stripped}")
                     else:
                         logger.warning("클립보드 붙여넣기 후 URL 미감지 — 다음 방법 시도")
-                        if log:
-                            log(f"   ⚠️ 클립보드 붙여넣기 실패 (URL 미감지) — 다음 방법 시도")
                 except Exception as clip_err:
                     logger.warning(f"클립보드 방법 실패: {clip_err}")
 
-                # 방법 2: execCommand insertText (iframe 내부에서 직접)
+                # ── 방법 2: iframe 내부 clipboard + paste ──
                 if not url_inserted:
                     try:
                         for frame in page.frames:
                             try:
-                                editable = frame.locator("[contenteditable='true'], .se-content, .se-section-text").first
-                                if await editable.count() > 0:
-                                    await frame.evaluate(f"""
-                                        document.execCommand('insertText', false, '{stripped}');
-                                    """)
-                                    await asyncio.sleep(6)
-                                    if await _verify_url_in_editor(stripped):
-                                        url_inserted = True
-                                        if log:
-                                            log(f"   🔗 URL execCommand 삽입: {stripped}")
-                                        break
-                                    else:
-                                        logger.warning("execCommand 후 URL 미감지")
+                                has_editor = await frame.evaluate("!!document.querySelector('[contenteditable=true]')")
+                                if not has_editor:
+                                    continue
+                                # iframe 내부에서 직접 clipboard 쓰기 + paste 이벤트
+                                await frame.evaluate(f"""(async () => {{
+                                    const el = document.querySelector("[contenteditable='true']");
+                                    if (!el) return;
+                                    el.focus();
+                                    try {{ await navigator.clipboard.writeText('{stripped}'); }} catch(e) {{}}
+                                    document.execCommand('insertText', false, '{stripped}');
+                                }})()""")
+                                await asyncio.sleep(3)
+                                # Enter 키로 URL 자동 감지 트리거
+                                await page.keyboard.press("Enter")
+                                await asyncio.sleep(8)  # OG 로딩 대기
+                                if await _verify_url_in_editor(stripped):
+                                    url_inserted = True
+                                    og_detected = await _verify_url_in_editor(stripped, check_og=True)
+                                    if log:
+                                        og_mark = "✅ OG" if og_detected else "⚠️ 텍스트"
+                                        log(f"   🔗 URL iframe 삽입 ({og_mark}): {stripped}")
+                                    break
                             except Exception:
                                 continue
-                    except Exception as exec_err:
-                        logger.warning(f"execCommand 방법 실패: {exec_err}")
+                    except Exception as e2:
+                        logger.warning(f"iframe 방법 실패: {e2}")
 
-                # 방법 3: 타이핑 fallback
+                # ── 방법 3: 타이핑 + Enter (에디터 URL 자동 감지) ──
                 if not url_inserted:
                     try:
-                        await target_el.type(stripped, delay=20)
-                        await asyncio.sleep(4)
+                        await target_el.click()
+                        await asyncio.sleep(0.3)
+                        await target_el.type(stripped, delay=15)
+                        await asyncio.sleep(1)
+                        # Enter로 URL 자동 감지 트리거
+                        await page.keyboard.press("Enter")
+                        await asyncio.sleep(8)  # OG 로딩 대기
                         if await _verify_url_in_editor(stripped):
                             url_inserted = True
+                            og_detected = await _verify_url_in_editor(stripped, check_og=True)
                             if log:
-                                log(f"   🔗 URL 타이핑 삽입: {stripped}")
+                                og_mark = "✅ OG" if og_detected else "⚠️ 텍스트"
+                                log(f"   🔗 URL 타이핑+Enter ({og_mark}): {stripped}")
                         else:
-                            logger.warning("타이핑 후에도 URL 미감지")
-                            if log:
-                                log(f"   ⚠️ URL 타이핑 후에도 미감지: {stripped}")
+                            logger.warning("타이핑+Enter 후에도 URL 미감지")
                     except Exception as type_err:
-                        logger.warning(f"URL 타이핑도 실패: {type_err}")
+                        logger.warning(f"URL 타이핑 실패: {type_err}")
 
-                # 방법 4: 최후 수단 — dispatchEvent로 직접 paste 이벤트 발생
+                # ── 방법 4: dispatchEvent paste ──
                 if not url_inserted:
                     try:
                         for frame in page.frames:
@@ -1256,16 +1277,33 @@ async def type_content_to_editor_iframe(page, frame_locator, content: str, log=N
                                         el.dispatchEvent(evt);
                                     }}
                                 }})()""")
-                                await asyncio.sleep(6)
+                                await asyncio.sleep(8)
                                 if await _verify_url_in_editor(stripped):
                                     url_inserted = True
+                                    og_detected = await _verify_url_in_editor(stripped, check_og=True)
                                     if log:
-                                        log(f"   🔗 URL paste 이벤트 삽입: {stripped}")
+                                        og_mark = "✅ OG" if og_detected else "⚠️ 텍스트"
+                                        log(f"   🔗 URL paste이벤트 ({og_mark}): {stripped}")
                                     break
                             except Exception:
                                 continue
                     except Exception as paste_err:
                         logger.warning(f"paste 이벤트 방법 실패: {paste_err}")
+
+                # OG 미리보기 최종 확인 — 텍스트는 있는데 OG가 없으면 재시도
+                if url_inserted and not og_detected:
+                    if log:
+                        log(f"   🔄 OG 미리보기 미생성 — Enter 후 재대기...")
+                    try:
+                        await page.keyboard.press("Enter")
+                        await asyncio.sleep(10)
+                        og_detected = await _verify_url_in_editor(stripped, check_og=True)
+                        if og_detected and log:
+                            log(f"   ✅ OG 미리보기 생성 확인!")
+                        elif log:
+                            log(f"   ⚠️ OG 미리보기 미생성 — URL 텍스트만 표시됩니다")
+                    except Exception:
+                        pass
 
                 if not url_inserted and log:
                     log(f"   ❌ URL 삽입 모든 방법 실패: {stripped}")

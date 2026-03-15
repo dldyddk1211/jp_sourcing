@@ -1087,9 +1087,11 @@
           </button>
           <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:0.82rem;color:var(--muted);">
             <input type="checkbox" id="cafe-shuffle-brands" checked
-              style="width:16px;height:16px;accent-color:var(--green);">
+              style="width:16px;height:16px;accent-color:var(--green);"
+              onchange="onShuffleToggle()">
             &#x1F500; 브랜드 랜덤
           </label>
+          <span id="cafe-random-info" style="font-size:0.78rem;color:var(--accent);display:none;"></span>
           <div style="display:flex;align-items:center;gap:6px;">
             <span style="font-size:0.8rem;color:var(--muted);">업로드 수량</span>
             <input type="number" id="cafe-max-upload" placeholder="전체" min="1" autocomplete="off" max="9999"
@@ -1280,6 +1282,14 @@ function showPage(page) {
   if (page === "cafe-upload") {
     checkNaverStatus();
     document.getElementById("cafe-sel-cnt").textContent = checkedCodes.size;
+    // 자동으로 상품목록 열기
+    const sec = document.getElementById("cafe-product-section");
+    if (sec.style.display === "none") {
+      sec.style.display = "block";
+      document.getElementById("btn-load-cafe-products").textContent = "📋 상품목록 닫기";
+      loadCafeBrands();
+      loadCafeProducts(1);
+    }
   }
   if (page === "cafe-schedule") loadSchedule();
 }
@@ -1411,7 +1421,89 @@ async function loadCafeProducts(page = 1) {
   const brand = document.getElementById("cafe-brand-select")?.value || "ALL";
   const search = document.getElementById("cafe-search")?.value || "";
   const statusFilter = document.getElementById("cafe-status-select")?.value || "대기";
+  const isRandom = document.getElementById("cafe-shuffle-brands")?.checked;
+  const randomInfo = document.getElementById("cafe-random-info");
+
   try {
+    if (isRandom && statusFilter === "대기" && brand === "ALL" && !search) {
+      // 브랜드 랜덤 모드: 전체 대기 상품에서 브랜드별 골고루 10개 랜덤 선택
+      const allUrl = `${PREFIX}/products?page=1&per_page=9999&brand=ALL&search=&status=대기`;
+      const allData = await fetch(allUrl).then(r => r.json());
+      const allProducts = allData.products || [];
+      const tb = document.getElementById("cafe-tbody");
+      const cafeSummary = document.getElementById("cafe-product-summary");
+
+      if (allProducts.length === 0) {
+        tb.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px">대기 상품이 없습니다.</td></tr>`;
+        document.getElementById("cafe-filter-result").textContent = "0개";
+        cafeSummary.style.display = "none";
+        if (randomInfo) randomInfo.style.display = "none";
+        return;
+      }
+
+      // 브랜드별 분류
+      const byBrand = {};
+      allProducts.forEach(p => {
+        const b = p.brand_ko || p.brand || "기타";
+        if (!byBrand[b]) byBrand[b] = [];
+        byBrand[b].push(p);
+      });
+      const brandNames = Object.keys(byBrand);
+
+      // 브랜드별 골고루 랜덤 선택 (라운드 로빈)
+      const maxCount = parseInt(document.getElementById("cafe-max-upload")?.value) || 10;
+      const selected = [];
+      // 각 브랜드 내부 셔플
+      brandNames.forEach(b => {
+        byBrand[b].sort(() => Math.random() - 0.5);
+      });
+      let round = 0;
+      while (selected.length < maxCount && selected.length < allProducts.length) {
+        let added = false;
+        for (const b of brandNames) {
+          if (selected.length >= maxCount) break;
+          if (round < byBrand[b].length) {
+            selected.push(byBrand[b][round]);
+            added = true;
+          }
+        }
+        if (!added) break;
+        round++;
+      }
+
+      // 선택된 상품 자동 체크
+      checkedCodes.clear();
+      selected.forEach(p => {
+        if (p.product_code) checkedCodes.add(p.product_code);
+      });
+      document.getElementById("cafe-sel-cnt").textContent = checkedCodes.size;
+
+      // 브랜드 요약
+      const selBrands = {};
+      selected.forEach(p => {
+        const b = p.brand_ko || p.brand || "기타";
+        selBrands[b] = (selBrands[b] || 0) + 1;
+      });
+      const selEntries = Object.entries(selBrands).sort((a,b) => b[1] - a[1]);
+      const cbTags = selEntries.map(([b,c]) =>
+        `<span style="display:inline-block;margin:2px 4px;padding:3px 10px;background:var(--accent)18;color:var(--accent);border:1px solid var(--accent)44;border-radius:12px;font-size:0.76rem">${b} <b>${c}</b></span>`
+      ).join("");
+      cafeSummary.innerHTML = `<span style="font-weight:600;color:var(--text)">🎲 랜덤 ${selected.length}개 선택</span> · <span style="color:var(--muted)">전체 대기 ${allProducts.length}개 중 · 브랜드 ${selEntries.length}종</span><div style="margin-top:6px">${cbTags}</div>`;
+      cafeSummary.style.display = "block";
+      if (randomInfo) {
+        randomInfo.textContent = `(${allProducts.length}개 중 ${selected.length}개 선택)`;
+        randomInfo.style.display = "inline";
+      }
+      document.getElementById("cafe-filter-result").textContent = `랜덤 ${selected.length}개`;
+
+      // 테이블 렌더링
+      tb.innerHTML = renderCafeRows(selected);
+      document.getElementById("cafe-pager").innerHTML = "";
+      return;
+    }
+
+    // 일반 모드: 페이지네이션 + 필터
+    if (randomInfo) randomInfo.style.display = "none";
     const url = `${PREFIX}/products?page=${page}&per_page=${PER}&brand=${encodeURIComponent(brand)}&search=${encodeURIComponent(search)}&status=${encodeURIComponent(statusFilter)}`;
     const d = await fetch(url).then(r => r.json());
     const tb = document.getElementById("cafe-tbody");
@@ -1436,36 +1528,50 @@ async function loadCafeProducts(page = 1) {
     } else {
       cafeSummary.style.display = "none";
     }
-    tb.innerHTML = d.products.map((p, i) => {
-      const code = p.product_code || "";
-      const isChecked = checkedCodes.has(code);
-      const img = p.img_url ? `<img src="${p.img_url}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;" onerror="this.style.opacity=0">` : "";
-      const jpy = p.price_jpy ? `¥${p.price_jpy.toLocaleString()}` : "-";
-      const krw = p.price_info ? `${p.price_info.price_final.toLocaleString()}원` : "-";
-      const cafeStatus = p.cafe_status || "대기";
-      const dupDate = p.cafe_dup_date || "";
-      const statusColors = {"대기":"#64748b","완료":"#22c55e","중복":"#f59e0b"};
-      const sc = statusColors[cafeStatus] || "#64748b";
-      const dupLabel = (cafeStatus === "중복" && dupDate) ? `<div style="font-size:9px;color:#f59e0b;margin-top:2px;">${dupDate} 등록</div>` : "";
-      const statusSelect = `<select data-code="${code}" onchange="changeStatus(this)"
-        style="padding:3px 6px;border-radius:8px;border:1px solid ${sc}44;background:${sc}18;color:${sc};font-size:11px;font-weight:600;cursor:pointer;outline:none;">
-        <option value="대기" ${cafeStatus==="대기"?"selected":""}>대기</option>
-        <option value="완료" ${cafeStatus==="완료"?"selected":""}>완료</option>
-        <option value="중복" ${cafeStatus==="중복"?"selected":""}>중복</option>
-      </select>${dupLabel}`;
-      const rowOpacity = cafeStatus === "완료" ? "opacity:0.7;" : cafeStatus === "중복" ? "opacity:0.5;" : "";
-      return `<tr class="${isChecked?'selected-row':''}" style="border-bottom:1px solid var(--border);${rowOpacity}">
-        <td style="padding:6px"><input type="checkbox" class="cafe-row-chk" data-code="${code}" ${isChecked?'checked':''} onchange="onCafeRowCheck(this)"></td>
-        <td style="padding:6px">${img}</td>
-        <td style="padding:6px"><span class="badge b-brand">${p.brand_ko || p.brand || "-"}</span></td>
-        <td style="padding:6px;max-width:220px;word-break:break-word">${p.name_ko || p.name || "-"}</td>
-        <td style="padding:6px">${jpy}</td>
-        <td style="padding:6px">${krw}</td>
-        <td style="padding:6px">${statusSelect}</td>
-      </tr>`;
-    }).join("");
+    tb.innerHTML = renderCafeRows(d.products);
     renderCafePager(page, Math.ceil(d.total / PER));
   } catch(e) { console.error(e); }
+}
+
+function renderCafeRows(products) {
+  return products.map((p, i) => {
+    const code = p.product_code || "";
+    const isChecked = checkedCodes.has(code);
+    const img = p.img_url ? `<img src="${p.img_url}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;" onerror="this.style.opacity=0">` : "";
+    const jpy = p.price_jpy ? `¥${p.price_jpy.toLocaleString()}` : "-";
+    const krw = p.price_info ? `${p.price_info.price_final.toLocaleString()}원` : "-";
+    const cafeStatus = p.cafe_status || "대기";
+    const dupDate = p.cafe_dup_date || "";
+    const statusColors = {"대기":"#64748b","완료":"#22c55e","중복":"#f59e0b"};
+    const sc = statusColors[cafeStatus] || "#64748b";
+    const dupLabel = (cafeStatus === "중복" && dupDate) ? `<div style="font-size:9px;color:#f59e0b;margin-top:2px;">${dupDate} 등록</div>` : "";
+    const statusSelect = `<select data-code="${code}" onchange="changeStatus(this)"
+      style="padding:3px 6px;border-radius:8px;border:1px solid ${sc}44;background:${sc}18;color:${sc};font-size:11px;font-weight:600;cursor:pointer;outline:none;">
+      <option value="대기" ${cafeStatus==="대기"?"selected":""}>대기</option>
+      <option value="완료" ${cafeStatus==="완료"?"selected":""}>완료</option>
+      <option value="중복" ${cafeStatus==="중복"?"selected":""}>중복</option>
+    </select>${dupLabel}`;
+    const rowOpacity = cafeStatus === "완료" ? "opacity:0.7;" : cafeStatus === "중복" ? "opacity:0.5;" : "";
+    return `<tr class="${isChecked?'selected-row':''}" style="border-bottom:1px solid var(--border);${rowOpacity}">
+      <td style="padding:6px"><input type="checkbox" class="cafe-row-chk" data-code="${code}" ${isChecked?'checked':''} onchange="onCafeRowCheck(this)"></td>
+      <td style="padding:6px">${img}</td>
+      <td style="padding:6px"><span class="badge b-brand">${p.brand_ko || p.brand || "-"}</span></td>
+      <td style="padding:6px;max-width:220px;word-break:break-word">${p.name_ko || p.name || "-"}</td>
+      <td style="padding:6px">${jpy}</td>
+      <td style="padding:6px">${krw}</td>
+      <td style="padding:6px">${statusSelect}</td>
+    </tr>`;
+  }).join("");
+}
+
+function onShuffleToggle() {
+  const isRandom = document.getElementById("cafe-shuffle-brands").checked;
+  const sec = document.getElementById("cafe-product-section");
+  if (sec.style.display !== "none") {
+    checkedCodes.clear();
+    document.getElementById("cafe-sel-cnt").textContent = "0";
+    loadCafeProducts(1);
+  }
 }
 
 async function changeStatus(sel) {
