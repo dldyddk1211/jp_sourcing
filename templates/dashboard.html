@@ -175,6 +175,10 @@
     table { width:100%; border-collapse:collapse; font-size:0.82rem; }
     th,td { padding:9px 12px; text-align:left; border-bottom:1px solid var(--border); }
     th { color:var(--muted); font-size:0.73rem; font-weight:500; background:#141720; position:sticky; top:0; }
+    #tbl-bigdata th { position:relative; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #tbl-bigdata td { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .col-resize-handle { position:absolute; right:0; top:0; width:5px; height:100%; cursor:col-resize; background:transparent; z-index:1; }
+    .col-resize-handle:hover, .col-resize-handle.active { background:var(--accent); opacity:0.5; }
     tr:hover td { background:#1e2130; }
     tr.selected-row td { background:#1a2433; }
     .pimg { width:44px; height:44px; object-fit:cover; border-radius:5px; background:#1a1710; }
@@ -976,7 +980,7 @@
         </div>
 
         <div style="overflow-x:auto;">
-          <table class="tbl" id="tbl-bigdata" style="font-size:0.8rem;">
+          <table class="tbl" id="tbl-bigdata" style="font-size:0.8rem;table-layout:fixed;">
             <thead>
               <tr>
                 <th style="width:30px"><input type="checkbox" id="bd-check-all" onchange="bdToggleAll(this)"></th>
@@ -2878,7 +2882,33 @@ async function loadBigdataProducts(page) {
     pgHtml += `<span style="font-size:0.82rem;color:var(--text)">${d.page} / ${d.pages} (${d.total.toLocaleString()}개)</span>`;
     if (d.page < d.pages) pgHtml += `<button class="btn b-gray" onclick="loadBigdataProducts(${d.page+1})" style="padding:4px 12px;font-size:0.78rem">다음</button>`;
     pg.innerHTML = pgHtml;
+    bdInitColResize();
   } catch(e) { console.error("빅데이터 상품 로드 실패", e); }
+}
+
+// ── 빅데이터 테이블 컬럼 리사이즈 ──────────────
+function bdInitColResize() {
+  const table = document.getElementById("tbl-bigdata");
+  if (!table) return;
+  const ths = table.querySelectorAll("thead th");
+  ths.forEach(th => {
+    // 기존 핸들 제거
+    th.querySelectorAll(".col-resize-handle").forEach(h => h.remove());
+    const handle = document.createElement("div");
+    handle.className = "col-resize-handle";
+    th.appendChild(handle);
+    let startX, startW;
+    handle.addEventListener("mousedown", e => {
+      e.preventDefault();
+      startX = e.pageX;
+      startW = th.offsetWidth;
+      handle.classList.add("active");
+      const onMove = ev => { th.style.width = Math.max(30, startW + ev.pageX - startX) + "px"; };
+      const onUp = () => { handle.classList.remove("active"); document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+  });
 }
 
 function bdToggleAll(master) {
