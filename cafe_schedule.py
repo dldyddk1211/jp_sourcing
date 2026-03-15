@@ -1,6 +1,7 @@
 """
 cafe_schedule.py
 카페 업로드 자동 스케줄 관리 — 4개 타임슬롯 (아침/점심/저녁/새벽)
++ 업로드 체크 자동 확인 스케줄
 """
 
 import json
@@ -40,3 +41,35 @@ def save_schedule(slots: list):
     with open(_SCHEDULE_PATH, "w", encoding="utf-8") as f:
         json.dump(slots, f, ensure_ascii=False, indent=2)
     logger.info(f"📅 스케줄 설정 저장됨: {_SCHEDULE_PATH}")
+
+
+# ── 업로드 체크 자동 확인 스케줄 ──────────────────
+
+_CHECK_SCHEDULE_PATH = os.path.join(get_path("db"), "check_schedule.json")
+
+DEFAULT_CHECK_SCHEDULE = {
+    "enabled": False,
+    "hour": 9,
+    "minute": 0,
+}
+
+
+def load_check_schedule() -> dict:
+    """업로드 체크 스케줄 설정 로드"""
+    if os.path.exists(_CHECK_SCHEDULE_PATH):
+        try:
+            with open(_CHECK_SCHEDULE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+    return dict(DEFAULT_CHECK_SCHEDULE)
+
+
+def save_check_schedule(data: dict):
+    """업로드 체크 스케줄 설정 저장"""
+    os.makedirs(os.path.dirname(_CHECK_SCHEDULE_PATH), exist_ok=True)
+    with open(_CHECK_SCHEDULE_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    logger.info(f"📅 체크 스케줄 설정 저장됨: {_CHECK_SCHEDULE_PATH}")

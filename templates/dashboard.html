@@ -1192,6 +1192,47 @@
           <span id="schedule-save-msg" style="font-size:0.8rem;color:var(--green);display:none;">저장되었습니다!</span>
         </div>
 
+        <!-- 업로드 체크 자동 스케줄 -->
+        <div style="margin-top:24px;padding:18px;background:#0d0d0a;border:1px solid var(--border);border-radius:12px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:1.3rem;">&#x1F50D;</span>
+              <span style="font-weight:600;font-size:0.95rem;">업로드 체크 자동 확인</span>
+            </div>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+              <input type="checkbox" id="check-sched-enabled"
+                style="width:18px;height:18px;accent-color:#2196F3;">
+              <span style="font-size:0.8rem;color:var(--muted);">활성</span>
+            </label>
+          </div>
+          <p style="font-size:0.75rem;color:var(--muted);margin-bottom:12px;line-height:1.5;">
+            설정한 시간에 수집된 상품들의 카페 업로드 여부를 자동으로 확인합니다.
+          </p>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <div>
+              <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">시간</label>
+              <div style="display:flex;gap:4px;">
+                <select id="check-sched-hour"
+                  style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:0.82rem;">
+                  <script>document.write(Array.from({length:24},(_,h)=>`<option value="${h}">${String(h).padStart(2,'0')}시</option>`).join(''))</script>
+                </select>
+                <select id="check-sched-min"
+                  style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:0.82rem;width:70px;">
+                  <script>document.write([0,10,15,20,30,40,45,50].map(m=>`<option value="${m}">${String(m).padStart(2,'0')}분</option>`).join(''))</script>
+                </select>
+              </div>
+            </div>
+            <button class="btn b-green" onclick="saveCheckSchedule()" style="padding:8px 18px;margin-top:16px;">
+              &#x1f4be; 저장
+            </button>
+            <span id="check-sched-save-msg" style="font-size:0.8rem;color:var(--green);display:none;margin-top:16px;">저장됨!</span>
+          </div>
+          <!-- 대기 상품 현황 -->
+          <div id="upload-check-status" style="margin-top:16px;padding:14px;background:#111;border:1px solid var(--border);border-radius:8px;">
+            <div style="font-size:0.82rem;color:var(--muted);">로딩 중...</div>
+          </div>
+        </div>
+
         <!-- 현재 등록된 잡 목록 -->
         <div style="margin-top:24px;padding:16px;background:#0d0d0a;border:1px solid var(--border);border-radius:10px;">
           <div style="font-size:0.85rem;font-weight:600;margin-bottom:10px;">&#x1f4cb; 등록된 스케줄 현황</div>
@@ -2981,6 +3022,82 @@ async function saveSchedule() {
   } catch(e) { alert("저장 실패: " + e); }
 }
 
+// ── 업로드 체크 자동 스케줄 ──────────────────────
+async function loadCheckSchedule() {
+  try {
+    const r = await fetch(PREFIX + "/check-schedule");
+    const d = await r.json();
+    if (!d.ok) return;
+    const s = d.schedule;
+    document.getElementById("check-sched-enabled").checked = s.enabled;
+    document.getElementById("check-sched-hour").value = s.hour;
+    document.getElementById("check-sched-min").value = s.minute;
+  } catch(e) { console.error("체크 스케줄 로드 실패:", e); }
+}
+
+async function saveCheckSchedule() {
+  const enabled = document.getElementById("check-sched-enabled").checked;
+  const hour = parseInt(document.getElementById("check-sched-hour").value);
+  const minute = parseInt(document.getElementById("check-sched-min").value);
+  try {
+    const r = await fetch(PREFIX + "/check-schedule", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ enabled, hour, minute })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      const msg = document.getElementById("check-sched-save-msg");
+      msg.style.display = "inline";
+      setTimeout(() => msg.style.display = "none", 3000);
+      loadCheckSchedule();
+    }
+  } catch(e) { alert("저장 실패: " + e); }
+}
+
+async function loadUploadCheckStatus() {
+  try {
+    const r = await fetch(PREFIX + "/upload-status-summary");
+    const d = await r.json();
+    if (!d.ok) return;
+    const el = document.getElementById("upload-check-status");
+    if (!el) return;
+
+    const waitCount = d.waiting_count || 0;
+    const totalCount = d.total_count || 0;
+    const uploadedCount = d.uploaded_count || 0;
+    const dupCount = d.duplicate_count || 0;
+    const avgMin = d.avg_minutes_per_post || 10;
+    const estMinutes = waitCount * avgMin;
+    const estHours = Math.floor(estMinutes / 60);
+    const estMins = estMinutes % 60;
+    const estText = estHours > 0 ? `${estHours}시간 ${estMins}분` : `${estMins}분`;
+
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;text-align:center;">
+        <div>
+          <div style="font-size:1.4rem;font-weight:700;color:#FF9800;">${waitCount}</div>
+          <div style="font-size:0.72rem;color:var(--muted);">대기 상품</div>
+        </div>
+        <div>
+          <div style="font-size:1.4rem;font-weight:700;color:var(--green);">${uploadedCount}</div>
+          <div style="font-size:0.72rem;color:var(--muted);">업로드 완료</div>
+        </div>
+        <div>
+          <div style="font-size:1.4rem;font-weight:700;color:#f44336;">${dupCount}</div>
+          <div style="font-size:0.72rem;color:var(--muted);">중복</div>
+        </div>
+        <div>
+          <div style="font-size:1.4rem;font-weight:700;color:#2196F3;">${totalCount}</div>
+          <div style="font-size:0.72rem;color:var(--muted);">전체 상품</div>
+        </div>
+      </div>
+      ${waitCount > 0 ? `<div style="margin-top:12px;font-size:0.78rem;color:var(--accent);text-align:center;">
+        &#x23F1; 대기 상품 예상 작업시간: <b>${estText}</b> (평균 ${avgMin}분/건 기준)
+      </div>` : `<div style="margin-top:12px;font-size:0.78rem;color:var(--green);text-align:center;">&#x2705; 모든 상품 처리 완료!</div>`}
+    `;
+  } catch(e) { console.error("업로드 상태 로드 실패:", e); }
+}
+
 // ── 초기화 ───────────────────────────────────
 refreshStatus();
 loadProducts(1);
@@ -2988,8 +3105,11 @@ loadBrands();
 loadPriceSettings();
 loadSites();
 loadScrapeHistory();
+loadCheckSchedule();
+loadUploadCheckStatus();
 setInterval(refreshStatus, 10000);
 setInterval(() => { loadProducts(curPage); loadBrands(); }, 30000);
+setInterval(loadUploadCheckStatus, 60000);
 updatePagePreview();
 calcExample();
 </script>

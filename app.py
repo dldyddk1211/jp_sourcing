@@ -29,7 +29,7 @@ from exchange import get_jpy_to_krw_rate, get_cached_rate, calc_buying_price, se
 from post_generator import get_ai_config, set_ai_config, verify_ai_key
 from site_config import get_sites_for_ui
 from scrape_history import get_history as get_scrape_history
-from cafe_schedule import load_schedule, save_schedule
+from cafe_schedule import load_schedule, save_schedule, load_check_schedule, save_check_schedule
 from product_db import init_db as init_product_db, get_stats as bigdata_get_stats, search_products as bigdata_search, get_brands as bigdata_get_brands, delete_all as bigdata_delete_all, delete_by_site as bigdata_delete_site, get_total_count as bigdata_total, export_all as bigdata_export
 from cafe_monitor import start_monitor, stop_monitor, is_monitoring, batch_check_cafe_duplicates
 from telegram_bot import start_bot, stop_bot, is_bot_running
@@ -452,9 +452,40 @@ def _register_schedule_jobs():
             logger.info(f"📅 스케줄 등록: {slot['label']} {slot['hour']:02d}:{slot['minute']:02d} (브랜드={slot.get('brand','ALL')}, 수량={slot.get('quantity',5)})")
 
 
+def _register_check_schedule_job():
+    """업로드 체크 자동 확인 스케줄 잡 등록/갱신"""
+    job_id = "upload_check_auto"
+    if scheduler.get_job(job_id):
+        scheduler.remove_job(job_id)
+    sched = load_check_schedule()
+    if sched.get("enabled"):
+        scheduler.add_job(
+            func=lambda: threading.Thread(target=_run_upload_check, daemon=True).start(),
+            trigger="cron",
+            hour=sched["hour"],
+            minute=sched["minute"],
+            id=job_id,
+            name=f"업로드 체크 자동확인 {sched['hour']:02d}:{sched['minute']:02d}",
+            replace_existing=True,
+        )
+        logger.info(f"📅 체크 스케줄 등록: {sched['hour']:02d}:{sched['minute']:02d}")
+
+
 _register_schedule_jobs()
+_register_check_schedule_job()
 scheduler.start()
 set_app_status(status)  # xebio_search에 status 딕셔너리 주입
+
+# 카페 모니터 + 텔레그램 봇 자동 시작
+try:
+    _monitor_started = start_monitor(log_callback=push_log, interval=180)
+    _bot_started = start_bot(log_callback=push_log)
+    if _monitor_started:
+        logger.info("📡 카페 모니터 자동 시작됨")
+    if _bot_started:
+        logger.info("🤖 텔레그램 봇 자동 시작됨")
+except Exception as e:
+    logger.warning(f"⚠️ 모니터/봇 자동 시작 실패: {e}")
 
 
 # =============================================
@@ -1161,6 +1192,65 @@ def api_save_schedule():
     _register_schedule_jobs()
     push_log("📅 카페 업로드 스케줄 설정이 저장되었습니다")
     return jsonify({"ok": True})
+
+
+# ── 업로드 체크 자동 확인 스케줄 API ──────────────
+
+@app.route(f"{URL_PREFIX}/check-schedule", methods=["GET"])
+@login_required
+def api_get_check_schedule():
+    """업로드 체크 스케줄 설정 조회"""
+    sched = load_check_schedule()
+    job = scheduler.get_job("upload_check_auto")
+    sched["registered"] = job is not None
+    if job and job.next_run_time:
+        sched["next_run"] = job.next_run_time.strftime("%Y-%m-%d %H:%M")
+    else:
+        sched["next_run"] = None
+    return jsonify({"ok": True, "schedule": sched})
+
+
+@app.route(f"{URL_PREFIX}/check-schedule", methods=["POST"])
+@login_required
+def api_save_check_schedule():
+    """업로드 체크 스케줄 설정 저장 + 잡 재등록"""
+    data = request.json or {}
+    sched = {
+        "enabled": bool(data.get("enabled", False)),
+        "hour": int(data.get("hour", 9)),
+        "minute": int(data.get("minute", 0)),
+    }
+    save_check_schedule(sched)
+    _register_check_schedule_job()
+    push_log(f"📅 업로드 체크 자동확인 설정 저장됨: {'활성' if sched['enabled'] else '비활성'} {sched['hour']:02d}:{sched['minute']:02d}")
+    return jsonify({"ok": True})
+
+
+@app.route(f"{URL_PREFIX}/upload-status-summary", methods=["GET"])
+@login_required
+def api_upload_status_summary():
+    """업로드 상태 요약 — 대기/완료/중복/전체 수량 + 예상 시간"""
+    products = load_latest_products()
+    waiting = 0
+    uploaded = 0
+    duplicate = 0
+    total = len(products)
+    for p in products:
+        st = (p.get("cafe_status") or "대기")
+        if st == "대기":
+            waiting += 1
+        elif st == "완료":
+            uploaded += 1
+        elif st == "중복":
+            duplicate += 1
+    return jsonify({
+        "ok": True,
+        "waiting_count": waiting,
+        "uploaded_count": uploaded,
+        "duplicate_count": duplicate,
+        "total_count": total,
+        "avg_minutes_per_post": 10,
+    })
 
 
 @app.route(f"{URL_PREFIX}/run/upload", methods=["POST"])

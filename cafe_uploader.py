@@ -520,7 +520,9 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
                 await asyncio.sleep(0.3)
                 await page.keyboard.press("Control+End")
                 await asyncio.sleep(0.3)
-                # 빈 줄 2개 추가하여 템플릿과 구분
+                # 빈 줄 추가하여 템플릿과 구분 (2줄 여백)
+                await page.keyboard.press("Enter")
+                await page.keyboard.press("Enter")
                 await page.keyboard.press("Enter")
                 await page.keyboard.press("Enter")
                 await asyncio.sleep(0.3)
