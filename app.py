@@ -220,7 +220,7 @@ def _shuffle_by_brand(products: list) -> list:
     return result
 
 
-def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None):
+def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None, delay_min=8, delay_max=13):
     """백그라운드 스레드에서 업로드 실행
 
     우선순위:
@@ -298,7 +298,9 @@ def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None):
         count = asyncio.run(upload_products(
             products=selected,
             status_callback=push_log,
-            max_upload=max_upload
+            max_upload=max_upload,
+            delay_min=delay_min,
+            delay_max=delay_max,
         ))
         status["uploaded_count"] = count
         status["last_upload"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1169,9 +1171,11 @@ def manual_upload():
     max_upload = data.get("max_upload")
     shuffle_brands = data.get("shuffle_brands", False)
     checked_codes = data.get("checked_codes")  # 체크된 상품 코드 배열
+    delay_min = data.get("delay_min", 8)
+    delay_max = data.get("delay_max", 13)
     thread = threading.Thread(
         target=run_upload,
-        args=(max_upload, shuffle_brands, checked_codes),
+        args=(max_upload, shuffle_brands, checked_codes, delay_min, delay_max),
         daemon=True,
     )
     thread.start()

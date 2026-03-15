@@ -1100,6 +1100,14 @@
             <input type="number" id="cafe-max-upload" placeholder="전체" min="1" autocomplete="off" max="9999"
               style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:80px;font-size:0.82rem;">
           </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-size:0.8rem;color:var(--muted);">대기시간(분)</span>
+            <input type="number" id="cafe-delay-min" placeholder="8" min="8" max="60" value="8"
+              style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:55px;font-size:0.82rem;text-align:center;">
+            <span style="font-size:0.8rem;color:var(--muted);">~</span>
+            <input type="number" id="cafe-delay-max" placeholder="13" min="8" max="60" value="13"
+              style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:55px;font-size:0.82rem;text-align:center;">
+          </div>
         </div>
 
         <!-- 카페 상품 목록 -->
@@ -1791,9 +1799,16 @@ async function uploadSelected() {
     body: JSON.stringify({ selected_codes: [...checkedCodes] })
   });
   const shuffle = document.getElementById("cafe-shuffle-brands").checked;
+
+  // 대기시간 검증
+  let delayMin = parseInt(document.getElementById("cafe-delay-min").value) || 8;
+  let delayMax = parseInt(document.getElementById("cafe-delay-max").value) || 13;
+  if (delayMin < 8) { delayMin = 8; document.getElementById("cafe-delay-min").value = 8; }
+  if (delayMax < delayMin) { delayMax = delayMin; document.getElementById("cafe-delay-max").value = delayMax; }
+
   const desc = checkedCodes.size > 0 ? `체크 ${checkedCodes.size}개 우선` : "랜덤 선택";
-  addLog(`📤 업로드 시작 (${desc}, 총 ${uploadTotal}개)${shuffle ? " 브랜드 랜덤":""}`, "info");
-  await post("/run/upload", { max_upload: maxCount, shuffle_brands: shuffle, checked_codes: [...checkedCodes] });
+  addLog(`📤 업로드 시작 (${desc}, 총 ${uploadTotal}개, 대기 ${delayMin}~${delayMax}분)${shuffle ? " 브랜드 랜덤":""}`, "info");
+  await post("/run/upload", { max_upload: maxCount, shuffle_brands: shuffle, checked_codes: [...checkedCodes], delay_min: delayMin, delay_max: delayMax });
 }
 
 async function stopUpload() {

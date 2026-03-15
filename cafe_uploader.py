@@ -201,7 +201,7 @@ async def verify_login(context) -> bool:
 # 메인 업로드 함수
 # =============================================
 
-async def upload_products(products: list, status_callback=None, max_upload=None):
+async def upload_products(products: list, status_callback=None, max_upload=None, delay_min=8, delay_max=13):
     """
     상품 리스트를 네이버 카페에 업로드
 
@@ -320,11 +320,11 @@ async def upload_products(products: list, status_callback=None, max_upload=None)
                     if is_upload_stop_requested():
                         log(f"⏹ 업로드 중지됨 ({success_count}/{len(upload_list)}개 완료)")
                         break
-                    delay_min = random.randint(8, 13)
-                    delay_sec = delay_min * 60
+                    delay_minutes = random.randint(delay_min, delay_max)
+                    delay_sec = delay_minutes * 60
                     next_name = (upload_list[i].get("name_ko") or upload_list[i].get("name", ""))[:30]
-                    log(f"   ⏳ 다음 게시글까지 {delay_min}분 대기...")
-                    notify_upload_waiting(next_name, i, len(upload_list), delay_min)
+                    log(f"   ⏳ 다음 게시글까지 {delay_minutes}분 대기...")
+                    notify_upload_waiting(next_name, i, len(upload_list), delay_minutes)
                     # 10초 단위로 중지 확인하며 대기
                     for _ in range(delay_sec // 10):
                         if is_upload_stop_requested():
