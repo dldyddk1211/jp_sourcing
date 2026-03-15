@@ -48,8 +48,8 @@ logger = logging.getLogger(__name__)
 
 @app.after_request
 def add_no_cache(response):
-    """브라우저 캐시 방지 — 항상 최신 HTML/JS 제공"""
-    if "text/html" in response.content_type:
+    """브라우저/프록시 캐시 방지 — HTML + JSON 모두 적용"""
+    if "text/html" in response.content_type or "application/json" in response.content_type:
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
