@@ -366,6 +366,8 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
         post = generate_cafe_post(product, price_info)
         title = post["title"]
         content = post["content"]
+        content_intro = post.get("content_intro", "")
+        content_detail = post.get("content_detail", "")
         detail_images = get_detail_image_urls(product)
 
         # ── 1단계: 글쓰기 페이지로 직접 이동 ──
@@ -501,33 +503,51 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
 
         await asyncio.sleep(1)
 
-        # ── 4단계: 대표 이미지 업로드 (첫 번째 상세 이미지) ──
-        if detail_images:
-            _log(f"   📷 대표 이미지 업로드")
+        # ── 4단계: 본문 입력 (인트로 → 첫 이미지 → 상세) ──
+        toolbar_locator = await _find_toolbar_locator(page, frame_locator, _log)
+
+        if content_intro and content_detail and detail_images:
+            # 인트로 부분 먼저 입력
+            _log("   📝 인트로 본문 입력 중...")
+            await type_content_to_editor_iframe(page, frame_locator, content_intro, _log, toolbar_locator=toolbar_locator)
+            _log("   ⏳ 인트로 안정화 대기 중...")
+            await asyncio.sleep(3)
+
+            # 첫 번째 이미지 삽입
+            _log(f"   📷 첫 번째 이미지 삽입 [1/{len(detail_images)}]")
             await upload_image_from_url_iframe(page, frame_locator, detail_images[0], _log)
             await asyncio.sleep(2)
 
-        # ── 5단계: 에디터 툴바 탐색 + 본문 입력 ──
-        toolbar_locator = await _find_toolbar_locator(page, frame_locator, _log)
-        await type_content_to_editor_iframe(page, frame_locator, content, _log, toolbar_locator=toolbar_locator)
+            # 상세 부분 이어서 입력
+            _log("   📝 상세 본문 입력 중...")
+            await type_content_to_editor_iframe(page, frame_locator, content_detail, _log, toolbar_locator=toolbar_locator)
+            _log("   ⏳ 본문 안정화 대기 중...")
+            await asyncio.sleep(5)
 
-        # 본문 입력 완료 후 충분히 대기 (에디터 렌더링 + OG 로딩)
-        _log("   ⏳ 본문 안정화 대기 중...")
-        await asyncio.sleep(5)
+            # 나머지 이미지 업로드
+            remaining_images = detail_images[1:]
+            if remaining_images:
+                for img_idx, img_url in enumerate(remaining_images):
+                    _log(f"   📷 이미지 업로드 [{img_idx+2}/{len(detail_images)}]")
+                    await upload_image_from_url_iframe(page, frame_locator, img_url, _log)
+                    await asyncio.sleep(2)
+        else:
+            # 분리 불가 시 기존 방식: 전체 본문 → 전체 이미지
+            await type_content_to_editor_iframe(page, frame_locator, content, _log, toolbar_locator=toolbar_locator)
+            _log("   ⏳ 본문 안정화 대기 중...")
+            await asyncio.sleep(5)
+            if detail_images:
+                for img_idx, img_url in enumerate(detail_images):
+                    _log(f"   📷 이미지 업로드 [{img_idx+1}/{len(detail_images)}]")
+                    await upload_image_from_url_iframe(page, frame_locator, img_url, _log)
+                    await asyncio.sleep(2)
 
-        # ── 6단계: 나머지 상세 이미지 업로드 ──
-        remaining_images = detail_images[1:] if len(detail_images) > 1 else []
-        for img_idx, img_url in enumerate(remaining_images):
-            _log(f"   📷 상세 이미지 업로드 [{img_idx+1}/{len(remaining_images)}]")
-            await upload_image_from_url_iframe(page, frame_locator, img_url, _log)
-            await asyncio.sleep(2)
-
-        # ── 7단계: 태그 입력 ──
+        # ── 6단계: 태그 입력 ──
         tags = post.get("tags", [])
         if tags:
             await input_tags_iframe(frame_locator, tags, _log)
 
-        # ── 8단계: 등록 전 검증 ──────────────────────
+        # ── 7단계: 등록 전 검증 ──────────────────────
         _log("━" * 40)
         _log("   🔍 등록 전 검증 시작...")
         await asyncio.sleep(2)
@@ -888,7 +908,7 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
 
         await asyncio.sleep(1)
 
-        # ── 9단계: 등록 버튼 클릭 ──
+        # ── 8단계: 등록 버튼 클릭 ──
         submit_selectors = [
             "a.BaseButton--skinGreen:has-text('등록')",
             "a.BaseButton:has-text('등록')",

@@ -851,7 +851,7 @@ def _ensure_naver_form(content: str) -> str:
 
 
 def _clean_ai_response(content: str) -> str:
-    """AI 응답에서 구분자 제거"""
+    """AI 응답에서 구분자 제거 + 불필요한 줄 삭제"""
     if content.startswith("---"):
         content = content[3:].strip()
     if content.endswith("---"):
@@ -861,7 +861,31 @@ def _clean_ai_response(content: str) -> str:
         content = re.sub(r'^```\w*\n?', '', content)
         content = re.sub(r'\n?```$', '', content)
         content = content.strip()
+    # "📝 네이버 폼 신청서 작성" 줄 제거 (AI가 임의로 생성하는 텍스트)
+    lines = content.split("\n")
+    lines = [l for l in lines if "네이버 폼 신청서" not in l]
+    content = "\n".join(lines)
     return content
+
+
+def _split_content(content: str) -> tuple:
+    """본문을 인트로(가격/사이즈까지)와 상세(🔍부터)로 분리
+    Returns: (intro, detail) — detail이 비어있으면 분리 불가"""
+    # "🔍 상품 상세 정보" 섹션을 기준으로 분리
+    markers = ["🔍 상품 상세 정보", "🔍 상품 상세", "💎 핵심 구매 포인트"]
+    for marker in markers:
+        idx = content.find(marker)
+        if idx > 0:
+            intro = content[:idx].rstrip()
+            detail = content[idx:]
+            return intro, detail
+    # 마커가 없으면 빈 줄 2개 이상 연속되는 첫 지점에서 분리 (사이즈 목록 이후)
+    m = re.search(r'\n\n\n', content)
+    if m and m.start() > 100:
+        intro = content[:m.start()].rstrip()
+        detail = content[m.end():].lstrip('\n')
+        return intro, detail
+    return content, ""
 
 
 # ── 메인 함수 ──────────────────────────────
@@ -882,7 +906,10 @@ def generate_cafe_post(product: dict, price_info: dict) -> dict:
 
     if provider == "none":
         logger.info(f"📝 [{code}] AI=none — 기본 템플릿 사용")
-        return {"title": title, "content": _make_fallback_content(product, price_info), "tags": tags}
+        fb = _make_fallback_content(product, price_info)
+        fb_intro, fb_detail = _split_content(fb)
+        return {"title": title, "content": fb, "tags": tags,
+                "content_intro": fb_intro, "content_detail": fb_detail}
 
     prompt = _build_prompt(product, price_info)
 
@@ -934,7 +961,10 @@ def generate_cafe_post(product: dict, price_info: dict) -> dict:
         except Exception as tg_err:
             logger.warning(f"텔레그램 알림 실패: {tg_err}")
 
-        return {"title": title, "content": _make_fallback_content(product, price_info), "tags": tags}
+        fb = _make_fallback_content(product, price_info)
+        fb_intro, fb_detail = _split_content(fb)
+        return {"title": title, "content": fb, "tags": tags,
+                "content_intro": fb_intro, "content_detail": fb_detail}
 
     content = _clean_ai_response(content)
 
@@ -964,7 +994,11 @@ def generate_cafe_post(product: dict, price_info: dict) -> dict:
             title = _translate_katakana(title)
             logger.warning(f"⚠️ [{code}] 제목 최종: {title}")
 
-    return {"title": title, "content": content, "tags": tags}
+    # 본문을 인트로 / 상세로 분리 (첫 이미지 삽입 위치용)
+    intro, detail = _split_content(content)
+
+    return {"title": title, "content": content, "tags": tags,
+            "content_intro": intro, "content_detail": detail}
 
 
 # ── Fallback 템플릿 ────────────────────────
