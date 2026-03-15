@@ -1439,12 +1439,13 @@ def get_ai_settings():
 @app.route(f"{URL_PREFIX}/settings/ai", methods=["POST"])
 @login_required
 def update_ai_settings():
-    """AI 설정 변경 (provider, gemini_key, claude_key)"""
+    """AI 설정 변경 (provider, gemini_key, claude_key, openai_key)"""
     data = request.json or {}
     set_ai_config(
         provider=data.get("provider"),
         gemini_key=data.get("gemini_key"),
         claude_key=data.get("claude_key"),
+        openai_key=data.get("openai_key"),
     )
     push_log(f"🤖 AI 설정 변경: {data.get('provider', '변경없음')}")
     return jsonify({"ok": True, **get_ai_config()})

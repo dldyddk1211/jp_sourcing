@@ -610,36 +610,116 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
 
                 if not form_found:
                     _log(f"   ❌ [검증] 네이버 폼 링크 누락! — 재삽입 시도...")
-                    # 에디터 끝으로 이동 후 폼 URL 강제 삽입
-                    try:
-                        from post_generator import NAVER_FORM_URL as _FORM_URL
-                        # 에디터 영역 찾아서 끝에 URL 삽입
-                        for sel in [".se-content", ".se-section-text", "[contenteditable='true']"]:
+                    from post_generator import NAVER_FORM_URL as _FORM_URL
+
+                    # 에디터 영역 찾기
+                    target_ed = None
+                    target_frame = None
+                    for sel in [".se-content", ".se-section-text", "[contenteditable='true']"]:
+                        try:
+                            ed = frame_locator.locator(sel).first
+                            if await ed.count() > 0:
+                                target_ed = ed
+                                break
+                        except Exception:
+                            continue
+
+                    if target_ed:
+                        # 에디터 끝으로 이동
+                        try:
+                            await target_ed.press("Control+End")
+                            await asyncio.sleep(0.3)
+                            await target_ed.press("Enter")
+                            await target_ed.press("Enter")
+                        except Exception:
+                            pass
+
+                        # 재삽입 방법 1: 클립보드
+                        try:
+                            await page.evaluate(f"navigator.clipboard.writeText('{_FORM_URL}')")
+                            await asyncio.sleep(0.5)
+                            await target_ed.press("Control+v")
+                            await asyncio.sleep(6)
+                            # 검증
+                            for fr in page.frames:
+                                try:
+                                    txt = await fr.evaluate("document.body?.innerText || ''")
+                                    if "naver.me" in txt:
+                                        form_found = True
+                                        break
+                                    found_a = await fr.evaluate("!!document.querySelector(\"a[href*='naver.me']\")")
+                                    if found_a:
+                                        form_found = True
+                                        break
+                                except Exception:
+                                    continue
+                            if form_found:
+                                _log(f"   🔄 [검증] 네이버 폼 URL 클립보드 재삽입 성공")
+                        except Exception:
+                            pass
+
+                        # 재삽입 방법 2: execCommand
+                        if not form_found:
                             try:
-                                ed = frame_locator.locator(sel).first
-                                if await ed.count() > 0:
-                                    await ed.press("Control+End")
-                                    await asyncio.sleep(0.3)
-                                    await ed.press("Enter")
-                                    await ed.press("Enter")
-                                    # 클립보드로 URL 삽입
+                                for frame in page.frames:
                                     try:
-                                        await page.evaluate(f"navigator.clipboard.writeText('{_FORM_URL}')")
-                                        await asyncio.sleep(0.3)
-                                        await ed.press("Control+v")
+                                        await frame.evaluate(f"document.execCommand('insertText', false, '{_FORM_URL}');")
+                                        await asyncio.sleep(6)
+                                        txt = await frame.evaluate("document.body?.innerText || ''")
+                                        if "naver.me" in txt:
+                                            form_found = True
+                                            _log(f"   🔄 [검증] 네이버 폼 URL execCommand 재삽입 성공")
+                                            break
                                     except Exception:
-                                        await ed.type(_FORM_URL, delay=20)
-                                    await asyncio.sleep(5)
-                                    _log(f"   🔄 [검증] 네이버 폼 URL 강제 삽입 완료")
-                                    form_found = True
-                                    break
+                                        continue
                             except Exception:
-                                continue
-                    except Exception as e:
-                        _log(f"   ⚠️ [검증] 네이버 폼 재삽입 실패: {e}")
+                                pass
+
+                        # 재삽입 방법 3: 타이핑
+                        if not form_found:
+                            try:
+                                await target_ed.type(_FORM_URL, delay=20)
+                                await asyncio.sleep(4)
+                                for fr in page.frames:
+                                    try:
+                                        txt = await fr.evaluate("document.body?.innerText || ''")
+                                        if "naver.me" in txt:
+                                            form_found = True
+                                            _log(f"   🔄 [검증] 네이버 폼 URL 타이핑 재삽입 성공")
+                                            break
+                                    except Exception:
+                                        continue
+                            except Exception:
+                                pass
+
+                        # 재삽입 방법 4: paste 이벤트
+                        if not form_found:
+                            try:
+                                for frame in page.frames:
+                                    try:
+                                        await frame.evaluate(f"""(() => {{
+                                            const el = document.querySelector("[contenteditable='true']") || document.querySelector(".se-content");
+                                            if (el) {{
+                                                el.focus();
+                                                const dt = new DataTransfer();
+                                                dt.setData('text/plain', '{_FORM_URL}');
+                                                const evt = new ClipboardEvent('paste', {{clipboardData: dt, bubbles: true, cancelable: true}});
+                                                el.dispatchEvent(evt);
+                                            }}
+                                        }})()""")
+                                        await asyncio.sleep(6)
+                                        txt = await frame.evaluate("document.body?.innerText || ''")
+                                        if "naver.me" in txt:
+                                            form_found = True
+                                            _log(f"   🔄 [검증] 네이버 폼 URL paste 이벤트 재삽입 성공")
+                                            break
+                                    except Exception:
+                                        continue
+                            except Exception:
+                                pass
 
                 if not form_found:
-                    _log(f"   ❌ [검증] 네이버 폼 링크 재삽입도 실패 — 등록 중단!")
+                    _log(f"   ❌ [검증] 네이버 폼 링크 모든 재삽입 방법 실패 — 등록 중단!")
                     verify_ok = False
 
                 # [검증 2-1] 본문 일본어 잔존 체크
@@ -1083,15 +1163,42 @@ async def type_content_to_editor_iframe(page, frame_locator, content: str, log=N
             # URL: 붙여넣기로 삽입 (OG 미리보기 카드 생성)
             if stripped and url_pattern.match(stripped):
                 url_inserted = False
+                # URL 삽입 후 검증 헬퍼
+                async def _verify_url_in_editor(url_str):
+                    """에디터 본문에 URL이 실제로 들어갔는지 확인"""
+                    await asyncio.sleep(1)
+                    for fr in page.frames:
+                        try:
+                            txt = await fr.evaluate("document.body?.innerText || ''")
+                            if url_str in txt or "naver.me" in txt:
+                                return True
+                        except Exception:
+                            continue
+                    # OG 카드로 변환된 경우 — href 확인
+                    for fr in page.frames:
+                        try:
+                            found = await fr.evaluate(f"!!document.querySelector(\"a[href*='naver.me']\")")
+                            if found:
+                                return True
+                        except Exception:
+                            continue
+                    return False
+
                 # 방법 1: clipboard API (메인 페이지 컨텍스트)
                 try:
                     await page.evaluate(f"navigator.clipboard.writeText('{stripped}')")
                     await asyncio.sleep(0.5)
                     await target_el.press("Control+v")
                     await asyncio.sleep(6)  # OG 미리보기 로딩 대기
-                    url_inserted = True
-                    if log:
-                        log(f"   🔗 URL 붙여넣기 (OG 미리보기): {stripped}")
+                    # 실제 삽입 검증
+                    if await _verify_url_in_editor(stripped):
+                        url_inserted = True
+                        if log:
+                            log(f"   🔗 URL 붙여넣기 (OG 미리보기): {stripped}")
+                    else:
+                        logger.warning("클립보드 붙여넣기 후 URL 미감지 — 다음 방법 시도")
+                        if log:
+                            log(f"   ⚠️ 클립보드 붙여넣기 실패 (URL 미감지) — 다음 방법 시도")
                 except Exception as clip_err:
                     logger.warning(f"클립보드 방법 실패: {clip_err}")
 
@@ -1106,10 +1213,13 @@ async def type_content_to_editor_iframe(page, frame_locator, content: str, log=N
                                         document.execCommand('insertText', false, '{stripped}');
                                     """)
                                     await asyncio.sleep(6)
-                                    url_inserted = True
-                                    if log:
-                                        log(f"   🔗 URL execCommand 삽입: {stripped}")
-                                    break
+                                    if await _verify_url_in_editor(stripped):
+                                        url_inserted = True
+                                        if log:
+                                            log(f"   🔗 URL execCommand 삽입: {stripped}")
+                                        break
+                                    else:
+                                        logger.warning("execCommand 후 URL 미감지")
                             except Exception:
                                 continue
                     except Exception as exec_err:
@@ -1120,13 +1230,45 @@ async def type_content_to_editor_iframe(page, frame_locator, content: str, log=N
                     try:
                         await target_el.type(stripped, delay=20)
                         await asyncio.sleep(4)
-                        url_inserted = True
-                        if log:
-                            log(f"   🔗 URL 타이핑 삽입 (OG 미리보기 없을 수 있음): {stripped}")
+                        if await _verify_url_in_editor(stripped):
+                            url_inserted = True
+                            if log:
+                                log(f"   🔗 URL 타이핑 삽입: {stripped}")
+                        else:
+                            logger.warning("타이핑 후에도 URL 미감지")
+                            if log:
+                                log(f"   ⚠️ URL 타이핑 후에도 미감지: {stripped}")
                     except Exception as type_err:
                         logger.warning(f"URL 타이핑도 실패: {type_err}")
-                        if log:
-                            log(f"   ❌ URL 삽입 실패: {stripped}")
+
+                # 방법 4: 최후 수단 — dispatchEvent로 직접 paste 이벤트 발생
+                if not url_inserted:
+                    try:
+                        for frame in page.frames:
+                            try:
+                                await frame.evaluate(f"""(() => {{
+                                    const el = document.querySelector("[contenteditable='true']") || document.querySelector(".se-content");
+                                    if (el) {{
+                                        el.focus();
+                                        const dt = new DataTransfer();
+                                        dt.setData('text/plain', '{stripped}');
+                                        const evt = new ClipboardEvent('paste', {{clipboardData: dt, bubbles: true, cancelable: true}});
+                                        el.dispatchEvent(evt);
+                                    }}
+                                }})()""")
+                                await asyncio.sleep(6)
+                                if await _verify_url_in_editor(stripped):
+                                    url_inserted = True
+                                    if log:
+                                        log(f"   🔗 URL paste 이벤트 삽입: {stripped}")
+                                    break
+                            except Exception:
+                                continue
+                    except Exception as paste_err:
+                        logger.warning(f"paste 이벤트 방법 실패: {paste_err}")
+
+                if not url_inserted and log:
+                    log(f"   ❌ URL 삽입 모든 방법 실패: {stripped}")
             elif stripped:
                 await target_el.type(stripped, delay=30)
                 await asyncio.sleep(0.1)

@@ -8,7 +8,7 @@ import os
 import json
 import random
 import logging
-from config import ANTHROPIC_API_KEY, GEMINI_API_KEY, AI_PROVIDER
+from config import ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, AI_PROVIDER
 from exchange import format_price
 from data_manager import get_path
 
@@ -41,21 +41,77 @@ _user_dict = _load_user_dict()
 
 NAVER_FORM_URL = "https://naver.me/F2nuqgnV"
 
+# ── AI 설정 DB 저장/로드 (외부 경로 — GitHub 미포함) ──────
+import sqlite3 as _sqlite3
+
+_AI_SETTINGS_DB = os.path.join(get_path("db"), "ai_settings.db")
+
+
+def _init_ai_settings_db():
+    """AI 설정 DB 초기화"""
+    os.makedirs(os.path.dirname(_AI_SETTINGS_DB), exist_ok=True)
+    conn = _sqlite3.connect(_AI_SETTINGS_DB)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ai_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT DEFAULT ''
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def _load_ai_settings_from_db() -> dict:
+    """DB에서 AI 설정 로드 (없으면 config.py/.env 값 사용)"""
+    _init_ai_settings_db()
+    settings = {}
+    try:
+        conn = _sqlite3.connect(_AI_SETTINGS_DB)
+        rows = conn.execute("SELECT key, value FROM ai_settings").fetchall()
+        conn.close()
+        for k, v in rows:
+            settings[k] = v
+    except Exception:
+        pass
+
+    return {
+        "provider": settings.get("provider") or AI_PROVIDER,
+        "gemini_key": settings.get("gemini_key") or GEMINI_API_KEY,
+        "claude_key": settings.get("claude_key") or ANTHROPIC_API_KEY,
+        "openai_key": settings.get("openai_key") or OPENAI_API_KEY,
+    }
+
+
+def _save_ai_settings_to_db(config: dict):
+    """AI 설정을 DB에 저장"""
+    _init_ai_settings_db()
+    try:
+        conn = _sqlite3.connect(_AI_SETTINGS_DB)
+        for k, v in config.items():
+            if v:  # 빈 값은 저장하지 않음
+                conn.execute(
+                    "INSERT OR REPLACE INTO ai_settings (key, value) VALUES (?, ?)",
+                    (k, v)
+                )
+        conn.commit()
+        conn.close()
+        logger.info(f"💾 AI 설정 DB 저장 완료: {_AI_SETTINGS_DB}")
+    except Exception as e:
+        logger.warning(f"AI 설정 DB 저장 실패: {e}")
+
+
 # ── 런타임 설정 (대시보드에서 변경 가능) ──────
-_ai_config = {
-    "provider": AI_PROVIDER,
-    "gemini_key": GEMINI_API_KEY,
-    "claude_key": ANTHROPIC_API_KEY,
-}
+_ai_config = _load_ai_settings_from_db()
 
 # ── AI 클라이언트 (지연 초기화) ──────────────
 _gemini_client = None
 _claude_client = None
+_openai_client = None
 
 
-def set_ai_config(provider=None, gemini_key=None, claude_key=None):
+def set_ai_config(provider=None, gemini_key=None, claude_key=None, openai_key=None):
     """대시보드에서 AI 설정 변경 + .env 파일에 영구 저장"""
-    global _gemini_client, _claude_client
+    global _gemini_client, _claude_client, _openai_client
     if provider is not None:
         _ai_config["provider"] = provider.lower()
     if gemini_key is not None:
@@ -64,9 +120,14 @@ def set_ai_config(provider=None, gemini_key=None, claude_key=None):
     if claude_key is not None:
         _ai_config["claude_key"] = claude_key
         _claude_client = None
+    if openai_key is not None:
+        _ai_config["openai_key"] = openai_key
+        _openai_client = None
     logger.info(f"AI 설정 변경: provider={_ai_config['provider']}")
 
-    # .env 파일에 영구 저장
+    # 외부 DB에 영구 저장 (GitHub 미포함)
+    _save_ai_settings_to_db(_ai_config)
+    # .env 파일에도 백업 저장
     _save_ai_config_to_env()
 
 
@@ -90,6 +151,8 @@ def _save_ai_config_to_env():
         env_vars["GEMINI_API_KEY"] = _ai_config["gemini_key"]
     if _ai_config["claude_key"]:
         env_vars["ANTHROPIC_API_KEY"] = _ai_config["claude_key"]
+    if _ai_config.get("openai_key"):
+        env_vars["OPENAI_API_KEY"] = _ai_config["openai_key"]
 
     # .env 파일 쓰기
     with open(env_path, "w", encoding="utf-8") as f:
@@ -109,8 +172,10 @@ def get_ai_config() -> dict:
         "provider": _ai_config["provider"],
         "gemini_key": mask(_ai_config["gemini_key"]),
         "claude_key": mask(_ai_config["claude_key"]),
+        "openai_key": mask(_ai_config.get("openai_key", "")),
         "gemini_set": bool(_ai_config["gemini_key"]),
         "claude_set": bool(_ai_config["claude_key"]),
+        "openai_set": bool(_ai_config.get("openai_key")),
     }
 
 
@@ -128,6 +193,14 @@ def _get_claude():
         import anthropic
         _claude_client = anthropic.Anthropic(api_key=_ai_config["claude_key"])
     return _claude_client
+
+
+def _get_openai():
+    global _openai_client
+    if _openai_client is None:
+        from openai import OpenAI
+        _openai_client = OpenAI(api_key=_ai_config.get("openai_key", ""))
+    return _openai_client
 
 
 # ── 카타카나 → 한국어 매핑 ──────────────────
@@ -284,7 +357,8 @@ def _gemini_translate_name(text: str) -> str:
 
     provider = _ai_config["provider"]
     has_key = (provider == "gemini" and _ai_config["gemini_key"]) or \
-              (provider == "claude" and _ai_config["claude_key"])
+              (provider == "claude" and _ai_config["claude_key"]) or \
+              (provider == "openai" and _ai_config.get("openai_key"))
     if provider == "none" or not has_key:
         return text
 
@@ -299,6 +373,8 @@ def _gemini_translate_name(text: str) -> str:
 상품명: {text}"""
         if provider == "gemini":
             result = _call_gemini(prompt)
+        elif provider == "openai":
+            result = _call_openai(prompt)
         else:
             result = _call_claude(prompt)
         result = result.strip().split("\n")[0].strip()  # 첫 줄만
@@ -474,7 +550,6 @@ def _build_prompt(product: dict, price_info: dict) -> str:
     link = product.get("link", "")
     code = product.get("product_code", "")
     price_krw = price_info.get("price_final", 0)
-    rate = price_info.get("rate", 0)
     name_ko_clean = _clean_name(product.get("name_ko", "") or name_ja, code)
     # 사전에 없는 일본어가 남아있으면 Gemini로 번역
     if _has_japanese(name_ko_clean):
@@ -504,7 +579,6 @@ def _build_prompt(product: dict, price_info: dict) -> str:
 - 상품명(일본어): {name_ja}
 - 품번: {code}
 - 구매대행가: {format_price(price_krw)} (무료배송)
-- 적용 환율: 1엔 = {rate}원
 - 주문 가능 사이즈: {size_text}
 - 상품 링크: {link}
 - 상세 설명(반드시 한국어로 번역하여 사용할 것): {description[:800] if description else "없음"}
@@ -608,6 +682,17 @@ def verify_ai_key() -> dict:
         except Exception as e:
             return {"ok": False, "provider": "claude", "message": f"Claude API 오류: {e}"}
 
+    elif provider == "openai":
+        key = _ai_config.get("openai_key", "")
+        if not key:
+            return {"ok": False, "provider": "openai", "message": "OPENAI_API_KEY가 설정되지 않았습니다."}
+        try:
+            result = _call_openai("테스트입니다. '확인'이라고만 답해주세요.")
+            if result:
+                return {"ok": True, "provider": "openai", "message": f"OpenAI API 정상 작동 (응답: {result[:20]})"}
+        except Exception as e:
+            return {"ok": False, "provider": "openai", "message": f"OpenAI API 오류: {e}"}
+
     return {"ok": False, "provider": provider, "message": f"알 수 없는 provider: {provider}"}
 
 
@@ -634,13 +719,25 @@ def _call_claude(prompt: str) -> str:
         return stream.get_final_message().content[0].text.strip()
 
 
+def _call_openai(prompt: str) -> str:
+    """OpenAI API 호출"""
+    client = _get_openai()
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        max_tokens=3000,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.choices[0].message.content.strip()
+
+
 def _translate_description(desc: str) -> str:
     """상품 상세 설명(일본어)을 AI로 한국어 번역"""
     if not _has_japanese(desc):
         return desc
     provider = _ai_config["provider"]
     has_key = (provider == "gemini" and _ai_config["gemini_key"]) or \
-              (provider == "claude" and _ai_config["claude_key"])
+              (provider == "claude" and _ai_config["claude_key"]) or \
+              (provider == "openai" and _ai_config.get("openai_key"))
     if provider == "none" or not has_key:
         return desc
 
@@ -651,7 +748,7 @@ def _translate_description(desc: str) -> str:
 번역 결과만 출력하세요.
 
 {desc[:800]}"""
-        result = _call_gemini(prompt) if provider == "gemini" else _call_claude(prompt)
+        result = _call_gemini(prompt) if provider == "gemini" else _call_openai(prompt) if provider == "openai" else _call_claude(prompt)
         result = result.strip()
         if result and not _has_japanese(result):
             logger.info(f"✅ 상세 설명 번역 완료 ({len(desc)}자 → {len(result)}자)")
@@ -671,7 +768,8 @@ def _retranslate_content(content: str) -> str:
         return content
     provider = _ai_config["provider"]
     has_key = (provider == "gemini" and _ai_config["gemini_key"]) or \
-              (provider == "claude" and _ai_config["claude_key"])
+              (provider == "claude" and _ai_config["claude_key"]) or \
+              (provider == "openai" and _ai_config.get("openai_key"))
     if provider == "none" or not has_key:
         return content
 
@@ -682,7 +780,7 @@ def _retranslate_content(content: str) -> str:
 번역 결과만 출력하세요.
 
 {content}"""
-        result = _call_gemini(prompt) if provider == "gemini" else _call_claude(prompt)
+        result = _call_gemini(prompt) if provider == "gemini" else _call_openai(prompt) if provider == "openai" else _call_claude(prompt)
         result = _clean_ai_response(result)
         if result and len(result) > len(content) * 0.5:
             # 재번역 결과에서도 일본어 단어를 사전에 저장
@@ -770,6 +868,9 @@ def generate_cafe_post(product: dict, price_info: dict) -> dict:
     elif provider == "claude" and not _ai_config["claude_key"]:
         logger.warning(f"⚠️ [{code}] ANTHROPIC_API_KEY 미설정 — 기본 템플릿 사용")
         return {"title": title, "content": _make_fallback_content(product, price_info), "tags": tags}
+    elif provider == "openai" and not _ai_config.get("openai_key"):
+        logger.warning(f"⚠️ [{code}] OPENAI_API_KEY 미설정 — 기본 템플릿 사용")
+        return {"title": title, "content": _make_fallback_content(product, price_info), "tags": tags}
     elif provider == "none":
         logger.info(f"📝 [{code}] AI=none — 기본 템플릿 사용")
         return {"title": title, "content": _make_fallback_content(product, price_info), "tags": tags}
@@ -781,6 +882,9 @@ def generate_cafe_post(product: dict, price_info: dict) -> dict:
         if provider == "gemini":
             content = _call_gemini(prompt)
             logger.info(f"✅ [{code}] Gemini 게시글 생성 완료 ({len(content)}자)")
+        elif provider == "openai":
+            content = _call_openai(prompt)
+            logger.info(f"✅ [{code}] OpenAI 게시글 생성 완료 ({len(content)}자)")
         else:
             content = _call_claude(prompt)
             logger.info(f"✅ [{code}] Claude 게시글 생성 완료 ({len(content)}자)")

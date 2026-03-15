@@ -739,6 +739,11 @@
                 <span style="font-weight:600">Claude</span>
                 <span style="font-size:0.75rem;color:var(--muted)">(유료/고품질)</span>
               </label>
+              <label style="display:flex;align-items:center;gap:6px;padding:10px 16px;border:2px solid var(--border);border-radius:8px;cursor:pointer;transition:border-color 0.2s" id="ai-opt-openai">
+                <input type="radio" name="ai-provider" value="openai" onchange="onAiProviderChange(this.value)">
+                <span style="font-weight:600">OpenAI</span>
+                <span style="font-size:0.75rem;color:var(--muted)">(GPT-4o-mini)</span>
+              </label>
               <label style="display:flex;align-items:center;gap:6px;padding:10px 16px;border:2px solid var(--border);border-radius:8px;cursor:pointer;transition:border-color 0.2s" id="ai-opt-none">
                 <input type="radio" name="ai-provider" value="none" onchange="onAiProviderChange(this.value)">
                 <span style="font-weight:600">미사용</span>
@@ -769,6 +774,17 @@
                 <input id="ai-claude-key" type="password" style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;background:var(--bg);color:var(--text);font-family:monospace" placeholder="sk-ant-...">
                 <button class="btn b-purple" onclick="saveAiKey('claude')" style="padding:8px 16px;white-space:nowrap">저장</button>
                 <a href="https://console.anthropic.com" target="_blank" class="btn b-blue" style="padding:8px 12px;white-space:nowrap;text-decoration:none;font-size:0.8rem">🔗 키 발급</a>
+              </div>
+            </div>
+            <div id="ai-openai-key-row">
+              <div style="font-size:0.82rem;color:var(--muted);margin-bottom:6px">
+                OpenAI API Key
+                <span id="ai-openai-status" style="margin-left:8px;font-size:0.75rem"></span>
+              </div>
+              <div style="display:flex;gap:8px">
+                <input id="ai-openai-key" type="password" style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;background:var(--bg);color:var(--text);font-family:monospace" placeholder="sk-...">
+                <button class="btn b-purple" onclick="saveAiKey('openai')" style="padding:8px 16px;white-space:nowrap">저장</button>
+                <a href="https://platform.openai.com/api-keys" target="_blank" class="btn b-blue" style="padding:8px 12px;white-space:nowrap;text-decoration:none;font-size:0.8rem">🔗 키 발급</a>
               </div>
             </div>
           </div>
@@ -2210,9 +2226,13 @@ async function loadAiSettings() {
     document.getElementById("ai-claude-status").innerHTML = d.claude_set
       ? '<span style="color:var(--green)">✅ 설정됨</span>'
       : '<span style="color:var(--red)">❌ 미설정</span>';
+    document.getElementById("ai-openai-status").innerHTML = d.openai_set
+      ? '<span style="color:var(--green)">✅ 설정됨</span>'
+      : '<span style="color:var(--red)">❌ 미설정</span>';
     // 마스킹된 키 placeholder
     if (d.gemini_key) document.getElementById("ai-gemini-key").placeholder = d.gemini_key;
     if (d.claude_key) document.getElementById("ai-claude-key").placeholder = d.claude_key;
+    if (d.openai_key) document.getElementById("ai-openai-key").placeholder = d.openai_key;
   } catch (e) { console.error("AI 설정 로드 오류:", e); }
 }
 
@@ -2235,7 +2255,7 @@ async function saveAiKey(type) {
   const input = document.getElementById("ai-" + type + "-key");
   const key = input.value.trim();
   if (!key) { alert("API 키를 입력해주세요"); return; }
-  const body = type === "gemini" ? {gemini_key: key} : {claude_key: key};
+  const body = type === "gemini" ? {gemini_key: key} : type === "openai" ? {openai_key: key} : {claude_key: key};
   try {
     const d = await fetch(PREFIX + "/settings/ai", {
       method: "POST",

@@ -51,7 +51,8 @@ EXCHANGE_RATE_MARKUP       = 1.015  # 송금 환율 마진 1.5%
 # ── AI API 설정 ─────────────────────────
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 GEMINI_API_KEY    = os.environ.get("GEMINI_API_KEY", "")
-AI_PROVIDER       = os.environ.get("AI_PROVIDER", "gemini")  # "gemini" | "claude" | "none"
+OPENAI_API_KEY    = os.environ.get("OPENAI_API_KEY", "")
+AI_PROVIDER       = os.environ.get("AI_PROVIDER", "gemini")  # "gemini" | "claude" | "openai" | "none"
 
 # ── 텔레그램 알림 설정 ─────────────────────
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")   # @BotFather에서 발급
