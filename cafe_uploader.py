@@ -503,7 +503,31 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
 
         await asyncio.sleep(1)
 
-        # ── 4단계: 본문 입력 (인트로 → 첫 이미지 → 상세) ──
+        # ── 4단계: 기존 템플릿 끝으로 커서 이동 후 본문 입력 ──
+        # 에디터에 미리 등록된 템플릿이 있으므로 끝으로 이동하여 이어서 작성
+        try:
+            editor_el = None
+            for sel in [".se-content", ".se-section-text", "[contenteditable=true]"]:
+                try:
+                    el = frame_locator.locator(sel).first
+                    if await el.count() > 0:
+                        editor_el = el
+                        break
+                except Exception:
+                    continue
+            if editor_el:
+                await editor_el.click()
+                await asyncio.sleep(0.3)
+                await page.keyboard.press("Control+End")
+                await asyncio.sleep(0.3)
+                # 빈 줄 2개 추가하여 템플릿과 구분
+                await page.keyboard.press("Enter")
+                await page.keyboard.press("Enter")
+                await asyncio.sleep(0.3)
+                _log("   ✅ 기존 템플릿 끝으로 커서 이동 완료")
+        except Exception as e:
+            _log(f"   ⚠️ 커서 이동 시도: {e}")
+
         toolbar_locator = await _find_toolbar_locator(page, frame_locator, _log)
 
         if content_intro and content_detail and detail_images:
@@ -622,158 +646,30 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
             if len(body_text) > 30:
                 _log(f"   ✅ [검증] 본문: {len(body_text)}자 입력됨")
 
-                # 구조 검증: 필수 섹션이 올바른 순서로 있는지 확인
-                required_sections = ["🔍 상품 상세 정보", "💎 핵심 구매 포인트", "👉 구매 문의"]
+                # 구조 검증: 섹션 존재 및 순서 확인 (경고만, 차단하지 않음)
+                check_sections = ["🔍 상품 상세 정보", "💎 핵심 구매 포인트"]
                 positions = []
-                for sec in required_sections:
+                for sec in check_sections:
                     pos = body_text.find(sec)
                     positions.append(pos)
                     if pos == -1:
                         _log(f"   ⚠️ [검증] 누락된 섹션: {sec}")
 
-                # 순서 확인 (찾은 것들만)
-                found_positions = [(p, s) for p, s in zip(positions, required_sections) if p >= 0]
+                # 순서 확인 (찾은 것들만) — 경고만, 등록 중단하지 않음
+                found_positions = [(p, s) for p, s in zip(positions, check_sections) if p >= 0]
                 if found_positions:
                     is_ordered = all(found_positions[i][0] <= found_positions[i+1][0]
                                    for i in range(len(found_positions)-1))
                     if is_ordered:
                         _log(f"   ✅ [검증] 섹션 순서 정상")
                     else:
-                        _log(f"   ❌ [검증] 섹션 순서 이상! 등록 중단")
-                        verify_ok = False
+                        _log(f"   ⚠️ [검증] 섹션 순서 이상 (계속 진행)")
 
-                # [검증 2-2] 네이버 폼 URL 존재 확인 (텍스트 또는 OG 카드)
-                form_found = False
+                # [검증 2-2] 네이버 폼 URL 확인 (에디터 템플릿에 포함되어 있으므로 경고만)
                 if "naver.me" in body_text or "네이버 폼" in body_text:
-                    form_found = True
-                    _log(f"   ✅ [검증] 네이버 폼 링크 확인됨 (텍스트)")
+                    _log(f"   ✅ [검증] 네이버 폼 링크 확인됨 (템플릿)")
                 else:
-                    # OG 미리보기 카드로 삽입된 경우 — 링크/이미지에서 확인
-                    try:
-                        og_selectors = [
-                            "a[href*='naver.me']",
-                            "[class*='oglink'] a[href*='naver']",
-                            ".se-oglink a",
-                            "a[href*='form.naver']",
-                            "[data-linktype='oglink']",
-                        ]
-                        for sel in og_selectors:
-                            try:
-                                cnt = await frame_locator.locator(sel).count()
-                                if cnt > 0:
-                                    form_found = True
-                                    _log(f"   ✅ [검증] 네이버 폼 링크 확인됨 (OG 카드)")
-                                    break
-                            except Exception:
-                                continue
-                    except Exception:
-                        pass
-
-                if not form_found:
-                    _log(f"   ❌ [검증] 네이버 폼 링크 누락! — 재삽입 시도...")
-                    from post_generator import NAVER_FORM_URL as _FORM_URL
-
-                    # 에디터 영역 찾기
-                    target_ed = None
-                    target_frame = None
-                    for sel in [".se-content", ".se-section-text", "[contenteditable='true']"]:
-                        try:
-                            ed = frame_locator.locator(sel).first
-                            if await ed.count() > 0:
-                                target_ed = ed
-                                break
-                        except Exception:
-                            continue
-
-                    if target_ed:
-                        # 에디터 끝으로 이동
-                        try:
-                            await target_ed.click()
-                            await asyncio.sleep(0.3)
-                            await page.keyboard.press("Control+End")
-                            await asyncio.sleep(0.3)
-                            await page.keyboard.press("Enter")
-                            await page.keyboard.press("Enter")
-                        except Exception:
-                            pass
-
-                        # 재삽입 방법 1: 클립보드 + Ctrl+V
-                        try:
-                            await page.evaluate(f"navigator.clipboard.writeText('{_FORM_URL}')")
-                            await asyncio.sleep(0.3)
-                            await page.keyboard.press("Control+v")
-                            await asyncio.sleep(8)
-                            # 검증 (텍스트 또는 OG)
-                            for fr in page.frames:
-                                try:
-                                    txt = await fr.evaluate("document.body?.innerText || ''")
-                                    if "naver.me" in txt:
-                                        form_found = True
-                                        break
-                                    found_og = await fr.evaluate("""(() => {
-                                        return !!(document.querySelector('.se-oglink, .se-module-oglink, [class*=oglink]')
-                                            || document.querySelector("a[href*='naver.me']"));
-                                    })()""")
-                                    if found_og:
-                                        form_found = True
-                                        break
-                                except Exception:
-                                    continue
-                            if form_found:
-                                _log(f"   🔄 [검증] 네이버 폼 URL 클립보드 재삽입 성공")
-                        except Exception:
-                            pass
-
-                        # 재삽입 방법 2: 타이핑 + Enter (OG 트리거)
-                        if not form_found:
-                            try:
-                                await target_ed.click()
-                                await asyncio.sleep(0.3)
-                                await target_ed.type(_FORM_URL, delay=15)
-                                await asyncio.sleep(1)
-                                await page.keyboard.press("Enter")
-                                await asyncio.sleep(8)
-                                for fr in page.frames:
-                                    try:
-                                        txt = await fr.evaluate("document.body?.innerText || ''")
-                                        if "naver.me" in txt:
-                                            form_found = True
-                                            _log(f"   🔄 [검증] 네이버 폼 URL 타이핑+Enter 재삽입 성공")
-                                            break
-                                    except Exception:
-                                        continue
-                            except Exception:
-                                pass
-
-                        # 재삽입 방법 3: paste 이벤트
-                        if not form_found:
-                            try:
-                                for frame in page.frames:
-                                    try:
-                                        await frame.evaluate(f"""(() => {{
-                                            const el = document.querySelector("[contenteditable='true']") || document.querySelector(".se-content");
-                                            if (el) {{
-                                                el.focus();
-                                                const dt = new DataTransfer();
-                                                dt.setData('text/plain', '{_FORM_URL}');
-                                                const evt = new ClipboardEvent('paste', {{clipboardData: dt, bubbles: true, cancelable: true}});
-                                                el.dispatchEvent(evt);
-                                            }}
-                                        }})()""")
-                                        await asyncio.sleep(8)
-                                        txt = await frame.evaluate("document.body?.innerText || ''")
-                                        if "naver.me" in txt:
-                                            form_found = True
-                                            _log(f"   🔄 [검증] 네이버 폼 URL paste 이벤트 재삽입 성공")
-                                            break
-                                    except Exception:
-                                        continue
-                            except Exception:
-                                pass
-
-                if not form_found:
-                    _log(f"   ❌ [검증] 네이버 폼 링크 모든 재삽입 방법 실패 — 등록 중단!")
-                    verify_ok = False
+                    _log(f"   ⚠️ [검증] 네이버 폼 링크 미확인 (템플릿에 포함되어 있을 수 있음)")
 
                 # [검증 2-1] 본문 일본어 잔존 체크
                 import re as _re

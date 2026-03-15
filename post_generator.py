@@ -638,12 +638,8 @@ def _build_prompt(product: dict, price_info: dict) -> str:
 해외 구매대행 상품이라 교환/반품이 어려울 수 있는 점 유의 부탁드려요!!
 
 
-👉 구매 문의 & 진행 방법
-일본구매대행으로 구매 관심 있으신 분은 쪽지 또는 아래 네이버 폼 작성 부탁드려요!!
-
-{NAVER_FORM_URL}
-
 위 형식에서 (🔍 상품 상세 정보)와 (💎 핵심 구매 포인트) 부분만 채워서 전체를 출력하세요.
+👉 구매 문의 섹션이나 네이버 폼 URL은 절대 포함하지 마세요 (별도 템플릿에서 처리됨).
 ⚠️ 구매 전 확인 사항의 사이즈 추천도 상품에 맞게 상세하게 채워주세요.
 마크다운 문법은 절대 쓰지 마세요.
 일본어는 절대 출력하지 마세요.
@@ -816,38 +812,27 @@ def _retranslate_content(content: str) -> str:
     return content
 
 
-def _ensure_naver_form(content: str) -> str:
-    """네이버 폼 URL이 본문에 없으면 👉 구매 문의 섹션과 함께 끝에 추가"""
-    if NAVER_FORM_URL in content:
-        return content
-
-    logger.warning("⚠️ 네이버 폼 URL 누락 — 강제 삽입")
-
-    # 👉 섹션이 있지만 URL만 빠진 경우
-    if "👉 구매 문의" in content:
-        # 👉 섹션 끝에 URL 추가
-        lines = content.split("\n")
-        result = []
-        inserted = False
-        for i, line in enumerate(lines):
-            result.append(line)
-            if "👉 구매 문의" in line and not inserted:
-                # 다음 줄에 설명 + URL 삽입
-                result.append("일본구매대행으로 구매 관심 있으신 분은 쪽지 또는 아래 네이버 폼 작성 부탁드려요!!")
-                result.append("")
-                result.append(NAVER_FORM_URL)
-                inserted = True
-        return "\n".join(result)
-
-    # 👉 섹션 자체가 없는 경우 — 전체 섹션 추가
-    content += f"""
-
-
-👉 구매 문의 & 진행 방법
-일본구매대행으로 구매 관심 있으신 분은 쪽지 또는 아래 네이버 폼 작성 부탁드려요!!
-
-{NAVER_FORM_URL}"""
-    return content
+def _remove_purchase_inquiry_section(content: str) -> str:
+    """👉 구매 문의 섹션과 네이버 폼 URL 제거 (에디터 템플릿에서 처리되므로)"""
+    lines = content.split("\n")
+    result = []
+    skip = False
+    for line in lines:
+        stripped = line.strip()
+        # 👉 구매 문의 섹션 시작 → 이후 줄 스킵
+        if "👉 구매 문의" in stripped:
+            skip = True
+            continue
+        # 네이버 폼 URL 줄 제거
+        if "naver.me" in stripped or "네이버 폼" in stripped:
+            continue
+        # 스킵 중이면 빈 줄이 아닌 새 섹션이 나올 때까지 계속 스킵
+        if skip:
+            if stripped == "":
+                continue
+            skip = False
+        result.append(line)
+    return "\n".join(result).rstrip()
 
 
 def _clean_ai_response(content: str) -> str:
@@ -983,8 +968,8 @@ def generate_cafe_post(product: dict, price_info: dict) -> dict:
     else:
         logger.info(f"✅ [{code}] 일본어 없음 — 번역 OK")
 
-    # 네이버 폼 URL이 누락되었으면 강제 삽입
-    content = _ensure_naver_form(content)
+    # 👉 구매 문의 & 네이버 폼 섹션 제거 (에디터 템플릿에서 처리)
+    content = _remove_purchase_inquiry_section(content)
 
     # 최종 제목 일본어 잔존 확인
     if _has_japanese(title):
@@ -1043,17 +1028,11 @@ def _make_fallback_content(product: dict, price_info: dict) -> str:
             desc_section = desc_section.replace(supplier, "")
         content += f"\n\n{desc_section}"
 
-    content += f"""
+    content += """
 
 ⚠️ 구매 전 확인 사항
 정품 안내: 일본 공식 유통 정품이며, 미개봉 새상품으로 발송됩니다.
-해외 구매대행 상품이라 교환/반품이 어려울 수 있는 점 유의 부탁드려요!!
-
-
-👉 구매 문의 & 진행 방법
-일본구매대행으로 구매 관심 있으신 분은 쪽지 또는 아래 네이버 폼 작성 부탁드려요!!
-
-{NAVER_FORM_URL}"""
+해외 구매대행 상품이라 교환/반품이 어려울 수 있는 점 유의 부탁드려요!!"""
 
     return content.strip()
 
