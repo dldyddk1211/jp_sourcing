@@ -68,6 +68,20 @@ SITES = {
             "009630": "호카",
         },
     },
+    "2ndstreet": {
+        "name": "세컨드스트리트 (2nd STREET)",
+        "domain": "https://www.2ndstreet.jp",
+        "base_url": "https://www.2ndstreet.jp",
+        "source_type": "vintage",
+        "categories": {
+            "951002": {"name": "가방", "name_ja": "バッグ", "params": {"category": "951002"}},
+            "951001": {"name": "의류", "name_ja": "衣類", "params": {"category": "951001"}},
+            "951003": {"name": "신발", "name_ja": "シューズ", "params": {"category": "951003"}},
+            "951004": {"name": "시계", "name_ja": "時計", "params": {"category": "951004"}},
+            "951005": {"name": "악세서리", "name_ja": "アクセサリー", "params": {"category": "951005"}},
+        },
+        "brands": {},
+    },
 }
 
 

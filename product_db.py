@@ -65,16 +65,23 @@ def init_db():
         conn.commit()
 
         # 기존 DB에 새 컬럼 추가 (마이그레이션)
-        try:
-            conn.execute("ALTER TABLE products ADD COLUMN cafe_status TEXT DEFAULT ''")
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass  # 이미 존재
-        try:
-            conn.execute("ALTER TABLE products ADD COLUMN cafe_uploaded_at TEXT DEFAULT ''")
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass
+        # 마이그레이션: 새 컬럼 추가 (이미 존재하면 무시)
+        for col, default in [
+            ("cafe_status", "''"),
+            ("cafe_uploaded_at", "''"),
+            ("source_type", "'sports'"),
+            ("condition_grade", "''"),
+            ("color", "''"),
+            ("material", "''"),
+            ("gender", "''"),
+            ("subcategory", "''"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE products ADD COLUMN {col} TEXT DEFAULT {default}")
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_source_type ON products(source_type)")
 
         logger.info(f"빅데이터 DB 초기화 완료: {_DB_PATH}")
     finally:
@@ -138,8 +145,9 @@ def insert_products(products: list) -> int:
                     (site_id, category_id, product_code, name, name_ko,
                      brand, brand_ko, price_jpy, link, img_url,
                      description, description_ko, sizes, detail_images,
-                     original_price, discount_rate, in_stock, scraped_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                     original_price, discount_rate, in_stock, scraped_at,
+                     source_type, condition_grade, color, material, gender, subcategory)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, (
                     p.get("site_id", "xebio"),
                     p.get("category_id", ""),
@@ -159,6 +167,12 @@ def insert_products(products: list) -> int:
                     p.get("discount_rate", 0),
                     1 if p.get("in_stock", True) else 0,
                     p.get("scraped_at", datetime.now().isoformat()),
+                    p.get("source_type", "sports"),
+                    p.get("condition_grade", ""),
+                    p.get("color", ""),
+                    p.get("material", ""),
+                    p.get("gender", ""),
+                    p.get("subcategory", ""),
                 ))
                 if conn.total_changes:
                     inserted += 1

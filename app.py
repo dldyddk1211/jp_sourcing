@@ -167,21 +167,35 @@ def _unsubscribe_logs(q: queue.Queue):
 # =============================================
 
 def run_scrape(site_id="xebio", category_id="sale", keyword="", pages="", brand_code=""):
-    """백그라운드 스레드에서 스크래핑 실행"""
+    """백그라운드 스레드에서 스크래핑 실행 (사이트별 크롤러 디스패치)"""
     if status["scraping"]:
         push_log("⚠️ 이미 스크래핑이 진행 중입니다")
         return
 
     status["scraping"] = True
     try:
-        products = asyncio.run(scrape_nike_sale(
-            status_callback=push_log,
-            site_id=site_id,
-            category_id=category_id,
-            keyword=keyword,
-            pages=pages,
-            brand_code=brand_code,
-        ))
+        from site_config import get_site
+        site_info = get_site(site_id)
+        source_type = site_info.get("source_type", "sports") if site_info else "sports"
+
+        if source_type == "vintage":
+            from secondst_crawler import scrape_2ndstreet, set_app_status as set_2nd_status
+            set_2nd_status(status)
+            products = asyncio.run(scrape_2ndstreet(
+                status_callback=push_log,
+                category=category_id,
+                keyword=keyword,
+                pages=pages,
+            ))
+        else:
+            products = asyncio.run(scrape_nike_sale(
+                status_callback=push_log,
+                site_id=site_id,
+                category_id=category_id,
+                keyword=keyword,
+                pages=pages,
+                brand_code=brand_code,
+            ))
         status["product_count"] = len(products)
         status["last_scrape"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         push_log(f"🎉 스크래핑 완료: {len(products)}개 상품 수집")
