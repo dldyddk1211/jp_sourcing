@@ -199,7 +199,10 @@ def _get_openai():
     global _openai_client
     if _openai_client is None:
         from openai import OpenAI
-        _openai_client = OpenAI(api_key=_ai_config.get("openai_key", ""))
+        _openai_client = OpenAI(
+            api_key=_ai_config.get("openai_key", ""),
+            timeout=30.0,  # 30초 타임아웃
+        )
     return _openai_client
 
 
@@ -697,9 +700,13 @@ def verify_ai_key() -> dict:
             if result:
                 return {"ok": True, "provider": "openai", "message": f"OpenAI API 정상 작동 (응답: {result[:20]})"}
             return {"ok": False, "provider": "openai", "message": "OpenAI API 응답이 비어있습니다."}
+        except ImportError as e:
+            logger.error(f"🧪 OpenAI 패키지 오류: {e}")
+            return {"ok": False, "provider": "openai", "message": f"openai 패키지 오류: {e}. 서버에서 'pip install openai'를 실행해주세요."}
         except Exception as e:
-            logger.error(f"🧪 OpenAI 테스트 실패: {e}")
-            return {"ok": False, "provider": "openai", "message": f"OpenAI API 오류: {e}"}
+            import traceback
+            logger.error(f"🧪 OpenAI 테스트 실패: {traceback.format_exc()}")
+            return {"ok": False, "provider": "openai", "message": f"OpenAI API 오류: {type(e).__name__}: {e}"}
 
     return {"ok": False, "provider": provider, "message": f"알 수 없는 provider: {provider}"}
 
@@ -730,11 +737,14 @@ def _call_claude(prompt: str) -> str:
 def _call_openai(prompt: str) -> str:
     """OpenAI API 호출"""
     client = _get_openai()
+    logger.info("🤖 OpenAI API 호출 시작...")
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         max_tokens=3000,
-        messages=[{"role": "user", "content": prompt}]
+        messages=[{"role": "user", "content": prompt}],
+        timeout=30.0,  # 요청 타임아웃
     )
+    logger.info("🤖 OpenAI API 응답 수신 완료")
     return response.choices[0].message.content.strip()
 
 
