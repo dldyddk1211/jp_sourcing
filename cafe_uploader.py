@@ -19,6 +19,23 @@ from datetime import datetime
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
 from notifier import notify_upload_success, notify_upload_waiting, notify_upload_complete, notify_upload_error
 
+# ── 업로드 중지 플래그 ──
+_upload_stop_requested = False
+
+def request_upload_stop():
+    """업로드 중지 요청"""
+    global _upload_stop_requested
+    _upload_stop_requested = True
+
+def reset_upload_stop():
+    """업로드 중지 플래그 초기화"""
+    global _upload_stop_requested
+    _upload_stop_requested = False
+
+def is_upload_stop_requested():
+    """업로드 중지 요청 여부"""
+    return _upload_stop_requested
+
 from config import (
     CAFE_URL, CAFE_ID, CAFE_MENU_NAME, CAFE_MENU_ID,
     NAVER_COOKIE_PATH, NAVER_LOGIN_TIMEOUT,
@@ -249,8 +266,16 @@ async def upload_products(products: list, status_callback=None, max_upload=None)
             await page.goto(cafe_home, wait_until="domcontentloaded", timeout=20000)
             await asyncio.sleep(2)
 
+            # 업로드 중지 플래그 초기화
+            reset_upload_stop()
+
             # 상품별 업로드 (실패 시 1회 재시도)
             for i, product in enumerate(upload_list, 1):
+                # 중지 요청 확인
+                if is_upload_stop_requested():
+                    log(f"⏹ 업로드 중지됨 ({success_count}/{len(upload_list)}개 완료)")
+                    break
+
                 name_short = (product.get("name_ko") or product.get("name", ""))[:30]
                 uploaded = False
 
@@ -292,12 +317,24 @@ async def upload_products(products: list, status_callback=None, max_upload=None)
 
                 # 게시글 간 랜덤 딜레이 (8~13분) — 네이버 봇 탐지 방지
                 if i < len(upload_list):
+                    if is_upload_stop_requested():
+                        log(f"⏹ 업로드 중지됨 ({success_count}/{len(upload_list)}개 완료)")
+                        break
                     delay_min = random.randint(8, 13)
                     delay_sec = delay_min * 60
                     next_name = (upload_list[i].get("name_ko") or upload_list[i].get("name", ""))[:30]
                     log(f"   ⏳ 다음 게시글까지 {delay_min}분 대기...")
                     notify_upload_waiting(next_name, i, len(upload_list), delay_min)
-                    await asyncio.sleep(delay_sec)
+                    # 10초 단위로 중지 확인하며 대기
+                    for _ in range(delay_sec // 10):
+                        if is_upload_stop_requested():
+                            log(f"⏹ 대기 중 업로드 중지됨 ({success_count}/{len(upload_list)}개 완료)")
+                            break
+                        await asyncio.sleep(10)
+                    else:
+                        await asyncio.sleep(delay_sec % 10)
+                        continue
+                    break  # for-else: break이면 외부 for도 break
 
         except Exception as e:
             log(f"❌ 전체 오류: {e}")

@@ -24,7 +24,7 @@ from config import (
 )
 from data_manager import get_status as get_data_status, set_data_root, get_data_root, ensure_dirs, is_connected
 from xebio_search import scrape_nike_sale, load_latest_products, set_app_status, force_close_browser
-from cafe_uploader import upload_products, naver_manual_login, has_saved_cookies, delete_cookies
+from cafe_uploader import upload_products, naver_manual_login, has_saved_cookies, delete_cookies, request_upload_stop, is_upload_stop_requested
 from exchange import get_jpy_to_krw_rate, get_cached_rate, calc_buying_price, set_margin_rate, get_margin_rate, set_price_config, get_price_config
 from post_generator import get_ai_config, set_ai_config, verify_ai_key
 from site_config import get_sites_for_ui
@@ -1176,6 +1176,15 @@ def manual_upload():
     )
     thread.start()
     return jsonify({"ok": True, "message": "업로드 시작됨"})
+
+
+@app.route(f"{URL_PREFIX}/run/upload-stop", methods=["POST"])
+@login_required
+def upload_stop():
+    """업로드 중지 요청"""
+    request_upload_stop()
+    push_log("⏹ 업로드 중지 요청됨 — 현재 작업 완료 후 중지됩니다")
+    return jsonify({"ok": True, "message": "업로드 중지 요청됨"})
 
 
 _upload_check_stop = False

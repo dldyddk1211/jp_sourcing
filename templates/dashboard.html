@@ -1085,6 +1085,9 @@
           <button class="btn b-green" id="btn-cafe-upload" onclick="uploadSelected()" style="padding:9px 18px;">
             &#x1f4e4; 선택 상품 업로드 (<span id="cafe-sel-cnt">0</span>개)
           </button>
+          <button class="btn b-red" id="btn-upload-stop" onclick="stopUpload()" style="padding:9px 18px;display:none;">
+            &#x23F9; 업로드 중지
+          </button>
           <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:0.82rem;color:var(--muted);">
             <input type="checkbox" id="cafe-shuffle-brands" checked
               style="width:16px;height:16px;accent-color:var(--green);"
@@ -1779,6 +1782,8 @@ async function uploadSelected() {
 
   const uploadBtn = document.getElementById("btn-cafe-upload");
   if (uploadBtn) { uploadBtn.disabled = true; uploadBtn.innerHTML = "📤 업로드 중... <span class='spinner'></span>"; }
+  const stopBtn = document.getElementById("btn-upload-stop");
+  if (stopBtn) stopBtn.style.display = "inline-flex";
 
   // 체크된 상품 정보 전달 (백엔드에서 우선순위 처리)
   await fetch(PREFIX + "/products/update", {
@@ -1789,6 +1794,15 @@ async function uploadSelected() {
   const desc = checkedCodes.size > 0 ? `체크 ${checkedCodes.size}개 우선` : "랜덤 선택";
   addLog(`📤 업로드 시작 (${desc}, 총 ${uploadTotal}개)${shuffle ? " 브랜드 랜덤":""}`, "info");
   await post("/run/upload", { max_upload: maxCount, shuffle_brands: shuffle, checked_codes: [...checkedCodes] });
+}
+
+async function stopUpload() {
+  const btn = document.getElementById("btn-upload-stop");
+  if (btn) { btn.disabled = true; btn.textContent = "⏹ 중지 요청 중..."; }
+  try {
+    await post("/run/upload-stop", {});
+    addLog("⏹ 업로드 중지 요청됨 — 현재 작업 완료 후 중지됩니다", "warn");
+  } catch(e) { addLog("❌ 중지 요청 실패: " + e, "error"); }
 }
 
 function _showUploadProgress(cur, total, detail) {
@@ -1890,6 +1904,8 @@ function _finishCafeUpload() {
     uploadBtn.disabled = false;
     uploadBtn.innerHTML = `📤 선택 상품 업로드 (<span id="cafe-sel-cnt">${checkedCodes.size}</span>개)`;
   }
+  const stopBtn = document.getElementById("btn-upload-stop");
+  if (stopBtn) { stopBtn.style.display = "none"; stopBtn.disabled = false; stopBtn.innerHTML = "⏹ 업로드 중지"; }
   loadCafeProducts(cafePage);
 }
 
