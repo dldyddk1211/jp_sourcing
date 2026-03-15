@@ -960,6 +960,12 @@
           <select id="bd-brand-filter" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:0.82rem">
             <option value="">전체 브랜드</option>
           </select>
+          <select id="bd-status-filter" onchange="loadBigdataProducts(1)" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:0.82rem">
+            <option value="">전체 상태</option>
+            <option value="대기">대기</option>
+            <option value="완료">완료</option>
+            <option value="중복">중복</option>
+          </select>
           <button class="btn b-blue" onclick="loadBigdataProducts(1)" style="padding:7px 16px;font-size:0.82rem">검색</button>
         </div>
 
@@ -972,12 +978,13 @@
                 <th>상품명</th>
                 <th style="width:100px">품번</th>
                 <th style="width:80px">일본가</th>
+                <th style="width:70px">상태</th>
                 <th style="width:70px">사이트</th>
                 <th style="width:110px">수집일</th>
               </tr>
             </thead>
             <tbody id="bd-products-body">
-              <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px;">데이터가 없습니다</td></tr>
+              <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px;">데이터가 없습니다</td></tr>
             </tbody>
           </table>
         </div>
@@ -2820,17 +2827,19 @@ async function loadBigdataProducts(page) {
   const q = (document.getElementById("bd-search")?.value || "").trim();
   const siteId = document.getElementById("bd-site-filter")?.value || "";
   const brand = document.getElementById("bd-brand-filter")?.value || "";
+  const cafeStatus = document.getElementById("bd-status-filter")?.value || "";
   try {
     const params = new URLSearchParams({page: bdPage, per_page: 30});
     if (q) params.set("q", q);
     if (siteId) params.set("site_id", siteId);
     if (brand) params.set("brand", brand);
+    if (cafeStatus) params.set("cafe_status", cafeStatus);
     const res = await fetch(PREFIX + "/bigdata/products?" + params);
     const d = await res.json();
     const tbody = document.getElementById("bd-products-body");
 
     if (!d.products || d.products.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px;">데이터가 없습니다</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px;">데이터가 없습니다</td></tr>';
       document.getElementById("bd-pagination").innerHTML = "";
       return;
     }
@@ -2839,12 +2848,16 @@ async function loadBigdataProducts(page) {
       const img = p.img_url ? `<img src="${p.img_url}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;" onerror="this.style.display='none'">` : '-';
       const price = p.price_jpy ? `&yen;${p.price_jpy.toLocaleString()}` : '-';
       const date = (p.created_at || "").slice(0, 16);
+      const st = p.cafe_status || "";
+      const stLabel = st === "완료" ? "완료" : st === "중복" ? "중복" : "대기";
+      const stColor = st === "완료" ? "#22c55e" : st === "중복" ? "#f59e0b" : "#64748b";
       return `<tr>
         <td>${img}</td>
         <td style="font-weight:600">${p.brand_ko || '-'}</td>
         <td><a href="${p.link || '#'}" target="_blank" style="color:var(--accent);text-decoration:none;">${(p.name_ko || '-').slice(0,40)}</a></td>
         <td style="font-family:monospace;font-size:0.75rem">${p.product_code || '-'}</td>
         <td style="color:var(--yellow)">${price}</td>
+        <td><span style="padding:2px 8px;border-radius:8px;font-size:0.72rem;font-weight:600;background:${stColor}18;color:${stColor};border:1px solid ${stColor}44;">${stLabel}</span></td>
         <td>${p.site_id || '-'}</td>
         <td style="font-size:0.73rem;color:var(--muted)">${date}</td>
       </tr>`;

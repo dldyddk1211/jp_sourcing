@@ -321,7 +321,7 @@ def get_stats() -> dict:
 
 
 def search_products(query="", site_id="", category_id="", brand="",
-                    page=1, per_page=50) -> dict:
+                    cafe_status="", page=1, per_page=50) -> dict:
     """상품 검색 (페이지네이션)"""
     conn = _conn()
     try:
@@ -341,6 +341,12 @@ def search_products(query="", site_id="", category_id="", brand="",
         if brand:
             conditions.append("brand_ko = ?")
             params.append(brand)
+        if cafe_status:
+            if cafe_status == "대기":
+                conditions.append("(cafe_status = '' OR cafe_status IS NULL)")
+            else:
+                conditions.append("cafe_status = ?")
+                params.append(cafe_status)
 
         where = "WHERE " + " AND ".join(conditions) if conditions else ""
         count = conn.execute(f"SELECT COUNT(*) c FROM products {where}", params).fetchone()["c"]
@@ -363,6 +369,8 @@ def search_products(query="", site_id="", category_id="", brand="",
                 "price_jpy": r["price_jpy"],
                 "img_url": r["img_url"],
                 "link": r["link"],
+                "cafe_status": r["cafe_status"] or "",
+                "cafe_uploaded_at": r["cafe_uploaded_at"] or "",
                 "created_at": r["created_at"],
             })
 
@@ -500,6 +508,46 @@ def get_unuploaded_products() -> list:
                 "detail_images": json.loads(r["detail_images"]) if r["detail_images"] else [],
                 "in_stock": bool(r["in_stock"]),
                 "cafe_status": "",
+                "scraped_at": r["scraped_at"],
+                "created_at": r["created_at"],
+                "from_db": True,
+            })
+        return products
+    finally:
+        conn.close()
+
+
+def get_products_by_status(status: str) -> list:
+    """특정 cafe_status의 상품 목록 반환 (빅데이터 DB에서)"""
+    conn = _conn()
+    try:
+        rows = conn.execute("""
+            SELECT * FROM products
+            WHERE cafe_status = ?
+            ORDER BY cafe_uploaded_at DESC, created_at DESC
+        """, (status,)).fetchall()
+        products = []
+        for r in rows:
+            products.append({
+                "site_id": r["site_id"],
+                "category_id": r["category_id"],
+                "product_code": r["product_code"],
+                "name": r["name"],
+                "name_ko": r["name_ko"] or r["name"],
+                "brand": r["brand"],
+                "brand_ko": r["brand_ko"] or r["brand"],
+                "price_jpy": r["price_jpy"],
+                "original_price": r["original_price"],
+                "discount_rate": r["discount_rate"],
+                "link": r["link"],
+                "img_url": r["img_url"],
+                "description": r["description"],
+                "description_ko": r["description_ko"],
+                "sizes": json.loads(r["sizes"]) if r["sizes"] else [],
+                "detail_images": json.loads(r["detail_images"]) if r["detail_images"] else [],
+                "in_stock": bool(r["in_stock"]),
+                "cafe_status": r["cafe_status"] or "",
+                "cafe_uploaded_at": r["cafe_uploaded_at"] or "",
                 "scraped_at": r["scraped_at"],
                 "created_at": r["created_at"],
                 "from_db": True,

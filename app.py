@@ -342,25 +342,34 @@ def _save_upload_history(uploaded_products: list):
 
 
 def _mark_uploaded_products(uploaded_products: list):
-    """업로드 완료된 상품에 cafe_status='완료' 표시 후 latest.json 저장"""
+    """업로드 완료된 상품에 cafe_status='완료' 표시 후 latest.json + DB 저장"""
     try:
         uploaded_codes = {p.get("product_code") for p in uploaded_products if p.get("product_code")}
         if not uploaded_codes:
             return
 
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         products = load_latest_products()
         changed = False
         for p in products:
             if p.get("product_code") in uploaded_codes:
                 p["cafe_status"] = "완료"
                 p["cafe_uploaded"] = True
-                p["cafe_uploaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                p["cafe_uploaded_at"] = now_str
                 changed = True
 
         if changed:
             from xebio_search import save_products
             save_products(products)
             logger.info(f"✅ {len(uploaded_codes)}개 상품 업로드 완료 표시")
+
+        # 빅데이터 DB에도 반영
+        try:
+            from product_db import update_cafe_status
+            for code in uploaded_codes:
+                update_cafe_status(code, "완료", now_str)
+        except Exception as e:
+            logger.warning(f"DB 상태 업데이트 실패: {e}")
     except Exception as e:
         logger.warning(f"업로드 완료 표시 실패: {e}")
 
@@ -556,6 +565,18 @@ def get_products():
                     or search_filter in p.get("product_code", "").lower()]
     if status_filter and status_filter != "ALL":
         products = [p for p in products if (p.get("cafe_status") or "대기") == status_filter]
+        # 완료/중복 필터 시 DB에서도 해당 상태 상품 병합
+        if status_filter in ("완료", "중복"):
+            try:
+                from product_db import get_products_by_status
+                db_status_products = get_products_by_status(status_filter)
+                existing_codes = {p.get("product_code") for p in products if p.get("product_code")}
+                for dp in db_status_products:
+                    if dp.get("product_code") and dp["product_code"] not in existing_codes:
+                        existing_codes.add(dp["product_code"])
+                        products.append(dp)
+            except Exception as e:
+                logger.warning(f"DB 상태 조회 실패: {e}")
 
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 50, type=int)
@@ -847,6 +868,13 @@ def update_product_status():
 
     from xebio_search import save_products
     save_products(products)
+    # DB에도 반영
+    try:
+        from product_db import update_cafe_status
+        uploaded_at = datetime.now().strftime("%Y-%m-%d %H:%M") if new_status == "완료" else ""
+        update_cafe_status(product_code, new_status, uploaded_at)
+    except Exception as e:
+        logger.warning(f"DB 상태 업데이트 실패: {e}")
     return jsonify({"ok": True, "product_code": product_code, "status": new_status})
 
 
@@ -877,6 +905,14 @@ def bulk_update_product_status():
 
     from xebio_search import save_products
     save_products(products)
+    # DB에도 반영
+    try:
+        from product_db import update_cafe_status
+        uploaded_at = datetime.now().strftime("%Y-%m-%d %H:%M") if new_status == "완료" else ""
+        for code in codes:
+            update_cafe_status(code, new_status, uploaded_at)
+    except Exception as e:
+        logger.warning(f"DB 일괄 상태 업데이트 실패: {e}")
     return jsonify({"ok": True, "count": count, "status": new_status})
 
 
@@ -957,6 +993,7 @@ def api_bigdata_products():
         site_id=request.args.get("site_id", ""),
         category_id=request.args.get("category_id", ""),
         brand=request.args.get("brand", ""),
+        cafe_status=request.args.get("cafe_status", ""),
         page=request.args.get("page", 1, type=int),
         per_page=request.args.get("per_page", 50, type=int),
     ))
