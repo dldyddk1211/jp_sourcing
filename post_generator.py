@@ -598,8 +598,6 @@ def _build_prompt(product: dict, price_info: dict) -> str:
 8. "일본 공식 유통 정품", "일본 현지 매장 정품" 등 일반적인 표현만 사용
 
 [출력 형식 - 이 형식 그대로 출력]
-안녕하세요 서포트 센터장 입니다. ^^
-
 {intro_line1}
 {intro_line2}
 
@@ -847,9 +845,10 @@ def _clean_ai_response(content: str) -> str:
         content = re.sub(r'^```\w*\n?', '', content)
         content = re.sub(r'\n?```$', '', content)
         content = content.strip()
-    # "📝 네이버 폼 신청서 작성" 줄 제거 (AI가 임의로 생성하는 텍스트)
+    # AI가 임의로 생성하는 불필요한 줄 제거
     lines = content.split("\n")
     lines = [l for l in lines if "네이버 폼 신청서" not in l]
+    lines = [l for l in lines if "서포트 센터장" not in l]
     content = "\n".join(lines)
     return content
 
@@ -1012,9 +1011,7 @@ def _make_fallback_content(product: dict, price_info: dict) -> str:
     full_name = f"{name_ko} {code}".strip()
     intro_line1, intro_line2 = _pick_intro(full_name)
 
-    content = f"""안녕하세요 서포트 센터장 입니다. ^^
-
-{intro_line1}
+    content = f"""{intro_line1}
 {intro_line2}
 
 가격 : {format_price(price_krw)} (무료배송)
