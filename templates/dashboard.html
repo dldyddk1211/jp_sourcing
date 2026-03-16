@@ -1755,7 +1755,8 @@ async function runUploadCheck() {
   _uploadCheckActive = true;
 
   try {
-    const res = await fetch(PREFIX + "/run/upload-check", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"});
+    const checkBrand = document.getElementById("cafe-brand-select")?.value || "ALL";
+    const res = await fetch(PREFIX + "/run/upload-check", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({brand: checkBrand})});
     const d = await res.json();
     addLog(`🔍 ${d.message}`, "info");
 

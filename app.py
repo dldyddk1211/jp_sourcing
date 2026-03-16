@@ -1370,7 +1370,7 @@ def upload_stop():
 
 _upload_check_stop = False
 
-def _run_upload_check():
+def _run_upload_check(brand_filter=""):
     """백그라운드에서 카페 중복 체크 실행 (Playwright 브라우저 사용)"""
     global _upload_check_stop
     _upload_check_stop = False
@@ -1380,11 +1380,18 @@ def _run_upload_check():
     products = load_latest_products()
     waiting = [p for p in products if (p.get("cafe_status") or "대기") == "대기"]
 
+    # 브랜드 필터 적용
+    if brand_filter and brand_filter != "ALL":
+        waiting = [p for p in waiting if
+                   (p.get("brand_ko") or "").strip() == brand_filter or
+                   (p.get("brand") or "").strip() == brand_filter]
+
     if not waiting:
-        push_log("⚠️ 대기 상품이 없습니다")
+        push_log("⚠️ 대기 상품이 없습니다" + (f" (브랜드: {brand_filter})" if brand_filter else ""))
         return
 
-    push_log(f"🔍 업로드 체크 시작: {len(waiting)}개 상품 — 브라우저로 카페 검색 중...")
+    brand_msg = f" [브랜드: {brand_filter}]" if brand_filter and brand_filter != "ALL" else ""
+    push_log(f"🔍 업로드 체크 시작: {len(waiting)}개 상품{brand_msg} — 브라우저로 카페 검색 중...")
 
     from xebio_search import save_products
 
@@ -1429,9 +1436,14 @@ def ai_verify():
 @login_required
 def upload_check():
     """대기 상품을 카페에서 검색하여 중복 여부 체크 (백그라운드)"""
-    thread = threading.Thread(target=_run_upload_check, daemon=True)
+    data = request.json or {}
+    brand_filter = data.get("brand", "")
+    thread = threading.Thread(target=_run_upload_check, args=(brand_filter,), daemon=True)
     thread.start()
-    return jsonify({"ok": True, "message": "카페 중복 체크 시작됨 — 로그를 확인하세요"})
+    msg = "카페 중복 체크 시작됨"
+    if brand_filter and brand_filter != "ALL":
+        msg += f" (브랜드: {brand_filter})"
+    return jsonify({"ok": True, "message": msg + " — 로그를 확인하세요"})
 
 
 @app.route(f"{URL_PREFIX}/run/upload-check-stop", methods=["POST"])
