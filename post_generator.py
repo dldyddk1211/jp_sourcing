@@ -707,6 +707,75 @@ def verify_ai_key() -> dict:
     return {"ok": False, "provider": provider, "message": f"알 수 없는 provider: {provider}"}
 
 
+# ── AI 채팅 (대시보드 채팅 위젯용) ──────────────
+
+def chat_with_ai(message: str, history: list = None) -> dict:
+    """대시보드 채팅 위젯에서 AI와 대화
+    Args:
+        message: 사용자 메시지
+        history: [{"role":"user"|"assistant","content":"..."},...] 이전 대화
+    Returns: {"ok": bool, "provider": str, "reply": str}
+    """
+    provider = _ai_config["provider"]
+    if provider == "none":
+        return {"ok": False, "provider": "none", "reply": "AI provider가 설정되지 않았습니다. 설정에서 AI를 선택해주세요."}
+
+    key_map = {"gemini": "gemini_key", "claude": "claude_key", "openai": "openai_key"}
+    if not _ai_config.get(key_map.get(provider, "")):
+        return {"ok": False, "provider": provider, "reply": f"{provider} API 키가 설정되지 않았습니다."}
+
+    system_msg = "당신은 일본 구매대행 쇼핑몰 운영을 돕는 AI 어시스턴트입니다. 친절하고 간결하게 답변해주세요. 한국어로 답변합니다."
+
+    try:
+        if provider == "gemini":
+            # Gemini — history를 하나의 프롬프트로 합침
+            parts = [system_msg + "\n"]
+            if history:
+                for h in history[-10:]:  # 최근 10개만
+                    role = "사용자" if h["role"] == "user" else "AI"
+                    parts.append(f"{role}: {h['content']}")
+            parts.append(f"사용자: {message}")
+            parts.append("AI:")
+            reply = _call_gemini("\n".join(parts))
+
+        elif provider == "claude":
+            client = _get_claude()
+            messages = []
+            if history:
+                for h in history[-10:]:
+                    messages.append({"role": h["role"], "content": h["content"]})
+            messages.append({"role": "user", "content": message})
+            with client.messages.stream(
+                model="claude-sonnet-4-6",
+                max_tokens=2000,
+                system=system_msg,
+                messages=messages,
+            ) as stream:
+                reply = stream.get_final_message().content[0].text.strip()
+
+        elif provider == "openai":
+            client = _get_openai()
+            messages = [{"role": "system", "content": system_msg}]
+            if history:
+                for h in history[-10:]:
+                    messages.append({"role": h["role"], "content": h["content"]})
+            messages.append({"role": "user", "content": message})
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                max_tokens=2000,
+                messages=messages,
+            )
+            reply = response.choices[0].message.content.strip()
+        else:
+            return {"ok": False, "provider": provider, "reply": f"알 수 없는 provider: {provider}"}
+
+        return {"ok": True, "provider": provider, "reply": reply}
+
+    except Exception as e:
+        logger.error(f"채팅 AI 오류 [{provider}]: {e}")
+        return {"ok": False, "provider": provider, "reply": f"AI 오류: {e}"}
+
+
 # ── AI 호출 ────────────────────────────────
 
 def _call_gemini(prompt: str) -> str:

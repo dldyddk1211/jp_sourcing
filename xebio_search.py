@@ -320,22 +320,26 @@ async def scrape_nike_sale(status_callback=None,
                 current_page += 1
                 await asyncio.sleep(SCRAPE_DELAY)
 
-            # ── STEP 5: 상세 페이지 수집 ──────────────────
+            # ── STEP 5: 상세 페이지 수집 (1건씩 즉시 DB 저장) ──────
             log("━" * 45)
             log(f"🔎 [STEP 6] 상품 상세 페이지 수집 시작!")
             log(f"   📋 총 {len(products):,}개 상품 상세 페이지 방문 예정")
             log(f"   ⏱️  예상 소요 시간: 약 {len(products) * 2 // 60}분")
+            log(f"   💾 실시간 저장 모드: 상품 1건 추출 → 즉시 빅데이터 DB 저장")
+
+            from product_db import insert_products as _insert_products
+            _realtime_saved = 0
 
             for i, product in enumerate(products, 1):
                 # 리셋/일시정지 체크
                 if status_callback and _check_flag("stop"):
-                    log("🔄 리셋 요청 — 상세 수집 중단")
-                    return []
+                    log(f"🔄 리셋 요청 — 상세 수집 중단 (저장 완료: {_realtime_saved}개)")
+                    return products[:i-1]
                 while status_callback and _check_flag("pause"):
                     log("⏸️ 일시정지 중...")
                     await asyncio.sleep(1)
                     if _check_flag("stop"):
-                        return []
+                        return products[:i-1]
                     log("▶️ 재개!")
 
                 link = product.get("link", "")
@@ -345,7 +349,7 @@ async def scrape_nike_sale(status_callback=None,
                 pct = int(i / len(products) * 100)
                 bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
                 if i % 10 == 1 or i == len(products):
-                    log(f"   [{bar}] {pct}% — {i:,}/{len(products):,} 상세 수집 중...")
+                    log(f"   [{bar}] {pct}% — {i:,}/{len(products):,} 상세 수집 중... (DB 저장: {_realtime_saved}개)")
 
                 try:
                     # 링크 정규화 - 잘못된 URL 보정
@@ -359,14 +363,24 @@ async def scrape_nike_sale(status_callback=None,
                 except Exception as e:
                     log(f"   ⚠️ 상세 오류 ({link[:60]}): {e}")
 
+                # ── 1건씩 즉시 빅데이터 DB 저장 ──────
+                try:
+                    product["site_id"] = site_id
+                    product["category_id"] = category_id
+                    saved = _insert_products([product])
+                    if saved > 0:
+                        _realtime_saved += saved
+                except Exception as e:
+                    logger.debug(f"실시간 DB 저장 오류: {e}")
+
                 # 매 상품마다 리셋 체크
                 if status_callback and _check_flag("stop"):
-                    log("🔄 리셋 — 상세 수집 즉시 중단")
-                    return []
+                    log(f"🔄 리셋 — 상세 수집 즉시 중단 (저장 완료: {_realtime_saved}개)")
+                    return products[:i]
 
                 await asyncio.sleep(SCRAPE_DELAY)
 
-            log("   ✅ 상세 페이지 수집 완료!")
+            log(f"   ✅ 상세 페이지 수집 완료! (DB 실시간 저장: {_realtime_saved}개)")
 
         except PlaywrightTimeout as e:
             log(f"⏰ 타임아웃: {e}")
@@ -379,28 +393,13 @@ async def scrape_nike_sale(status_callback=None,
             _playwright = None
 
     if products:
-        # 상품에 사이트/카테고리 정보 태깅
+        # 상품에 사이트/카테고리 정보 태깅 (실시간 저장에서 이미 설정되었지만 안전장치)
         for p in products:
-            p["site_id"] = site_id
-            p["category_id"] = category_id
+            p.setdefault("site_id", site_id)
+            p.setdefault("category_id", category_id)
 
-        # ── 빅데이터 DB 중복 체크 & 필터링 ──────────
-        try:
-            from product_db import bulk_exists, insert_products
-            existing = bulk_exists(site_id, products)
-            if existing:
-                before = len(products)
-                products = [
-                    p for p in products
-                    if (p.get("product_code", ""), p.get("price_jpy", 0)) not in existing
-                ]
-                skipped = before - len(products)
-                log(f"   🔍 빅데이터 중복 체크: {skipped}개 중복 제외 → {len(products)}개 신규")
-            # DB에 누적 저장
-            new_count = insert_products(products)
-            log(f"   💾 빅데이터 DB: {new_count}개 신규 저장")
-        except Exception as e:
-            logger.warning(f"빅데이터 DB 처리 실패: {e}")
+        # ── 빅데이터 DB: 실시간 저장 완료 (일괄 저장 스킵) ──────
+        log(f"   💾 빅데이터 DB 실시간 저장 완료 — 별도 일괄 저장 불필요")
 
         # 기존 latest.json에서 완료/중복 상품 보존 후 새 상품 병합
         try:

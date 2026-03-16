@@ -1853,6 +1853,22 @@ def test_ai():
         return jsonify({"ok": False, "message": str(e)})
 
 
+# ── AI 채팅 위젯 API ───────────────────────
+
+@app.route(f"{URL_PREFIX}/chat", methods=["POST"])
+@login_required
+def api_chat():
+    """AI 채팅 위젯 — 선택된 AI 모델과 대화"""
+    data = request.json or {}
+    message = data.get("message", "").strip()
+    history = data.get("history", [])
+    if not message:
+        return jsonify({"ok": False, "reply": "메시지를 입력해주세요."})
+    from post_generator import chat_with_ai
+    result = chat_with_ai(message, history)
+    return jsonify(result)
+
+
 # ── 텔레그램 알림 설정 ────────────────────
 
 @app.route(f"{URL_PREFIX}/settings/telegram", methods=["GET"])

@@ -248,6 +248,97 @@
       th,td { padding:5px 6px; }
       .pimg { width:30px; height:30px; }
     }
+
+    /* ── AI 채팅 위젯 ─────────────────────── */
+    .chat-fab {
+      position:fixed; bottom:24px; right:24px; z-index:9999;
+      width:56px; height:56px; border-radius:50%;
+      background:linear-gradient(135deg,var(--accent),var(--accent2));
+      border:none; cursor:pointer; font-size:26px; line-height:56px;
+      text-align:center; box-shadow:0 4px 16px rgba(0,0,0,0.4);
+      transition:transform 0.2s;
+    }
+    .chat-fab:hover { transform:scale(1.1); }
+
+    .chat-widget {
+      position:fixed; bottom:90px; right:24px; z-index:9998;
+      width:380px; max-height:520px; background:var(--card);
+      border:1px solid var(--border); border-radius:16px;
+      display:none; flex-direction:column;
+      box-shadow:0 8px 32px rgba(0,0,0,0.5);
+      overflow:hidden;
+    }
+    .chat-widget.open { display:flex; }
+
+    .chat-header {
+      padding:14px 16px; background:linear-gradient(135deg,var(--accent),var(--accent2));
+      display:flex; align-items:center; justify-content:space-between;
+      color:#000; font-weight:700; font-size:0.9rem;
+    }
+    .chat-header select {
+      background:rgba(0,0,0,0.15); border:1px solid rgba(0,0,0,0.2);
+      color:#000; font-size:0.78rem; padding:3px 8px; border-radius:6px;
+      font-weight:600;
+    }
+    .chat-header select option { background:var(--card); color:var(--text); }
+
+    .chat-messages {
+      flex:1; overflow-y:auto; padding:12px 14px; min-height:280px; max-height:360px;
+      display:flex; flex-direction:column; gap:8px;
+    }
+    .chat-msg {
+      max-width:85%; padding:10px 14px; border-radius:14px;
+      font-size:0.82rem; line-height:1.5; word-break:break-word;
+    }
+    .chat-msg.user {
+      align-self:flex-end; background:var(--accent); color:#000;
+      border-bottom-right-radius:4px;
+    }
+    .chat-msg.ai {
+      align-self:flex-start; background:var(--border); color:var(--text);
+      border-bottom-left-radius:4px;
+    }
+    .chat-msg.ai .provider-tag {
+      font-size:0.65rem; color:var(--muted); margin-bottom:4px;
+    }
+    .chat-typing {
+      align-self:flex-start; padding:8px 14px; font-size:0.78rem;
+      color:var(--muted); font-style:italic;
+    }
+
+    .chat-input-area {
+      padding:10px 12px; border-top:1px solid var(--border);
+      display:flex; gap:8px; align-items:center;
+    }
+    .chat-input-area input {
+      flex:1; background:var(--bg); border:1px solid var(--border);
+      color:var(--text); padding:10px 14px; border-radius:20px;
+      font-size:0.82rem; outline:none;
+    }
+    .chat-input-area input:focus { border-color:var(--accent); }
+    .chat-input-area button {
+      background:var(--accent); border:none; color:#000;
+      width:36px; height:36px; border-radius:50%; cursor:pointer;
+      font-size:16px; display:flex; align-items:center; justify-content:center;
+      flex-shrink:0;
+    }
+    .chat-input-area button:disabled { opacity:0.4; cursor:not-allowed; }
+
+    /* 모바일 — 채팅 버튼을 상단으로, 위젯 전체화면 */
+    @media(max-width:900px) {
+      .chat-fab.desktop-fab { display:none; }
+      .chat-fab.mobile-fab {
+        display:block; position:fixed; top:10px; right:12px; z-index:9999;
+        width:40px; height:40px; font-size:20px; line-height:40px;
+      }
+      .chat-widget {
+        bottom:0; right:0; left:0; top:60px;
+        width:100%; max-height:none; border-radius:16px 16px 0 0;
+      }
+    }
+    @media(min-width:901px) {
+      .chat-fab.mobile-fab { display:none; }
+    }
   </style>
 </head>
 <body>
@@ -2483,6 +2574,9 @@ async function loadAiSettings() {
     if (d.gemini_key) document.getElementById("ai-gemini-key").placeholder = d.gemini_key;
     if (d.claude_key) document.getElementById("ai-claude-key").placeholder = d.claude_key;
     if (d.openai_key) document.getElementById("ai-openai-key").placeholder = d.openai_key;
+    // 채팅 위젯 provider 동기화
+    const chatSel = document.getElementById("chat-provider-select");
+    if (chatSel && d.provider && d.provider !== "none") chatSel.value = d.provider;
   } catch (e) { console.error("AI 설정 로드 오류:", e); }
 }
 
@@ -3457,7 +3551,126 @@ setInterval(() => { loadProducts(curPage); loadBrands(); }, 30000);
 setInterval(loadUploadCheckStatus, 60000);
 updatePagePreview();
 calcExample();
+
+// ── AI 채팅 위젯 ─────────────────────────────
+const _chatHistory = [];
+let _chatOpen = false;
+
+function toggleChat() {
+  _chatOpen = !_chatOpen;
+  document.getElementById("chat-widget").classList.toggle("open", _chatOpen);
+  if (_chatOpen) {
+    setTimeout(() => document.getElementById("chat-input").focus(), 100);
+  }
+}
+
+function getChatProvider() {
+  return document.getElementById("chat-provider-select").value;
+}
+
+async function sendChat() {
+  const inp = document.getElementById("chat-input");
+  const msg = inp.value.trim();
+  if (!msg) return;
+
+  const box = document.getElementById("chat-messages");
+  // 사용자 메시지 표시
+  const userDiv = document.createElement("div");
+  userDiv.className = "chat-msg user";
+  userDiv.textContent = msg;
+  box.appendChild(userDiv);
+  _chatHistory.push({role:"user", content:msg});
+  inp.value = "";
+  inp.disabled = true;
+  document.getElementById("chat-send-btn").disabled = true;
+
+  // 타이핑 표시
+  const typing = document.createElement("div");
+  typing.className = "chat-typing";
+  typing.textContent = "AI 답변 생성 중...";
+  box.appendChild(typing);
+  box.scrollTop = box.scrollHeight;
+
+  try {
+    const provider = getChatProvider();
+    // 선택된 provider를 먼저 서버에 저장
+    await fetch(PREFIX + "/settings/ai", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({provider})
+    });
+
+    const res = await fetch(PREFIX + "/chat", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({message: msg, history: _chatHistory.slice(0,-1)})
+    });
+    const data = await res.json();
+    typing.remove();
+
+    const aiDiv = document.createElement("div");
+    aiDiv.className = "chat-msg ai";
+    const tag = document.createElement("div");
+    tag.className = "provider-tag";
+    tag.textContent = (data.provider || provider).toUpperCase();
+    aiDiv.appendChild(tag);
+    const txt = document.createElement("div");
+    txt.textContent = data.reply || "응답 없음";
+    aiDiv.appendChild(txt);
+    box.appendChild(aiDiv);
+
+    if (data.ok) {
+      _chatHistory.push({role:"assistant", content:data.reply});
+    }
+  } catch(e) {
+    typing.remove();
+    const errDiv = document.createElement("div");
+    errDiv.className = "chat-msg ai";
+    errDiv.textContent = "오류: " + e.message;
+    box.appendChild(errDiv);
+  }
+
+  inp.disabled = false;
+  document.getElementById("chat-send-btn").disabled = false;
+  box.scrollTop = box.scrollHeight;
+  inp.focus();
+}
+
+function clearChat() {
+  _chatHistory.length = 0;
+  document.getElementById("chat-messages").innerHTML =
+    '<div class="chat-msg ai"><div class="provider-tag">SYSTEM</div><div>안녕하세요! AI 어시스턴트입니다. 무엇을 도와드릴까요?</div></div>';
+}
 </script>
+
+<!-- AI 채팅 FAB 버튼 (데스크톱: 우측 하단, 모바일: 우측 상단) -->
+<button class="chat-fab desktop-fab" onclick="toggleChat()" title="AI 채팅">&#x1F4AC;</button>
+<button class="chat-fab mobile-fab" onclick="toggleChat()" title="AI 채팅">&#x1F4AC;</button>
+
+<!-- 채팅 위젯 -->
+<div class="chat-widget" id="chat-widget">
+  <div class="chat-header">
+    <span>&#x1F916; AI Chat</span>
+    <div style="display:flex;gap:6px;align-items:center">
+      <select id="chat-provider-select">
+        <option value="gemini">Gemini</option>
+        <option value="claude">Claude</option>
+        <option value="openai">OpenAI</option>
+      </select>
+      <button onclick="clearChat()" style="background:rgba(0,0,0,0.15);border:1px solid rgba(0,0,0,0.2);color:#000;font-size:0.72rem;padding:3px 8px;border-radius:6px;cursor:pointer;width:auto;height:auto;">&#x1F5D1;</button>
+      <button onclick="toggleChat()" style="background:none;border:none;color:#000;font-size:1.2rem;cursor:pointer;width:auto;height:auto;">&#x2715;</button>
+    </div>
+  </div>
+  <div class="chat-messages" id="chat-messages">
+    <div class="chat-msg ai">
+      <div class="provider-tag">SYSTEM</div>
+      <div>안녕하세요! AI 어시스턴트입니다. 무엇을 도와드릴까요?</div>
+    </div>
+  </div>
+  <div class="chat-input-area">
+    <input id="chat-input" type="text" placeholder="메시지를 입력하세요..."
+           onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}">
+    <button id="chat-send-btn" onclick="sendChat()">&#x27A4;</button>
+  </div>
+</div>
 
 </body>
 </html>
