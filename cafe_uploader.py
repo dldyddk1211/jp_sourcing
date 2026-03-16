@@ -227,6 +227,36 @@ async def upload_products(products: list, status_callback=None, max_upload=None,
     success_count = 0
     upload_list = products[:max_upload] if max_upload else products
 
+    # ── 업로드 전 품번 리스트 검증 ──
+    log(f"📋 업로드 대상 품번 리스트 ({len(upload_list)}개):")
+    code_count = {}
+    for idx, p_item in enumerate(upload_list, 1):
+        code = p_item.get("product_code", "")
+        brand = p_item.get("brand_ko") or p_item.get("brand", "")
+        name_short = (p_item.get("name_ko") or p_item.get("name", ""))[:25]
+        log(f"   {idx}. [{code}] {brand} — {name_short}")
+        if code:
+            code_count[code] = code_count.get(code, 0) + 1
+
+    # 중복 품번 검출 및 제거
+    dup_codes = {c for c, n in code_count.items() if n > 1}
+    if dup_codes:
+        log(f"   🚨 중복 품번 발견: {', '.join(dup_codes)}")
+        seen_codes = set()
+        deduped = []
+        for p_item in upload_list:
+            code = p_item.get("product_code", "")
+            if code and code in seen_codes:
+                log(f"   ⚠️ 중복 제거: {code}")
+                continue
+            if code:
+                seen_codes.add(code)
+            deduped.append(p_item)
+        log(f"   📋 중복 제거 완료: {len(upload_list)}개 → {len(deduped)}개")
+        upload_list = deduped
+    else:
+        log(f"   ✅ 중복 품번 없음 — {len(upload_list)}개 업로드 진행")
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=False,

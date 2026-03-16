@@ -29,7 +29,7 @@ from exchange import get_jpy_to_krw_rate, get_cached_rate, calc_buying_price, se
 from post_generator import get_ai_config, set_ai_config, verify_ai_key
 from site_config import get_sites_for_ui
 from scrape_history import get_history as get_scrape_history
-from cafe_schedule import load_schedule, save_schedule, load_check_schedule, save_check_schedule
+from cafe_schedule import load_schedule, save_schedule, load_check_schedule, save_check_schedule, load_task_schedule, save_task_schedule
 from product_db import init_db as init_product_db, get_stats as bigdata_get_stats, search_products as bigdata_search, get_brands as bigdata_get_brands, delete_all as bigdata_delete_all, delete_by_site as bigdata_delete_site, delete_by_ids as bigdata_delete_ids, get_total_count as bigdata_total, export_all as bigdata_export
 from cafe_monitor import start_monitor, stop_monitor, is_monitoring, batch_check_cafe_duplicates
 from telegram_bot import start_bot, stop_bot, is_bot_running
@@ -38,7 +38,7 @@ from telegram_bot import start_bot, stop_bot, is_bot_running
 # 앱 초기화
 # =============================================
 
-APP_VERSION = "빅데이터 상태필터"
+APP_VERSION = "자동작업 스케줄"
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = SECRET_KEY
 app.config["TEMPLATES_AUTO_RELOAD"] = True   # 템플릿 변경 즉시 반영
@@ -118,6 +118,7 @@ status = {
     "paused": False,      # 일시정지 플래그
     "stop_requested": False,  # 중단 요청 플래그
 }
+_upload_lock = threading.Lock()  # 업로드 동시 실행 방지 락
 
 
 def push_log(msg: str):
@@ -243,24 +244,34 @@ def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None, delay_
     2. 나머지는 대기(待機) 상품에서 랜덤으로 채움
     3. max_upload 수량만큼만 업로드
     """
+    if not _upload_lock.acquire(blocking=False):
+        push_log("⚠️ 이미 업로드가 진행 중입니다 (락)")
+        return
     if status["uploading"]:
+        _upload_lock.release()
         push_log("⚠️ 이미 업로드가 진행 중입니다")
         return
 
     products = load_latest_products()
     if not products:
+        _upload_lock.release()
         push_log("⚠️ 업로드할 상품이 없습니다. 먼저 스크래핑을 실행하세요")
         return
 
     import random as _random
 
-    # 체크된 상품과 대기 상품 분리
+    # 체크된 상품과 대기 상품 분리 (product_code 중복 제거)
     checked_set = set(checked_codes) if checked_codes else set()
     checked_products = []
     waiting_products = []
+    seen_codes = set()
 
     for p in products:
         code = p.get("product_code", "")
+        if code and code in seen_codes:
+            continue  # 중복 product_code 건너뜀
+        if code:
+            seen_codes.add(code)
         is_waiting = (p.get("cafe_status") or "대기") == "대기"
         if code and code in checked_set:
             checked_products.append(p)
@@ -298,6 +309,7 @@ def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None, delay_
             push_log(f"📋 선택된 상품 {len(selected)}개 업로드")
 
     if not selected:
+        _upload_lock.release()
         push_log("⚠️ 업로드할 상품이 없습니다")
         return
 
@@ -331,6 +343,7 @@ def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None, delay_
         push_log(f"❌ 업로드 오류: {e}")
     finally:
         status["uploading"] = False
+        _upload_lock.release()
 
 
 def _save_upload_history(uploaded_products: list):
@@ -399,17 +412,31 @@ def run_auto_pipeline():
 
 def run_scheduled_upload(slot_id: str, brand: str, quantity: int):
     """스케줄 슬롯에 의한 자동 카페 업로드"""
+    if not _upload_lock.acquire(blocking=False):
+        push_log(f"⚠️ [{slot_id}] 이미 업로드가 진행 중이라 스킵합니다 (락)")
+        return
     if status["uploading"]:
+        _upload_lock.release()
         push_log(f"⚠️ [{slot_id}] 이미 업로드가 진행 중이라 스킵합니다")
         return
 
     products = load_latest_products()
     if not products:
+        _upload_lock.release()
         push_log(f"⏰ [{slot_id}] 업로드할 상품이 없습니다")
         return
 
-    # 대기 상태만 필터
-    waiting = [p for p in products if (p.get("cafe_status") or "대기") == "대기"]
+    # 대기 상태만 필터 (product_code 중복 제거)
+    seen_codes = set()
+    waiting = []
+    for p in products:
+        code = p.get("product_code", "")
+        if code and code in seen_codes:
+            continue
+        if code:
+            seen_codes.add(code)
+        if (p.get("cafe_status") or "대기") == "대기":
+            waiting.append(p)
 
     # 브랜드 필터
     if brand and brand != "ALL":
@@ -418,6 +445,7 @@ def run_scheduled_upload(slot_id: str, brand: str, quantity: int):
                    or (p.get("brand") or "").strip() == brand]
 
     if not waiting:
+        _upload_lock.release()
         push_log(f"⏰ [{slot_id}] 조건에 맞는 대기 상품이 없습니다 (브랜드: {brand})")
         return
 
@@ -445,6 +473,7 @@ def run_scheduled_upload(slot_id: str, brand: str, quantity: int):
         push_log(f"❌ [{slot_id}] 자동 업로드 오류: {e}")
     finally:
         status["uploading"] = False
+        _upload_lock.release()
 
 
 # =============================================
@@ -495,9 +524,124 @@ def _register_check_schedule_job():
         logger.info(f"📅 체크 스케줄 등록: {sched['hour']:02d}:{sched['minute']:02d}")
 
 
-_register_schedule_jobs()
-_register_check_schedule_job()
-scheduler.start()
+def run_scheduled_scrape(task_id, site_id, category_id, brand_code, keyword, pages):
+    """스케줄에 의한 자동 수집"""
+    from site_config import get_site, get_brands as get_site_brands
+    brand_name = ""
+    if brand_code:
+        brands = get_site_brands(site_id)
+        brand_name = brands.get(brand_code, brand_code)
+    brand_msg = f" [{brand_name}]" if brand_name else ""
+    push_log(f"⏰ [{task_id}] 자동 수집 시작{brand_msg}")
+    try:
+        run_scrape(
+            site_id=site_id,
+            category_id=category_id,
+            keyword=keyword,
+            pages=pages,
+            brand_code=brand_code,
+        )
+    except Exception as e:
+        push_log(f"❌ [{task_id}] 자동 수집 오류: {e}")
+
+
+def run_scheduled_check(task_id, brand_name):
+    """스케줄에 의한 자동 업로드 체크"""
+    brand_filter = brand_name if brand_name and brand_name != "ALL" else ""
+    push_log(f"⏰ [{task_id}] 자동 업로드 체크 시작 (브랜드: {brand_name or 'ALL'})")
+    try:
+        _run_upload_check(brand_filter=brand_filter)
+    except Exception as e:
+        push_log(f"❌ [{task_id}] 자동 체크 오류: {e}")
+
+
+def run_scheduled_combo(task_id, site_id, category_id, brand_code, brand_name, keyword, pages):
+    """스케줄에 의한 콤보 (수집 → 체크)"""
+    push_log(f"⏰ [{task_id}] 콤보 시작: 수집 → 체크 (브랜드: {brand_name or 'ALL'})")
+    try:
+        # 1단계: 수집
+        run_scrape(
+            site_id=site_id,
+            category_id=category_id,
+            keyword=keyword,
+            pages=pages,
+            brand_code=brand_code,
+        )
+        push_log(f"⏰ [{task_id}] 수집 완료, 업로드 체크 시작...")
+        # 2단계: 체크
+        brand_filter = brand_name if brand_name and brand_name != "ALL" else ""
+        _run_upload_check(brand_filter=brand_filter)
+        push_log(f"⏰ [{task_id}] 콤보 완료!")
+    except Exception as e:
+        push_log(f"❌ [{task_id}] 콤보 오류: {e}")
+
+
+def _register_task_schedule_jobs():
+    """자동 작업 스케줄 (수집/체크/콤보) 잡 등록/갱신"""
+    slots = load_task_schedule()
+    for slot in slots:
+        job_id = f"task_schedule_{slot['id']}"
+        if scheduler.get_job(job_id):
+            scheduler.remove_job(job_id)
+        if slot.get("enabled"):
+            task_type = slot.get("type", "scrape")
+            if task_type == "scrape":
+                func = lambda s=slot: threading.Thread(
+                    target=run_scheduled_scrape,
+                    args=(s["id"], s["site_id"], s["category_id"], s.get("brand_code", ""), s.get("keyword", ""), s.get("pages", "")),
+                    daemon=True
+                ).start()
+            elif task_type == "check":
+                func = lambda s=slot: threading.Thread(
+                    target=run_scheduled_check,
+                    args=(s["id"], s.get("brand_name", "ALL")),
+                    daemon=True
+                ).start()
+            elif task_type == "combo":
+                func = lambda s=slot: threading.Thread(
+                    target=run_scheduled_combo,
+                    args=(s["id"], s["site_id"], s["category_id"], s.get("brand_code", ""), s.get("brand_name", "ALL"), s.get("keyword", ""), s.get("pages", "")),
+                    daemon=True
+                ).start()
+            else:
+                continue
+
+            scheduler.add_job(
+                func=func,
+                trigger="cron",
+                hour=slot["hour"],
+                minute=slot["minute"],
+                id=job_id,
+                name=f"자동 작업 [{slot['label']}] {slot['hour']:02d}:{slot['minute']:02d}",
+                replace_existing=True,
+            )
+            type_label = {"scrape": "수집", "check": "체크", "combo": "콤보"}.get(task_type, task_type)
+            logger.info(f"📅 작업 스케줄 등록: {slot['label']} ({type_label}) {slot['hour']:02d}:{slot['minute']:02d} 브랜드={slot.get('brand_name','ALL')}")
+
+
+# 스케줄러 초기화 함수 (중복 시작 방지)
+_scheduler_started = False
+
+def _start_scheduler_once():
+    """스케줄러를 한 번만 시작 (중복 방지)"""
+    global _scheduler_started
+    if _scheduler_started:
+        return
+    _register_schedule_jobs()
+    _register_check_schedule_job()
+    _register_task_schedule_jobs()
+    scheduler.start()
+    _scheduler_started = True
+    logger.info("📅 스케줄러 시작됨 (PID: %d)", os.getpid())
+
+
+# use_reloader=True 시 부모(리로더) + 자식(워커) 2개 프로세스가 생성됨
+# 자식(워커)에만 WERKZEUG_RUN_MAIN="true" 설정됨
+# 부모에서도 스케줄러가 시작되면 같은 잡이 2번 실행 → 브라우저 2개 열림!
+# → 워커 프로세스에서만 스케줄러 시작
+if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    _start_scheduler_once()
+
 set_app_status(status)  # xebio_search에 status 딕셔너리 주입
 
 # 카페 모니터 + 텔레그램 봇 자동 시작
@@ -1313,6 +1457,39 @@ def api_save_check_schedule():
     return jsonify({"ok": True})
 
 
+# ── 자동 작업 스케줄 API (수집/체크/콤보) ──────────
+
+@app.route(f"{URL_PREFIX}/task-schedule", methods=["GET"])
+@login_required
+def api_get_task_schedule():
+    """자동 작업 스케줄 설정 조회"""
+    slots = load_task_schedule()
+    for slot in slots:
+        job_id = f"task_schedule_{slot['id']}"
+        job = scheduler.get_job(job_id)
+        slot["registered"] = job is not None
+        if job and job.next_run_time:
+            slot["next_run"] = job.next_run_time.strftime("%Y-%m-%d %H:%M")
+        else:
+            slot["next_run"] = None
+    return jsonify({"ok": True, "slots": slots})
+
+
+@app.route(f"{URL_PREFIX}/task-schedule", methods=["POST"])
+@login_required
+def api_save_task_schedule():
+    """자동 작업 스케줄 설정 저장 + 잡 재등록"""
+    data = request.json or {}
+    slots = data.get("slots", [])
+    if not isinstance(slots, list) or len(slots) != 3:
+        return jsonify({"ok": False, "error": "3개 슬롯 필요"}), 400
+
+    save_task_schedule(slots)
+    _register_task_schedule_jobs()
+    push_log("📅 자동 작업 스케줄 설정이 저장되었습니다")
+    return jsonify({"ok": True})
+
+
 @app.route(f"{URL_PREFIX}/upload-status-summary", methods=["GET"])
 @login_required
 def api_upload_status_summary():
@@ -1864,6 +2041,9 @@ if __name__ == "__main__":
         init_product_db()
     except Exception as e:
         print(f"⚠️ 빅데이터 DB 초기화 실패: {e}")
+
+    # use_reloader=False일 때 스케줄러 시작 (reloader 사용 시에는 위에서 이미 시작됨)
+    _start_scheduler_once()
 
     print(f"\n  Xebio Dashboard: http://{SERVER_HOST}:{SERVER_PORT}{URL_PREFIX}\n")
 

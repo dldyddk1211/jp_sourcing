@@ -1282,6 +1282,28 @@
           </div>
         </div>
 
+        <!-- ── 자동 작업 스케줄 (수집/체크/콤보) ── -->
+        <div style="margin-top:24px;padding:18px;background:#0d0d0a;border:1px solid var(--border);border-radius:12px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+            <span style="font-size:1.3rem;">&#x1F680;</span>
+            <span style="font-weight:600;font-size:0.95rem;">자동 작업 스케줄 (수집 / 체크 / 콤보)</span>
+          </div>
+          <p style="font-size:0.75rem;color:var(--muted);margin-bottom:16px;line-height:1.5;">
+            브랜드별 자동 수집, 자동 업로드 체크, 또는 수집→체크 콤보를 예약 실행합니다.
+          </p>
+
+          <div id="task-schedule-slots" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;">
+            <!-- JS 렌더링 -->
+          </div>
+
+          <div style="margin-top:16px;display:flex;gap:10px;align-items:center;">
+            <button class="btn b-green" onclick="saveTaskSchedule()" style="padding:10px 24px;">
+              &#x1f4be; 작업 스케줄 저장
+            </button>
+            <span id="task-sched-save-msg" style="font-size:0.8rem;color:var(--green);display:none;">저장되었습니다!</span>
+          </div>
+        </div>
+
         <!-- 현재 등록된 잡 목록 -->
         <div style="margin-top:24px;padding:16px;background:#0d0d0a;border:1px solid var(--border);border-radius:10px;">
           <div style="font-size:0.85rem;font-weight:600;margin-bottom:10px;">&#x1f4cb; 등록된 스케줄 현황</div>
@@ -1392,7 +1414,7 @@ function showPage(page) {
       loadCafeProducts(1);
     }
   }
-  if (page === "cafe-schedule") loadSchedule();
+  if (page === "cafe-schedule") { loadSchedule(); loadTaskSchedule(); }
 }
 
 // ── SSE 실시간 로그 ──────────────────────────
@@ -3132,18 +3154,7 @@ function renderScheduleSlots() {
   });
 
   // 상태 목록 업데이트
-  const statusEl = document.getElementById("schedule-status-list");
-  if (statusEl) {
-    const active = _scheduleSlots.filter(s => s.enabled);
-    if (active.length === 0) {
-      statusEl.innerHTML = "활성화된 스케줄이 없습니다. 위에서 슬롯을 활성화하세요.";
-    } else {
-      statusEl.innerHTML = active.map(s => {
-        const next = s.next_run ? ` — 다음 실행: ${s.next_run}` : "";
-        return `&#x2705; <b>${s.label}</b> ${String(s.hour).padStart(2,"0")}:${String(s.minute).padStart(2,"0")} | 브랜드: ${s.brand} | 수량: ${s.quantity}개${next}`;
-      }).join("<br>");
-    }
-  }
+  updateScheduleStatusList();
 }
 
 async function saveSchedule() {
@@ -3252,6 +3263,184 @@ async function loadUploadCheckStatus() {
       </div>` : `<div style="margin-top:12px;font-size:0.78rem;color:var(--green);text-align:center;">&#x2705; 모든 상품 처리 완료!</div>`}
     `;
   } catch(e) { console.error("업로드 상태 로드 실패:", e); }
+}
+
+// ── 자동 작업 스케줄 (수집/체크/콤보) ────────────────
+let _taskSlots = [];
+
+async function loadTaskSchedule() {
+  try {
+    const r = await fetch(PREFIX + "/task-schedule");
+    const d = await r.json();
+    if (!d.ok) return;
+    _taskSlots = d.slots;
+    renderTaskSlots();
+  } catch(e) { console.error("작업 스케줄 로드 실패:", e); }
+}
+
+function renderTaskSlots() {
+  const container = document.getElementById("task-schedule-slots");
+  if (!container) return;
+
+  // 사이트 데이터가 아직 없으면 비동기 로드 후 재렌더
+  if (_sitesData.length === 0) {
+    fetch(PREFIX + "/sites").then(r => r.json()).then(data => {
+      _sitesData = data;
+      renderTaskSlots();
+    });
+    return;
+  }
+
+  const typeMap = { scrape: {label: "수집", icon: "&#x1F4E6;", color: "#4CAF50"},
+                    check:  {label: "체크", icon: "&#x1F50D;", color: "#2196F3"},
+                    combo:  {label: "콤보", icon: "&#x1F525;", color: "#FF9800"} };
+
+  container.innerHTML = _taskSlots.map((slot, i) => {
+    const info = typeMap[slot.type] || typeMap.scrape;
+
+    // 사이트 옵션
+    const siteOpts = _sitesData.map(s =>
+      `<option value="${s.id}" ${slot.site_id===s.id?"selected":""}>${s.name}</option>`
+    ).join("");
+
+    // 현재 사이트의 카테고리/브랜드
+    const curSite = _sitesData.find(s => s.id === slot.site_id);
+    const catOpts = curSite ? curSite.categories.map(c =>
+      `<option value="${c.id}" ${slot.category_id===c.id?"selected":""}>${c.name}</option>`
+    ).join("") : "";
+
+    const brandOpts = curSite && curSite.brands ? curSite.brands.map(b =>
+      `<option value="${b.code}" data-name="${b.name}" ${slot.brand_code===b.code?"selected":""}>${b.name}</option>`
+    ).join("") : "";
+
+    const showSite = slot.type === "scrape" || slot.type === "combo";
+
+    return `
+      <div style="background:#111;border:1px solid ${slot.enabled ? info.color : 'var(--border)'};border-radius:12px;padding:18px;transition:border-color 0.3s;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:1.3rem;">${info.icon}</span>
+            <span style="font-weight:600;font-size:0.95rem;">${slot.label}</span>
+            <span style="font-size:0.7rem;padding:2px 8px;border-radius:10px;background:${info.color}22;color:${info.color};border:1px solid ${info.color}44;">${info.label}</span>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="tsched-en-${i}" ${slot.enabled?"checked":""}
+              onchange="_taskSlots[${i}].enabled=this.checked; renderTaskSlots();"
+              style="width:18px;height:18px;accent-color:${info.color};">
+            <span style="font-size:0.8rem;color:${slot.enabled ? info.color : 'var(--muted)'};">${slot.enabled?"활성":"비활성"}</span>
+          </label>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div>
+            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">시간</label>
+            <div style="display:flex;gap:4px;">
+              <select id="tsched-hour-${i}" onchange="_taskSlots[${i}].hour=parseInt(this.value)"
+                style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:0.82rem;flex:1;">
+                ${Array.from({length:24}, (_,h) => `<option value="${h}" ${slot.hour===h?"selected":""}>${String(h).padStart(2,"0")}시</option>`).join("")}
+              </select>
+              <select id="tsched-min-${i}" onchange="_taskSlots[${i}].minute=parseInt(this.value)"
+                style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:0.82rem;width:70px;">
+                ${[0,10,15,20,30,40,45,50].map(m => `<option value="${m}" ${slot.minute===m?"selected":""}>${String(m).padStart(2,"0")}분</option>`).join("")}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">브랜드</label>
+            <select id="tsched-brand-${i}" onchange="var opt=this.options[this.selectedIndex]; _taskSlots[${i}].brand_code=this.value; _taskSlots[${i}].brand_name=opt.dataset.name||'ALL';"
+              style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:0.82rem;width:100%;">
+              <option value="" data-name="ALL" ${!slot.brand_code?"selected":""}>전체 (ALL)</option>
+              ${brandOpts}
+            </select>
+          </div>
+        </div>
+
+        ${showSite ? `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+          <div>
+            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">사이트</label>
+            <select id="tsched-site-${i}" onchange="_taskSlots[${i}].site_id=this.value; renderTaskSlots();"
+              style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:0.82rem;width:100%;">
+              ${siteOpts}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">카테고리</label>
+            <select id="tsched-cat-${i}" onchange="_taskSlots[${i}].category_id=this.value"
+              style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:0.82rem;width:100%;">
+              ${catOpts}
+            </select>
+          </div>
+        </div>
+        ` : ""}
+
+        ${slot.next_run ? `<div style="margin-top:10px;font-size:0.72rem;color:${info.color};">&#x25B6; 다음 실행: ${slot.next_run}</div>` : ""}
+      </div>`;
+  }).join("");
+
+  // 등록 현황에 작업 스케줄도 표시
+  updateScheduleStatusList();
+}
+
+function updateScheduleStatusList() {
+  const statusEl = document.getElementById("schedule-status-list");
+  if (!statusEl) return;
+
+  const typeLabel = { scrape: "수집", check: "체크", combo: "콤보" };
+  const lines = [];
+
+  // 기존 업로드 스케줄
+  const activeUploads = _scheduleSlots.filter(s => s.enabled);
+  activeUploads.forEach(s => {
+    const next = s.next_run ? ` — 다음: ${s.next_run}` : "";
+    lines.push(`&#x2705; <b>${s.label}</b> 업로드 ${String(s.hour).padStart(2,"0")}:${String(s.minute).padStart(2,"0")} | 브랜드: ${s.brand} | 수량: ${s.quantity}개${next}`);
+  });
+
+  // 작업 스케줄
+  const activeTasks = _taskSlots.filter(s => s.enabled);
+  activeTasks.forEach(s => {
+    const next = s.next_run ? ` — 다음: ${s.next_run}` : "";
+    lines.push(`&#x1F680; <b>${s.label}</b> ${typeLabel[s.type]||s.type} ${String(s.hour).padStart(2,"0")}:${String(s.minute).padStart(2,"0")} | 브랜드: ${s.brand_name||"ALL"}${next}`);
+  });
+
+  statusEl.innerHTML = lines.length > 0 ? lines.join("<br>") : "활성화된 스케줄이 없습니다.";
+}
+
+async function saveTaskSchedule() {
+  // UI에서 최신 값 수집
+  _taskSlots.forEach((slot, i) => {
+    const hourEl = document.getElementById(`tsched-hour-${i}`);
+    const minEl  = document.getElementById(`tsched-min-${i}`);
+    const brandEl = document.getElementById(`tsched-brand-${i}`);
+    const siteEl = document.getElementById(`tsched-site-${i}`);
+    const catEl  = document.getElementById(`tsched-cat-${i}`);
+    const enEl   = document.getElementById(`tsched-en-${i}`);
+    if (hourEl)  slot.hour = parseInt(hourEl.value);
+    if (minEl)   slot.minute = parseInt(minEl.value);
+    if (enEl)    slot.enabled = enEl.checked;
+    if (brandEl) {
+      slot.brand_code = brandEl.value;
+      const opt = brandEl.options[brandEl.selectedIndex];
+      slot.brand_name = opt ? (opt.dataset.name || "ALL") : "ALL";
+    }
+    if (siteEl) slot.site_id = siteEl.value;
+    if (catEl)  slot.category_id = catEl.value;
+  });
+
+  try {
+    const r = await fetch(PREFIX + "/task-schedule", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ slots: _taskSlots })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      const msg = document.getElementById("task-sched-save-msg");
+      msg.style.display = "inline";
+      setTimeout(() => msg.style.display = "none", 3000);
+      loadTaskSchedule();
+    }
+  } catch(e) { alert("저장 실패: " + e); }
 }
 
 // ── 초기화 ───────────────────────────────────
