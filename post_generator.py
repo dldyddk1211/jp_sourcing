@@ -1039,10 +1039,21 @@ def _make_fallback_content(product: dict, price_info: dict) -> str:
 # ── 이미지 URL ─────────────────────────────
 
 def get_detail_image_urls(product: dict) -> list:
-    """상세 이미지 URL 목록 (썸네일 제외, 첫 번째가 대표)"""
+    """상세 이미지 URL 목록 (detail_images 우선, 없으면 img_url 폴백)"""
     images = []
     thumb = product.get("img_url", "")
-    for url in product.get("detail_images", []):
-        if url and url != thumb:
-            images.append(url)
+    detail = product.get("detail_images", [])
+
+    if detail:
+        # detail_images가 있으면 썸네일 제외한 나머지 사용
+        for url in detail:
+            if url and url != thumb:
+                images.append(url)
+        # detail_images에 썸네일만 있었으면 (전부 필터됨) 썸네일이라도 사용
+        if not images and thumb:
+            images.append(thumb)
+    elif thumb:
+        # detail_images가 아예 없으면 썸네일을 대표 이미지로 사용
+        images.append(thumb)
+
     return images[:8]

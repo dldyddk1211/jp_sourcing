@@ -564,6 +564,8 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
 
         toolbar_locator = await _find_toolbar_locator(page, frame_locator, _log)
 
+        _log(f"   📷 이미지 {len(detail_images)}개 준비됨" + (f" (첫 번째: {detail_images[0][:60]}...)" if detail_images else " — 이미지 없음!"))
+
         if content_intro and content_detail and detail_images:
             # 인트로 부분 먼저 입력
             _log("   📝 인트로 본문 입력 중...")
