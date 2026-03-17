@@ -162,6 +162,64 @@ async def naver_manual_login(status_callback=None):
             await browser.close()
 
 
+async def naver_manual_login_with_cookie_path(cookie_path: str, status_callback=None):
+    """특정 쿠키 경로로 네이버 수동 로그인 (멀티 계정 지원)"""
+    def log(msg):
+        logger.info(msg)
+        if status_callback:
+            status_callback(msg)
+
+    log(f"🔐 네이버 로그인 브라우저를 엽니다... (쿠키: {cookie_path})")
+    log(f"   ⏱️ {NAVER_LOGIN_TIMEOUT}초 안에 로그인을 완료해주세요")
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=False,
+            args=["--no-sandbox", "--window-size=500,700"]
+        )
+        context = await browser.new_context(
+            viewport={"width": 500, "height": 700},
+            locale="ko-KR",
+        )
+        page = await context.new_page()
+
+        try:
+            await page.goto(
+                "https://nid.naver.com/nidlogin.login?url=https://cafe.naver.com/",
+                wait_until="domcontentloaded",
+                timeout=20000
+            )
+            log("🌐 네이버 로그인 페이지가 열렸습니다")
+            log("   👉 브라우저에서 직접 로그인해주세요!")
+
+            elapsed = 0
+            while elapsed < NAVER_LOGIN_TIMEOUT:
+                await asyncio.sleep(2)
+                elapsed += 2
+
+                current_url = page.url
+                if "nidlogin" not in current_url and "nid.naver.com" not in current_url:
+                    log("✅ 로그인 감지! 쿠키를 저장합니다...")
+                    cookies = await context.cookies()
+                    with open(cookie_path, "w", encoding="utf-8") as f:
+                        json.dump(cookies, f, ensure_ascii=False, indent=2)
+                    log(f"✅ 쿠키 저장 완료: {cookie_path} ({len(cookies)}개)")
+                    return True
+
+                if elapsed % 30 == 0 and elapsed < NAVER_LOGIN_TIMEOUT:
+                    remaining = NAVER_LOGIN_TIMEOUT - elapsed
+                    log(f"   ⏱️ 남은 시간: {remaining}초")
+
+            log("❌ 로그인 시간 초과")
+            return False
+
+        except Exception as e:
+            log(f"❌ 로그인 오류: {e}")
+            return False
+        finally:
+            await browser.close()
+
+
 # =============================================
 # 쿠키 유효성 검증
 # =============================================
@@ -208,7 +266,7 @@ async def verify_login(context) -> bool:
 # 메인 업로드 함수
 # =============================================
 
-async def upload_products(products: list, status_callback=None, max_upload=None, delay_min=8, delay_max=13):
+async def upload_products(products: list, status_callback=None, max_upload=None, delay_min=8, delay_max=13, on_single_success=None):
     """
     상품 리스트를 네이버 카페에 업로드
 
@@ -314,7 +372,19 @@ async def upload_products(products: list, status_callback=None, max_upload=None,
                     break
 
                 name_short = (product.get("name_ko") or product.get("name", ""))[:30]
+                code = product.get("product_code", "")
                 uploaded = False
+
+                # ── 글 작성 직전 DB에서 상태 재확인 (중복 방지) ──
+                if code:
+                    try:
+                        from product_db import get_product_status
+                        db_status = get_product_status(code)
+                        if db_status and db_status not in ("대기", ""):
+                            log(f"   ⏩ [{i}/{len(upload_list)}] 스킵: {name_short} — DB 상태 '{db_status}' (이미 처리됨)")
+                            continue
+                    except Exception:
+                        pass  # DB 조회 실패 시 그냥 진행
 
                 for attempt in range(1, 3):  # 최대 2회 시도
                     try:
@@ -337,6 +407,12 @@ async def upload_products(products: list, status_callback=None, max_upload=None,
                                     update_cafe_status(code, "업로드완료", datetime.now().isoformat())
                             except Exception:
                                 pass
+                            # 즉시 완료 콜백 (중복 업로드 방지)
+                            if on_single_success:
+                                try:
+                                    on_single_success(product)
+                                except Exception:
+                                    pass
                             uploaded = True
                             break  # 성공 → 다음 상품으로
                         else:

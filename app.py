@@ -262,9 +262,15 @@ def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None, delay_
 
     # 체크된 상품과 대기 상품 분리 (product_code 중복 제거)
     checked_set = set(checked_codes) if checked_codes else set()
+    # 빈 문자열 제거
+    checked_set.discard("")
     checked_products = []
     waiting_products = []
     seen_codes = set()
+
+    push_log(f"📋 업로드 요청: max_upload={max_upload}, checked_codes={len(checked_set)}개, shuffle={shuffle_brands}")
+    if checked_set:
+        push_log(f"   ✅ 체크된 품번: {', '.join(list(checked_set)[:5])}{'...' if len(checked_set) > 5 else ''}")
 
     for p in products:
         code = p.get("product_code", "")
@@ -277,6 +283,8 @@ def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None, delay_
             checked_products.append(p)
         elif is_waiting:
             waiting_products.append(p)
+
+    push_log(f"   📊 체크 매칭: {len(checked_products)}개, 대기 상품: {len(waiting_products)}개")
 
     # 업로드 대상 결정
     if checked_set:
@@ -328,15 +336,13 @@ def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None, delay_
             max_upload=max_upload,
             delay_min=delay_min,
             delay_max=delay_max,
+            on_single_success=_on_single_upload_success,
         ))
         status["uploaded_count"] = count
         status["last_upload"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # 업로드 히스토리 저장
         _save_upload_history(selected[:count])
-
-        # 업로드 완료 상품에 cafe_uploaded 표시
-        _mark_uploaded_products(selected[:count])
 
         push_log(f"🎉 업로드 완료: {count}개 성공")
     except Exception as e:
@@ -367,6 +373,39 @@ def _save_upload_history(uploaded_products: list):
 
     with open(history_path, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
+
+
+def _on_single_upload_success(product: dict):
+    """상품 1개 업로드 성공 시 즉시 latest.json + DB에 완료 표시 (중복 업로드 방지)"""
+    try:
+        code = product.get("product_code", "")
+        if not code:
+            return
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        # latest.json에 즉시 반영
+        products = load_latest_products()
+        changed = False
+        for p in products:
+            if p.get("product_code") == code:
+                p["cafe_status"] = "완료"
+                p["cafe_uploaded"] = True
+                p["cafe_uploaded_at"] = now_str
+                changed = True
+        if changed:
+            from xebio_search import save_products
+            save_products(products)
+
+        # DB에도 반영
+        try:
+            from product_db import update_cafe_status
+            update_cafe_status(code, "완료", now_str)
+        except Exception:
+            pass
+
+        logger.info(f"✅ 즉시 완료 표시: {code}")
+    except Exception as e:
+        logger.warning(f"즉시 완료 표시 실패: {e}")
 
 
 def _mark_uploaded_products(uploaded_products: list):
@@ -462,12 +501,12 @@ def run_scheduled_upload(slot_id: str, brand: str, quantity: int):
         count = asyncio.run(upload_products(
             products=to_upload,
             status_callback=push_log,
-            max_upload=quantity
+            max_upload=quantity,
+            on_single_success=_on_single_upload_success,
         ))
         status["uploaded_count"] = count
         status["last_upload"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         _save_upload_history(to_upload[:count])
-        _mark_uploaded_products(to_upload[:count])
         push_log(f"⏰ [{slot_id}] 자동 업로드 완료: {count}개 성공")
     except Exception as e:
         push_log(f"❌ [{slot_id}] 자동 업로드 오류: {e}")
@@ -1915,20 +1954,134 @@ def naver_status():
     return jsonify({"logged_in": has_saved_cookies()})
 
 
+# ── 네이버 계정 관리 (최대 3개) ─────────────────
+
+_NAVER_ACCOUNTS_DB = os.path.join(get_path("db"), "naver_accounts.json")
+
+
+def _load_naver_accounts() -> dict:
+    """네이버 계정 목록 로드"""
+    if os.path.exists(_NAVER_ACCOUNTS_DB):
+        try:
+            with open(_NAVER_ACCOUNTS_DB, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"active": 1, "accounts": {}}
+
+
+def _save_naver_accounts(data: dict):
+    """네이버 계정 목록 저장"""
+    os.makedirs(os.path.dirname(_NAVER_ACCOUNTS_DB), exist_ok=True)
+    with open(_NAVER_ACCOUNTS_DB, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _get_cookie_path(slot: int) -> str:
+    """슬롯별 쿠키 파일 경로"""
+    if slot == 1:
+        return "naver_cookies.json"  # 기존 호환
+    return f"naver_cookies_{slot}.json"
+
+
+@app.route(f"{URL_PREFIX}/naver/accounts", methods=["GET"])
+@login_required
+def get_naver_accounts():
+    """네이버 계정 목록 조회 (비밀번호 마스킹)"""
+    data = _load_naver_accounts()
+    result = {"active": data.get("active", 1), "accounts": {}}
+    for slot, acc in data.get("accounts", {}).items():
+        has_cookie = os.path.exists(_get_cookie_path(int(slot)))
+        result["accounts"][slot] = {
+            "naver_id": acc.get("naver_id", ""),
+            "has_password": bool(acc.get("password")),
+            "has_cookie": has_cookie,
+        }
+    return jsonify(result)
+
+
+@app.route(f"{URL_PREFIX}/naver/accounts", methods=["POST"])
+@login_required
+def save_naver_account():
+    """네이버 계정 저장"""
+    d = request.json or {}
+    slot = str(d.get("slot", 1))
+    naver_id = d.get("naver_id", "").strip()
+    password = d.get("password", "").strip()
+    if not naver_id:
+        return jsonify({"ok": False, "message": "아이디를 입력해주세요"})
+
+    data = _load_naver_accounts()
+    if "accounts" not in data:
+        data["accounts"] = {}
+    data["accounts"][slot] = {"naver_id": naver_id, "password": password}
+    _save_naver_accounts(data)
+    push_log(f"💾 네이버 계정 {slot} 저장: {naver_id}")
+    return jsonify({"ok": True})
+
+
+@app.route(f"{URL_PREFIX}/naver/accounts/delete", methods=["POST"])
+@login_required
+def delete_naver_account():
+    """네이버 계정 삭제"""
+    d = request.json or {}
+    slot = str(d.get("slot", 1))
+    data = _load_naver_accounts()
+    if slot in data.get("accounts", {}):
+        del data["accounts"][slot]
+        _save_naver_accounts(data)
+    # 쿠키 파일도 삭제
+    cookie_path = _get_cookie_path(int(slot))
+    if os.path.exists(cookie_path):
+        os.remove(cookie_path)
+    push_log(f"🗑️ 네이버 계정 {slot} 삭제")
+    return jsonify({"ok": True})
+
+
+@app.route(f"{URL_PREFIX}/naver/accounts/active", methods=["POST"])
+@login_required
+def set_active_naver_account():
+    """활성 계정 변경"""
+    d = request.json or {}
+    slot = int(d.get("slot", 1))
+    data = _load_naver_accounts()
+    data["active"] = slot
+    _save_naver_accounts(data)
+    # 활성 계정의 쿠키를 기본 쿠키 경로에 복사
+    src = _get_cookie_path(slot)
+    if os.path.exists(src) and slot != 1:
+        import shutil
+        shutil.copy2(src, "naver_cookies.json")
+    push_log(f"✅ 활성 네이버 계정 변경: 계정 {slot}")
+    return jsonify({"ok": True})
+
+
 @app.route(f"{URL_PREFIX}/naver/login", methods=["POST"])
 @login_required
 def naver_login():
     """네이버 수동 로그인 시작 (브라우저 열림)"""
+    d = request.json or {}
+    slot = int(d.get("slot", 1))
+    cookie_path = _get_cookie_path(slot)
+
     def run_login():
-        result = asyncio.run(naver_manual_login(status_callback=push_log))
+        from cafe_uploader import naver_manual_login_with_cookie_path
+        result = asyncio.run(naver_manual_login_with_cookie_path(
+            cookie_path=cookie_path, status_callback=push_log
+        ))
         if result:
-            push_log("✅ 네이버 로그인 & 쿠키 저장 완료!")
+            push_log(f"✅ 네이버 계정 {slot} 로그인 & 쿠키 저장 완료!")
+            # 활성 계정이면 기본 쿠키에도 복사
+            data = _load_naver_accounts()
+            if data.get("active") == slot and slot != 1:
+                import shutil
+                shutil.copy2(cookie_path, "naver_cookies.json")
         else:
-            push_log("❌ 네이버 로그인 실패 또는 시간 초과")
+            push_log(f"❌ 네이버 계정 {slot} 로그인 실패 또는 시간 초과")
 
     thread = threading.Thread(target=run_login, daemon=True)
     thread.start()
-    return jsonify({"ok": True, "message": "로그인 브라우저가 열립니다. 직접 로그인해주세요."})
+    return jsonify({"ok": True, "message": f"계정 {slot} 로그인 브라우저가 열립니다."})
 
 
 @app.route(f"{URL_PREFIX}/naver/logout", methods=["POST"])

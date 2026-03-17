@@ -426,8 +426,8 @@
         <span>&#xb370;&#xc774;&#xd130; &#xc800;&#xc7a5; &#xacbd;&#xb85c;</span>
       </div>
       <div class="nav-item" data-page="ai-settings" onclick="showPage('ai-settings')">
-        <span class="nav-icon">🤖</span>
-        <span>AI 글쓰기 설정</span>
+        <span class="nav-icon">&#x1F511;</span>
+        <span>로그인/계정 설정</span>
       </div>
       <div class="nav-item" data-page="dictionary" onclick="showPage('dictionary')">
         <span class="nav-icon">&#x1f4d6;</span>
@@ -841,10 +841,84 @@
 
     <!-- ═══ AI 설정 ═══ -->
     <div class="page-section" id="page-ai-settings">
+      <!-- ── 네이버 계정 설정 ── -->
+      <div class="panel" style="margin-bottom:20px">
+        <div class="panel-title">
+          <span>&#x1F30F; 네이버 계정 설정</span>
+          <button class="btn b-gray" onclick="loadNaverAccounts()" style="padding:6px 12px;font-size:0.78rem">&#x1F504; 새로고침</button>
+        </div>
+        <p style="color:var(--muted);font-size:0.82rem;margin-bottom:16px">
+          네이버 카페 업로드에 사용할 계정을 등록합니다. 최대 3개 계정을 등록할 수 있습니다.<br>
+          계정별로 쿠키가 관리되며, 업로드 시 활성 계정을 선택할 수 있습니다.
+        </p>
+        <div style="border:1px solid var(--border);border-radius:10px;padding:20px;background:var(--bg)">
+          <div id="naver-accounts-list" style="display:grid;gap:14px">
+            <!-- 계정 1 -->
+            <div class="naver-account-row" data-slot="1" style="padding:14px;border:1px solid var(--border);border-radius:8px;background:var(--card)">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                <span style="font-weight:600;font-size:0.85rem">&#x1F464; 계정 1</span>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <span id="naver-status-1" style="font-size:0.75rem;color:var(--muted)">미등록</span>
+                  <input type="radio" name="naver-active" value="1" onchange="setActiveNaverAccount(1)" title="활성 계정 선택">
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+                <input id="naver-id-1" type="text" placeholder="네이버 아이디" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem;background:var(--bg);color:var(--text)">
+                <input id="naver-pw-1" type="password" placeholder="비밀번호" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem;background:var(--bg);color:var(--text)">
+              </div>
+              <div style="display:flex;gap:6px">
+                <button class="btn b-green" onclick="saveNaverAccount(1)" style="padding:6px 14px;font-size:0.78rem">저장</button>
+                <button class="btn b-blue" onclick="loginNaverAccount(1)" style="padding:6px 14px;font-size:0.78rem">&#x1F310; 로그인</button>
+                <button class="btn b-gray" onclick="deleteNaverAccount(1)" style="padding:6px 14px;font-size:0.78rem">삭제</button>
+              </div>
+            </div>
+            <!-- 계정 2 -->
+            <div class="naver-account-row" data-slot="2" style="padding:14px;border:1px solid var(--border);border-radius:8px;background:var(--card)">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                <span style="font-weight:600;font-size:0.85rem">&#x1F464; 계정 2</span>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <span id="naver-status-2" style="font-size:0.75rem;color:var(--muted)">미등록</span>
+                  <input type="radio" name="naver-active" value="2" onchange="setActiveNaverAccount(2)" title="활성 계정 선택">
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+                <input id="naver-id-2" type="text" placeholder="네이버 아이디" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem;background:var(--bg);color:var(--text)">
+                <input id="naver-pw-2" type="password" placeholder="비밀번호" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem;background:var(--bg);color:var(--text)">
+              </div>
+              <div style="display:flex;gap:6px">
+                <button class="btn b-green" onclick="saveNaverAccount(2)" style="padding:6px 14px;font-size:0.78rem">저장</button>
+                <button class="btn b-blue" onclick="loginNaverAccount(2)" style="padding:6px 14px;font-size:0.78rem">&#x1F310; 로그인</button>
+                <button class="btn b-gray" onclick="deleteNaverAccount(2)" style="padding:6px 14px;font-size:0.78rem">삭제</button>
+              </div>
+            </div>
+            <!-- 계정 3 -->
+            <div class="naver-account-row" data-slot="3" style="padding:14px;border:1px solid var(--border);border-radius:8px;background:var(--card)">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                <span style="font-weight:600;font-size:0.85rem">&#x1F464; 계정 3</span>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <span id="naver-status-3" style="font-size:0.75rem;color:var(--muted)">미등록</span>
+                  <input type="radio" name="naver-active" value="3" onchange="setActiveNaverAccount(3)" title="활성 계정 선택">
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+                <input id="naver-id-3" type="text" placeholder="네이버 아이디" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem;background:var(--bg);color:var(--text)">
+                <input id="naver-pw-3" type="password" placeholder="비밀번호" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem;background:var(--bg);color:var(--text)">
+              </div>
+              <div style="display:flex;gap:6px">
+                <button class="btn b-green" onclick="saveNaverAccount(3)" style="padding:6px 14px;font-size:0.78rem">저장</button>
+                <button class="btn b-blue" onclick="loginNaverAccount(3)" style="padding:6px 14px;font-size:0.78rem">&#x1F310; 로그인</button>
+                <button class="btn b-gray" onclick="deleteNaverAccount(3)" style="padding:6px 14px;font-size:0.78rem">삭제</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── AI API 설정 ── -->
       <div class="panel">
         <div class="panel-title">
-          <span>🤖 AI 글쓰기 설정</span>
-          <button class="btn b-gray" onclick="loadAiSettings()" style="padding:6px 12px;font-size:0.78rem">🔄 새로고침</button>
+          <span>&#x1F916; AI API 설정</span>
+          <button class="btn b-gray" onclick="loadAiSettings()" style="padding:6px 12px;font-size:0.78rem">&#x1F504; 새로고침</button>
         </div>
         <p style="color:var(--muted);font-size:0.82rem;margin-bottom:16px">
           네이버 카페 게시글 제목/본문 자동 생성에 사용할 AI를 설정합니다.<br>
@@ -1469,7 +1543,7 @@ const pageTitles = {
   brandauc:   "\uD83C\uDFAF Brand Auc",
   dictionary: "Setting \u203A \uD83D\uDCD6 \uBC88\uC5ED \uB2E8\uC5B4\uC7A5",
   "data-path": "Setting \u203A \uD83D\uDCC1 \uB370\uC774\uD130 \uC800\uC7A5 \uACBD\uB85C",
-  "ai-settings": "Setting \u203A \uD83E\uDD16 AI \uAE00\uC4F0\uAE30 \uC124\uC815",
+  "ai-settings": "Setting \u203A \uD83D\uDD11 \uB85C\uADF8\uC778/\uACC4\uC815 \uC124\uC815",
   "telegram": "Setting \u203A \uD83D\uDCEC \uD154\uB808\uADF8\uB7A8 \uC54C\uB9BC",
   "bigdata": "Setting \u203A \uD83D\uDCBE \uBE45\uB370\uC774\uD130 \uAD00\uB9AC",
   "cafe-upload": "Sport \u203A \u2615 \uB124\uC774\uBC84\uCE74\uD398 \uC5C5\uB85C\uB4DC",
@@ -1490,7 +1564,7 @@ function showPage(page) {
   if (page === "products") { loadProducts(curPage); loadBrands(); }
   if (page === "dictionary") loadDict();
   if (page === "data-path") loadDataPath();
-  if (page === "ai-settings") loadAiSettings();
+  if (page === "ai-settings") { loadAiSettings(); loadNaverAccounts(); }
   if (page === "telegram") { loadTelegramSettings(); checkMonitorStatus(); }
   if (page === "bigdata") { loadBigdataStats(); loadBigdataProducts(1); }
   if (page === "cafe-upload") {
@@ -1980,7 +2054,7 @@ async function uploadSelected() {
     const aiRes = await fetch(PREFIX + "/ai/verify", {method:"POST"}).then(r => r.json());
     if (!aiRes.ok) {
       addLog(`❌ AI API 오류: ${aiRes.message}`, "error");
-      alert(`⚠️ AI API 확인 필요!\n\n${aiRes.message}\n\n설정 > AI 글쓰기 설정에서 API 키를 확인해주세요.`);
+      alert(`⚠️ AI API 확인 필요!\n\n${aiRes.message}\n\n설정 > 로그인/계정 설정에서 API 키를 확인해주세요.`);
       return;
     }
     addLog(`✅ ${aiRes.message}`, "info");
@@ -2558,6 +2632,73 @@ async function resetDataPath() {
 }
 
 // ── AI 설정 ────────────────────────────
+// ── 네이버 계정 관리 ─────────────────────────
+async function loadNaverAccounts() {
+  try {
+    const d = await fetch(PREFIX + "/naver/accounts").then(r => r.json());
+    const active = d.active || 1;
+    for (let i = 1; i <= 3; i++) {
+      const acc = (d.accounts || {})[String(i)];
+      const statusEl = document.getElementById(`naver-status-${i}`);
+      const idEl = document.getElementById(`naver-id-${i}`);
+      const radio = document.querySelector(`input[name="naver-active"][value="${i}"]`);
+      if (acc) {
+        idEl.value = acc.naver_id || "";
+        const parts = [];
+        if (acc.has_password) parts.push("PW 저장됨");
+        if (acc.has_cookie) parts.push('<span style="color:var(--green)">쿠키 유효</span>');
+        else parts.push('<span style="color:var(--red)">쿠키 없음</span>');
+        statusEl.innerHTML = parts.join(" / ");
+      } else {
+        idEl.value = "";
+        statusEl.textContent = "미등록";
+      }
+      if (radio) radio.checked = (i === active);
+    }
+  } catch(e) { console.error("네이버 계정 로드 오류:", e); }
+}
+
+async function saveNaverAccount(slot) {
+  const id = document.getElementById(`naver-id-${slot}`).value.trim();
+  const pw = document.getElementById(`naver-pw-${slot}`).value.trim();
+  if (!id) { alert("아이디를 입력해주세요"); return; }
+  const res = await fetch(PREFIX + "/naver/accounts", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({slot, naver_id: id, password: pw})
+  }).then(r => r.json());
+  if (res.ok) {
+    document.getElementById(`naver-pw-${slot}`).value = "";
+    loadNaverAccounts();
+  } else { alert(res.message || "저장 실패"); }
+}
+
+async function loginNaverAccount(slot) {
+  const res = await fetch(PREFIX + "/naver/login", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({slot})
+  }).then(r => r.json());
+  alert(res.message || "로그인 시작");
+}
+
+async function deleteNaverAccount(slot) {
+  if (!confirm(`계정 ${slot}을 삭제하시겠습니까?\n쿠키도 함께 삭제됩니다.`)) return;
+  await fetch(PREFIX + "/naver/accounts/delete", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({slot})
+  });
+  document.getElementById(`naver-id-${slot}`).value = "";
+  document.getElementById(`naver-pw-${slot}`).value = "";
+  loadNaverAccounts();
+}
+
+async function setActiveNaverAccount(slot) {
+  await fetch(PREFIX + "/naver/accounts/active", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({slot})
+  });
+  loadNaverAccounts();
+}
+
 async function loadAiSettings() {
   try {
     const d = await fetch(PREFIX + "/settings/ai").then(r => r.json());

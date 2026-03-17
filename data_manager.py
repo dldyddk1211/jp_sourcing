@@ -1,11 +1,13 @@
 """
 data_manager.py
-외부 저장소 데이터 경로 관리
+서버 로컬 데이터 경로 관리
 
 구조:
-  Mac:     /Volumes/LEE/theone/srv/data/jp_sourcing/
-  Windows: Z:\VOL1\LEE\theone\srv\data\jp_sourcing\
+  Mac:     ~/Documents/theone/srv/data/jp_sourcing/
+  Windows: ~/Documents/theone/srv/data/jp_sourcing/
   하위:    db/, outputs/, logs/
+
+※ NAS는 백업용으로만 사용 (기본 저장은 서버 로컬)
 """
 
 import json
@@ -17,10 +19,11 @@ logger = logging.getLogger(__name__)
 
 PROJECT_NAME = "jp_sourcing"
 
-# OS별 기본 경로
+# OS별 기본 경로 (서버 로컬)
+_home = os.path.expanduser("~")
 _DEFAULT_PATHS = {
-    "Darwin":  f"/Volumes/LEE/theone/srv/data/{PROJECT_NAME}",
-    "Windows": f"Z:/VOL1/LEE/theone/srv/data/{PROJECT_NAME}",
+    "Darwin":  os.path.join(_home, "Documents", "theone", "srv", "data", PROJECT_NAME),
+    "Windows": os.path.join(_home, "Documents", "theone", "srv", "data", PROJECT_NAME),
 }
 
 # 설정 파일 (프로젝트 루트에 저장)

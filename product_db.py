@@ -253,6 +253,23 @@ def update_cafe_status(product_code: str, status: str, uploaded_at: str = ""):
         conn.close()
 
 
+def get_product_status(product_code: str) -> str:
+    """품번으로 카페 상태 조회 (대기/완료/업로드완료/중복 등)"""
+    if not product_code:
+        return ""
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT cafe_status FROM products WHERE product_code=? ORDER BY created_at DESC LIMIT 1",
+            (product_code,)
+        ).fetchone()
+        return row["cafe_status"] if row and row["cafe_status"] else ""
+    except Exception:
+        return ""
+    finally:
+        conn.close()
+
+
 def get_stats() -> dict:
     """통계 반환"""
     conn = _conn()
