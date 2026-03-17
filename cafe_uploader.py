@@ -22,6 +22,13 @@ from notifier import notify_upload_success, notify_upload_waiting, notify_upload
 # ── 업로드 중지 플래그 ──
 _upload_stop_requested = False
 
+# ── 마지막 업로드 실패 이유 (디버깅용) ──
+_last_upload_fail_reason = ""
+
+def _set_fail_reason(reason: str):
+    global _last_upload_fail_reason
+    _last_upload_fail_reason = reason
+
 def request_upload_stop():
     """업로드 중지 요청"""
     global _upload_stop_requested
@@ -333,11 +340,13 @@ async def upload_products(products: list, status_callback=None, max_upload=None,
                             uploaded = True
                             break  # 성공 → 다음 상품으로
                         else:
+                            # 실패 원인 상세 로그
+                            fail_reason = _last_upload_fail_reason or "알 수 없는 원인 (upload_single_product가 False 반환)"
                             if attempt == 1:
-                                log(f"   ⚠️ 업로드 실패 — 1회 재시도합니다")
+                                log(f"   ⚠️ 업로드 실패 [{fail_reason}] — 1회 재시도합니다")
                             else:
-                                log(f"   ⛔ 2회 연속 실패 — 다음 상품으로 건너뜁니다")
-                                notify_upload_error(name_short, "2회 연속 업로드 실패")
+                                log(f"   ⛔ 2회 연속 실패 [{fail_reason}] — 다음 상품으로 건너뜁니다")
+                                notify_upload_error(name_short, f"2회 연속 실패: {fail_reason}")
                     except Exception as e:
                         if attempt == 1:
                             log(f"   ⚠️ 오류 발생: {e} — 1회 재시도합니다")
@@ -409,6 +418,7 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
         # 로그인 페이지로 리다이렉트 됐는지 확인
         if "login" in page.url or "nidlogin" in page.url:
             _log("   ❌ 쿠키 만료 — 재로그인 필요")
+            _set_fail_reason("쿠키 만료 — 재로그인 필요")
             return False
 
         _log(f"   ✅ 현재 URL: {page.url}")
@@ -423,6 +433,7 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
             _log("   ✅ 에디터 로딩 완료 (iframe#cafe_main)")
         except PlaywrightTimeout:
             _log("   ❌ 에디터 로딩 시간 초과 (30초)")
+            _set_fail_reason("에디터 로딩 시간 초과 (30초)")
             return False
 
         # ── 에디터 본문 영역 높이 확장 ──
@@ -529,6 +540,7 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
 
         if not title_filled:
             _log("   ❌ 제목 입력란을 찾지 못했습니다")
+            _set_fail_reason("제목 입력란을 찾지 못함")
             return False
 
         await asyncio.sleep(1)
@@ -835,6 +847,7 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
         else:
             _log("   ❌ 검증 실패 — 등록 중단! (본문 구조 또는 내용 이상)")
             _log("━" * 40)
+            _set_fail_reason("본문 검증 실패 — 구조 또는 내용 이상")
             return False
         _log("━" * 40)
 
@@ -883,10 +896,12 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
                 continue
 
         _log("   ❌ 등록 버튼을 찾지 못했습니다")
+        _set_fail_reason("등록 버튼을 찾지 못함")
         return False
 
     except Exception as e:
         logger.error(f"단일 업로드 오류: {e}")
+        _set_fail_reason(f"예외 발생: {e}")
         return False
 
 

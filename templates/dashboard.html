@@ -1585,6 +1585,8 @@ async function runScrape() {
   checkedIndices.clear();
   updateSelCount();
   startTimer(3000);
+  _taskActive = true;
+  document.body.dataset.scraping = 'true';
   const body = { site_id: siteId, category_id: catId };
   if (brandCode) body.brand_code = brandCode;
   if (keyword) body.keyword = keyword;
@@ -1592,7 +1594,7 @@ async function runScrape() {
   await post("/run/scrape", body);
 }
 
-async function runUpload() { await uploadSelected(); }
+async function runUpload() { _taskActive = true; await uploadSelected(); }
 
 async function runAuto() {
   checkedIndices.clear();
@@ -2487,6 +2489,11 @@ async function refreshStatus() {
       upEl.innerHTML = '<span class="c-yellow">업로드 진행 중 <span class="spinner"></span></span>';
     } else {
       upEl.textContent = "대기중";
+    }
+    // 작업 완료 시 이탈 방어 플래그 해제
+    if (!d.scraping && !d.uploading) {
+      _taskActive = false;
+      document.body.dataset.scraping = 'false';
     }
 
     // 동시 실행 상태 표시
@@ -3551,6 +3558,30 @@ setInterval(() => { loadProducts(curPage); loadBrands(); }, 30000);
 setInterval(loadUploadCheckStatus, 60000);
 updatePagePreview();
 calcExample();
+
+// ── 페이지 이탈 방어 (크롤링/업로드 중 F5/닫기 방지) ──────
+let _taskActive = false;
+
+// 상태 갱신 시 활성 태스크 여부 추적
+const _origRefreshStatus = typeof refreshStatus === 'function' ? refreshStatus : null;
+setInterval(() => {
+  _taskActive = document.querySelector('.status-dot.active') !== null;
+}, 3000);
+
+window.addEventListener('beforeunload', (e) => {
+  // 크롤링 또는 업로드 진행 중일 때만 경고
+  if (_taskActive || document.body.dataset.scraping === 'true') {
+    e.preventDefault();
+    e.returnValue = '작업이 진행중입니다. 페이지를 나가면 작업이 중단됩니다.';
+    return e.returnValue;
+  }
+});
+
+window.addEventListener('unload', () => {
+  if (_taskActive || document.body.dataset.scraping === 'true') {
+    navigator.sendBeacon(PREFIX + '/run/stop', '{}');
+  }
+});
 
 // ── AI 채팅 위젯 ─────────────────────────────
 const _chatHistory = [];

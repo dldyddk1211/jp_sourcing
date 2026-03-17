@@ -1940,6 +1940,31 @@ def naver_logout():
     return jsonify({"ok": True, "message": "네이버 로그인 정보가 삭제되었습니다"})
 
 
+@app.route(f"{URL_PREFIX}/run/stop", methods=["POST"])
+def stop_all():
+    """가벼운 중단: 크롤링/업로드 중지 + 브라우저 정리 (데이터 삭제 없음)"""
+    status["stop_requested"] = True
+    status["paused"] = False
+
+    def _cleanup():
+        try:
+            asyncio.run(force_close_browser())
+        except Exception:
+            pass
+        # 2ndstreet 브라우저도 정리
+        try:
+            from secondst_crawler import force_close_browser as close_2nd
+            asyncio.run(close_2nd())
+        except Exception:
+            pass
+    threading.Thread(target=_cleanup, daemon=True).start()
+
+    status["scraping"] = False
+    status["uploading"] = False
+    push_log("⛔ 페이지 이탈 감지 — 작업 중단 + 브라우저 정리")
+    return jsonify({"ok": True})
+
+
 @app.route(f"{URL_PREFIX}/run/pause", methods=["POST"])
 @login_required
 def pause_scrape():
@@ -2032,6 +2057,23 @@ def log_stream():
                     yield f"data: {json.dumps({'msg': msg})}\n\n"
                 except queue.Empty:
                     yield f"data: {json.dumps({'msg': '.'})}\n\n"  # heartbeat
+        except GeneratorExit:
+            # 클라이언트 연결 끊김 (F5/탭닫기/강제종료)
+            logger.info("🔌 SSE 클라이언트 연결 끊김 감지")
+            if status.get("scraping"):
+                logger.info("⛔ 크롤링 진행 중 SSE 끊김 — 작업 중단 + 브라우저 정리")
+                status["stop_requested"] = True
+                status["paused"] = False
+                try:
+                    asyncio.run(force_close_browser())
+                except Exception:
+                    pass
+                try:
+                    from secondst_crawler import force_close_browser as close_2nd
+                    asyncio.run(close_2nd())
+                except Exception:
+                    pass
+                status["scraping"] = False
         finally:
             _unsubscribe_logs(client_queue)
 
