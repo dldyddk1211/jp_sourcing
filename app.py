@@ -171,7 +171,10 @@ def run_scrape(site_id="xebio", category_id="sale", keyword="", pages="", brand_
     """백그라운드 스레드에서 스크래핑 실행 (사이트별 크롤러 디스패치)"""
     if status["scraping"]:
         push_log("⚠️ 이미 스크래핑이 진행 중입니다")
+        push_log("   💡 이전 작업이 비정상 종료된 경우 '리셋' 버튼을 눌러주세요")
         return
+    # 중단 요청 초기화
+    status["stop_requested"] = False
 
     status["scraping"] = True
     try:
@@ -1163,6 +1166,12 @@ def manual_scrape():
     keyword = data.get("keyword", "")
     pages = data.get("pages", "")
     brand_code = data.get("brand_code", "")
+
+    # 이미 진행 중이면 즉시 알림
+    if status["scraping"]:
+        return jsonify({"ok": False, "message": "⚠️ 이미 스크래핑이 진행 중입니다. 리셋 후 다시 시도해주세요."})
+
+    push_log(f"🚀 수동 스크래핑 요청: site={site_id}, cat={category_id}, brand={brand_code}")
     thread = threading.Thread(
         target=run_scrape,
         args=(site_id, category_id, keyword, pages, brand_code),
