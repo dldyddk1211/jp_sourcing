@@ -533,10 +533,9 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
             # 이미 선택된 게시판 이름 확인
             already_selected = False
             selected_board_selectors = [
-                f"button:has-text('{CAFE_MENU_NAME}')",
-                f"a.board_name:has-text('{CAFE_MENU_NAME}')",
-                f"[class*='board_name']:has-text('{CAFE_MENU_NAME}')",
-                f"[class*='BoardSelectButton']:has-text('{CAFE_MENU_NAME}')",
+                "[class*='BoardSelectButton']",
+                "[class*='board_name']",
+                "a.board_name",
             ]
             for sel in selected_board_selectors:
                 try:
@@ -554,29 +553,50 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
                 # "게시판을 선택해 주세요" 버튼 찾기
                 board_btn = frame_locator.locator(
                     "button:has-text('게시판을 선택해 주세요'), "
-                    "button:has-text('게시판'), "
-                    "a.board_name, [class*='BoardSelectButton']"
+                    "button:has-text('게시판 선택'), "
+                    "[class*='BoardSelectButton'], "
+                    "a.board_name"
                 ).first
                 if await board_btn.count() > 0:
                     await board_btn.click()
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(1.5)
 
                     # 드롭다운 목록 영역 찾기
                     dropdown = frame_locator.locator(
                         "ul[role='listbox'], .select_list, [class*='selectbox'] ul, "
-                        "[class*='menu_list'], [class*='board_list']"
+                        "[class*='menu_list'], [class*='board_list'], "
+                        "[class*='layer_board'] ul, [class*='select_popup'] ul"
                     ).first
 
                     # 스크롤하면서 메뉴 항목 찾기
                     found = False
-                    for scroll_try in range(10):
-                        menu_item = frame_locator.locator(
-                            f"li:has-text('{CAFE_MENU_NAME}'), "
-                            f"a:has-text('{CAFE_MENU_NAME}'), "
-                            f"button:has-text('{CAFE_MENU_NAME}'), "
-                            f"span:has-text('{CAFE_MENU_NAME}')"
+                    for scroll_try in range(15):
+                        # 정확한 텍스트 매칭 우선 시도
+                        menu_item = None
+                        # 1) text= 정확 매칭
+                        exact_loc = frame_locator.locator(
+                            f"li >> text='{CAFE_MENU_NAME}'"
                         ).first
-                        if await menu_item.count() > 0:
+                        if await exact_loc.count() > 0:
+                            menu_item = exact_loc
+                        else:
+                            # 2) role=option 텍스트 매칭
+                            opt_loc = frame_locator.locator(
+                                f"[role='option']:has-text('{CAFE_MENU_NAME}')"
+                            ).first
+                            if await opt_loc.count() > 0:
+                                menu_item = opt_loc
+                            else:
+                                # 3) li 안의 a/span/button 부분 매칭
+                                partial_loc = frame_locator.locator(
+                                    f"li a:has-text('{CAFE_MENU_NAME}'), "
+                                    f"li button:has-text('{CAFE_MENU_NAME}'), "
+                                    f"li span:has-text('{CAFE_MENU_NAME}')"
+                                ).first
+                                if await partial_loc.count() > 0:
+                                    menu_item = partial_loc
+
+                        if menu_item and await menu_item.count() > 0:
                             try:
                                 await menu_item.scroll_into_view_if_needed()
                                 await asyncio.sleep(0.3)
@@ -584,7 +604,21 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
                                 found = True
                                 break
                             except Exception:
-                                pass
+                                # Playwright click 실패 시 JS click 시도
+                                try:
+                                    await menu_item.evaluate("el => el.click()")
+                                    found = True
+                                    break
+                                except Exception:
+                                    # dispatchEvent 시도
+                                    try:
+                                        await menu_item.evaluate(
+                                            "el => el.dispatchEvent(new MouseEvent('click', {bubbles:true}))"
+                                        )
+                                        found = True
+                                        break
+                                    except Exception as click_err:
+                                        _log(f"   ⚠️ 클릭 실패 (시도 {scroll_try}): {click_err}")
 
                         # 드롭다운 스크롤 다운
                         if await dropdown.count() > 0:
@@ -986,7 +1020,9 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
                             ).first
                             if await error_el.count() > 0:
                                 err_text = (await error_el.inner_text()).strip()[:100]
-                                if err_text:
+                                # 네이버 알림 관리 팝업 등 무관한 팝업은 무시
+                                _ignore_keywords = ["알림을 모두 삭제", "알림 설정", "알림을 확인"]
+                                if err_text and not any(kw in err_text for kw in _ignore_keywords):
                                     _log(f"   ❌ 등록 에러 감지: {err_text}")
                                     _set_fail_reason(f"등록 에러: {err_text}")
                                     return False
@@ -1606,18 +1642,25 @@ async def _set_font_size(page, size: str, log=None) -> bool:
 
         # 드롭다운에서 사이즈 옵션 선택 (모든 frame 탐색)
         opt = None
+        option_selectors = [
+            f"button[data-value='{size}'][data-name='font-size']",
+            f"[data-value='{size}'][data-role='option']",
+            f"[data-value='{size}']",
+            f"button.se-font-size-option:has-text('{size}')",
+            f".se-property-toolbar-label-select-option button:has-text('{size}')",
+            f"button:text-is('{size}')",
+        ]
         for frame in page.frames:
-            try:
-                candidate = frame.locator(f"button[data-value='{size}'][data-name='font-size']").first
-                if await candidate.count() > 0:
-                    opt = candidate
-                    break
-                candidate = frame.locator(f"[data-value='{size}'][data-role='option']").first
-                if await candidate.count() > 0:
-                    opt = candidate
-                    break
-            except Exception:
-                continue
+            for sel in option_selectors:
+                try:
+                    candidate = frame.locator(sel).first
+                    if await candidate.count() > 0:
+                        opt = candidate
+                        break
+                except Exception:
+                    continue
+            if opt:
+                break
 
         if opt:
             await opt.click()
