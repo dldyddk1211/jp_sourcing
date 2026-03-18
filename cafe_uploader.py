@@ -915,7 +915,7 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
             if board_name:
                 _log(f"   ✅ [검증] 게시판: {board_name}")
             else:
-                _log(f"   ⬚ [검증] 게시판 이름 확인 불가")
+                _log(f"   ⬚ [검증] 게시판 이름 확인 불가 (설정: {CAFE_MENU_NAME}, menuId: {CAFE_MENU_ID})")
         except Exception as e:
             _log(f"   ⚠️ [검증] 게시판 확인 실패: {e}")
 
@@ -947,12 +947,26 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
 
                     # 등록 후 게시글 페이지로 이동 대기 (URL이 /articles/숫자로 변경될 때까지)
                     post_url = ""
-                    for _ in range(15):  # 최대 15초 대기
+                    for wait_i in range(20):  # 최대 20초 대기
                         await asyncio.sleep(1)
                         current_url = page.url
                         if "/articles/" in current_url and "write" not in current_url:
                             post_url = current_url
                             break
+                        # 에러 팝업/알림 확인
+                        try:
+                            error_el = frame_locator.locator(
+                                "[class*='error'], [class*='alert'], .layer_alert, "
+                                ".popup_error, [role='alertdialog']"
+                            ).first
+                            if await error_el.count() > 0:
+                                err_text = (await error_el.inner_text()).strip()[:100]
+                                if err_text:
+                                    _log(f"   ❌ 등록 에러 감지: {err_text}")
+                                    _set_fail_reason(f"등록 에러: {err_text}")
+                                    return False
+                        except Exception:
+                            pass
 
                     if not post_url:
                         # iframe 내부 URL 확인
@@ -966,10 +980,11 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
 
                     if post_url:
                         _log(f"   🔗 게시글 URL: {post_url}")
+                        return post_url
                     else:
-                        _log(f"   ⚠️ 게시글 URL 확인 실패")
-
-                    return post_url or True
+                        _log(f"   ❌ 등록 실패 — 게시글 URL 확인 불가 (20초 대기 후에도 글쓰기 페이지)")
+                        _set_fail_reason("등록 버튼 클릭했으나 게시글 페이지로 이동되지 않음")
+                        return False
             except Exception:
                 continue
 
