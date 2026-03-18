@@ -541,7 +541,7 @@
           <button class="btn b-orange" id="btn-unlock" onclick="unlockStatus()" style="display:none" title="상태가 stuck 상태일 때 잠금 해제">&#x1f513; 잠금해제</button>
           <button class="btn b-red"    id="btn-reset"  onclick="runReset()">&#x1f504; 리셋</button>
           <button class="btn b-gray"   id="btn-translate" onclick="runTranslate()">&#x1f310; 한국어 번역</button>
-          <button class="btn b-gray"   onclick="downloadExcel()" id="btn-excel">&#x1f4e5; 엑셀 다운로드</button>
+          <button class="btn b-gray"   onclick="downloadCsv()" id="btn-csv">&#x1f4e5; CSV 다운로드</button>
         </div>
         <div class="opts">
           <label>업로드 최대 개수</label>
@@ -1206,13 +1206,16 @@
       <!-- 관리 -->
       <div class="panel">
         <div class="panel-title"><span>&#x1f5d1;&#xfe0f; 데이터 관리</span></div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <button class="btn b-green" onclick="downloadBigdataExcel()" style="padding:8px 16px;font-size:0.82rem">&#x1f4e5; 엑셀 다운로드</button>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <button class="btn b-green" onclick="downloadBigdataCsv()" style="padding:8px 16px;font-size:0.82rem">&#x1f4e5; CSV 다운로드</button>
+          <button class="btn b-blue" onclick="document.getElementById('csv-merge-input').click()" style="padding:8px 16px;font-size:0.82rem">&#x1f4e4; CSV 병합 업로드</button>
+          <input type="file" id="csv-merge-input" accept=".csv" style="display:none" onchange="mergeCsvUpload(this)">
           <button class="btn b-red" onclick="deleteBigdata('all')" style="padding:8px 16px;font-size:0.82rem">&#x1f5d1;&#xfe0f; 전체 초기화</button>
           <button class="btn b-yellow" onclick="deleteBigdataSite()" style="padding:8px 16px;font-size:0.82rem">&#x1f5d1;&#xfe0f; 사이트별 삭제</button>
         </div>
+        <div id="merge-result" style="margin-top:8px;font-size:0.8rem;display:none;"></div>
         <div style="margin-top:8px;font-size:0.75rem;color:var(--muted);">
-          &#x26a0;&#xfe0f; 삭제된 데이터는 복구할 수 없습니다. 삭제 후 같은 상품이 다시 수집될 수 있습니다.
+          &#x26a0;&#xfe0f; 삭제된 데이터는 복구할 수 없습니다. | CSV 병합: 동일 상품은 업데이트 일자가 최신인 데이터로 갱신됩니다.
         </div>
       </div>
     </div>
@@ -2270,12 +2273,12 @@ async function naverLogout() {
   addLog("\uD83D\uDEAA \uB124\uC774\uBC84 \uB85C\uADF8\uC778 \uD574\uC81C \uC644\uB8CC", "info");
 }
 
-function downloadExcel() {
-  const btn = document.getElementById("btn-excel");
+function downloadCsv() {
+  const btn = document.getElementById("btn-csv");
   btn.disabled = true; btn.textContent = "\uD83D\uDCE5 \uC0DD\uC131 \uC911...";
-  addLog("\uD83D\uDCE5 \uC5D1\uC140 \uD30C\uC77C \uC0DD\uC131 \uC911...", "info");
+  addLog("\uD83D\uDCE5 CSV \uD30C\uC77C \uC0DD\uC131 \uC911...", "info");
   const a = document.createElement("a"); a.href = PREFIX + "/products/download"; a.click();
-  setTimeout(() => { btn.disabled = false; btn.textContent = "\uD83D\uDCE5 \uC5D1\uC140 \uB2E4\uC6B4\uB85C\uB4DC"; addLog("\u2705 \uC5D1\uC140 \uB2E4\uC6B4\uB85C\uB4DC \uC644\uB8CC!", "ok"); }, 2000);
+  setTimeout(() => { btn.disabled = false; btn.textContent = "\uD83D\uDCE5 CSV \uB2E4\uC6B4\uB85C\uB4DC"; addLog("\u2705 CSV \uB2E4\uC6B4\uB85C\uB4DC \uC644\uB8CC!", "ok"); }, 2000);
 }
 
 async function runTranslate() {
@@ -3317,7 +3320,7 @@ async function vtStopScrape() {
   } catch(e) {}
 }
 
-function downloadBigdataExcel() {
+function downloadBigdataCsv() {
   const q = document.getElementById("bd-search")?.value || "";
   const site = document.getElementById("bd-site-filter")?.value || "";
   const brand = document.getElementById("bd-brand-filter")?.value || "";
@@ -3326,6 +3329,36 @@ function downloadBigdataExcel() {
   if (site) params.set("site_id", site);
   if (brand) params.set("brand", brand);
   window.location.href = PREFIX + "/bigdata/download?" + params.toString();
+}
+
+async function mergeCsvUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  const resultEl = document.getElementById("merge-result");
+  resultEl.style.display = "block";
+  resultEl.innerHTML = '<span class="c-yellow">CSV 병합 중... <span class="spinner"></span></span>';
+  addLog(`📤 CSV 병합 업로드: ${file.name} (${(file.size/1024).toFixed(1)}KB)`, "info");
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  try {
+    const r = await fetch(PREFIX + "/bigdata/merge", { method: "POST", body: formData });
+    const d = await r.json();
+    if (d.ok) {
+      resultEl.innerHTML = `<span class="c-green">✅ ${d.message}</span>`;
+      addLog(`✅ ${d.message}`, "ok");
+      loadBigdataProducts(1);
+    } else {
+      resultEl.innerHTML = `<span class="c-red">❌ ${d.message}</span>`;
+      addLog(`❌ 병합 실패: ${d.message}`, "err");
+    }
+  } catch(e) {
+    resultEl.innerHTML = `<span class="c-red">❌ 요청 실패: ${e}</span>`;
+    addLog(`❌ 병합 요청 실패: ${e}`, "err");
+  }
+  input.value = "";  // 같은 파일 재선택 가능
 }
 
 // 검색 엔터키

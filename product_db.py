@@ -514,6 +514,150 @@ def delete_by_site(site_id: str) -> int:
         conn.close()
 
 
+def merge_products(csv_rows: list) -> dict:
+    """CSV 데이터 병합 — created_at 비교하여 최신 데이터로 업데이트
+
+    Args:
+        csv_rows: list of dict (CSV 파싱 결과)
+    Returns:
+        {"inserted": N, "updated": N, "skipped": N}
+    """
+    conn = _conn()
+    result = {"inserted": 0, "updated": 0, "skipped": 0}
+    try:
+        for row in csv_rows:
+            site_id = row.get("site_id", "").strip()
+            product_code = row.get("product_code", "").strip()
+            price_jpy = int(row.get("price_jpy", 0) or 0)
+
+            if not site_id or not product_code:
+                result["skipped"] += 1
+                continue
+
+            csv_created = row.get("created_at", "").strip()
+
+            # 기존 데이터 조회
+            existing = conn.execute(
+                "SELECT id, created_at FROM products WHERE site_id=? AND product_code=? AND price_jpy=?",
+                (site_id, product_code, price_jpy)
+            ).fetchone()
+
+            if existing:
+                db_created = existing["created_at"] or ""
+                # CSV 데이터가 더 최신이면 업데이트
+                if csv_created and csv_created > db_created:
+                    conn.execute("""
+                        UPDATE products SET
+                            category_id=?, name=?, name_ko=?, brand=?, brand_ko=?,
+                            link=?, img_url=?, original_price=?, discount_rate=?,
+                            in_stock=?, cafe_status=?, cafe_uploaded_at=?, created_at=?
+                        WHERE id=?
+                    """, (
+                        row.get("category_id", ""),
+                        row.get("name", ""),
+                        row.get("name_ko", ""),
+                        row.get("brand", ""),
+                        row.get("brand_ko", ""),
+                        row.get("link", ""),
+                        row.get("img_url", ""),
+                        int(row.get("original_price", 0) or 0),
+                        int(row.get("discount_rate", 0) or 0),
+                        1 if str(row.get("in_stock", "1")).strip() in ("1", "O", "True", "true") else 0,
+                        row.get("cafe_status", ""),
+                        row.get("cafe_uploaded_at", ""),
+                        csv_created,
+                        existing["id"],
+                    ))
+                    result["updated"] += 1
+                else:
+                    result["skipped"] += 1
+            else:
+                # 신규 데이터 삽입
+                conn.execute("""
+                    INSERT INTO products
+                    (site_id, category_id, product_code, name, name_ko,
+                     brand, brand_ko, price_jpy, link, img_url,
+                     original_price, discount_rate, in_stock,
+                     cafe_status, cafe_uploaded_at, created_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """, (
+                    site_id,
+                    row.get("category_id", ""),
+                    product_code,
+                    row.get("name", ""),
+                    row.get("name_ko", ""),
+                    row.get("brand", ""),
+                    row.get("brand_ko", ""),
+                    price_jpy,
+                    row.get("link", ""),
+                    row.get("img_url", ""),
+                    int(row.get("original_price", 0) or 0),
+                    int(row.get("discount_rate", 0) or 0),
+                    1 if str(row.get("in_stock", "1")).strip() in ("1", "O", "True", "true") else 0,
+                    row.get("cafe_status", ""),
+                    row.get("cafe_uploaded_at", ""),
+                    csv_created or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ))
+                result["inserted"] += 1
+
+        conn.commit()
+        total = result["inserted"] + result["updated"]
+        logger.info(f"CSV 병합 완료: 신규 {result['inserted']}개, 업데이트 {result['updated']}개, 스킵 {result['skipped']}개")
+        return result
+    except Exception as e:
+        logger.error(f"CSV 병합 오류: {e}")
+        raise
+    finally:
+        conn.close()
+
+
+def export_csv(query="", site_id="", brand="") -> list:
+    """전체 상품 CSV 내보내기용 데이터 (필터 적용 가능)"""
+    conn = _conn()
+    try:
+        conditions = []
+        params = []
+        if query:
+            conditions.append("(name_ko LIKE ? OR product_code LIKE ? OR brand_ko LIKE ?)")
+            q = f"%{query}%"
+            params.extend([q, q, q])
+        if site_id:
+            conditions.append("site_id = ?")
+            params.append(site_id)
+        if brand:
+            conditions.append("brand_ko = ?")
+            params.append(brand)
+
+        where = "WHERE " + " AND ".join(conditions) if conditions else ""
+        rows = conn.execute(
+            f"SELECT * FROM products {where} ORDER BY created_at DESC", params
+        ).fetchall()
+
+        products = []
+        for r in rows:
+            products.append({
+                "site_id": r["site_id"],
+                "category_id": r["category_id"],
+                "product_code": r["product_code"],
+                "name": r["name"],
+                "name_ko": r["name_ko"] or r["name"],
+                "brand": r["brand"],
+                "brand_ko": r["brand_ko"] or r["brand"],
+                "price_jpy": r["price_jpy"],
+                "original_price": r["original_price"],
+                "discount_rate": r["discount_rate"],
+                "link": r["link"],
+                "img_url": r["img_url"],
+                "in_stock": r["in_stock"],
+                "cafe_status": r["cafe_status"] or "",
+                "cafe_uploaded_at": r["cafe_uploaded_at"] or "",
+                "created_at": r["created_at"],
+            })
+        return products
+    finally:
+        conn.close()
+
+
 def get_total_count() -> int:
     """전체 상품 수"""
     conn = _conn()
