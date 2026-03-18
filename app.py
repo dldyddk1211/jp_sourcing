@@ -264,6 +264,19 @@ def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None, delay_
         return
 
     products = load_latest_products()
+
+    # 빅데이터 DB 미업로드 상품 병합 (카페 탭에서 보이는 것과 동일)
+    try:
+        from product_db import get_unuploaded_products
+        db_products = get_unuploaded_products()
+        existing_codes = {p.get("product_code", "") for p in products if p.get("product_code")}
+        for dp in db_products:
+            if dp.get("product_code") and dp["product_code"] not in existing_codes:
+                existing_codes.add(dp["product_code"])
+                products.append(dp)
+    except Exception as e:
+        logger.warning(f"DB 상품 병합 실패: {e}")
+
     if not products:
         _upload_lock.release()
         push_log("⚠️ 업로드할 상품이 없습니다. 먼저 스크래핑을 실행하세요")
@@ -482,6 +495,19 @@ def run_scheduled_upload(slot_id: str, brand: str, quantity: int):
         return
 
     products = load_latest_products()
+
+    # 빅데이터 DB 미업로드 상품 병합
+    try:
+        from product_db import get_unuploaded_products
+        db_products = get_unuploaded_products()
+        existing_codes = {p.get("product_code", "") for p in products if p.get("product_code")}
+        for dp in db_products:
+            if dp.get("product_code") and dp["product_code"] not in existing_codes:
+                existing_codes.add(dp["product_code"])
+                products.append(dp)
+    except Exception as e:
+        logger.warning(f"DB 상품 병합 실패: {e}")
+
     if not products:
         _upload_lock.release()
         push_log(f"⏰ [{slot_id}] 업로드할 상품이 없습니다")
