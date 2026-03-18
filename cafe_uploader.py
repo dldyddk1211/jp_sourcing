@@ -388,6 +388,36 @@ async def upload_products(products: list, status_callback=None, max_upload=None,
                     except Exception:
                         pass  # DB 조회 실패 시 그냥 진행
 
+                # ── 글 작성 직전 카페 검색으로 실시간 중복 확인 ──
+                if code:
+                    try:
+                        from cafe_monitor import search_cafe_by_browser
+                        from config import CAFE_MY_NICKNAME
+                        log(f"   🔍 [{i}/{len(upload_list)}] 카페 중복 확인 중: {code}")
+                        search_result = await search_cafe_by_browser(page, code, CAFE_MY_NICKNAME, days=30)
+                        if search_result:
+                            log(f"   ⏩ [{i}/{len(upload_list)}] 스킵: {name_short} — 카페에 이미 게시됨 (by {search_result.get('writer', '')}, {search_result.get('write_date', '')})")
+                            try:
+                                from product_db import update_cafe_status
+                                update_cafe_status(code, "중복", datetime.now().isoformat())
+                            except Exception:
+                                pass
+                            if on_single_success:
+                                try:
+                                    product["cafe_status"] = "중복"
+                                    on_single_success(product)
+                                except Exception:
+                                    pass
+                            continue
+                        log(f"   ✅ [{i}/{len(upload_list)}] 중복 없음 — 업로드 진행")
+                        # 검색 후 글쓰기 페이지로 다시 이동해야 하므로 카페 홈으로 복귀
+                        await page.goto(f"https://cafe.naver.com/f-e/cafes/{CAFE_ID}", wait_until="domcontentloaded", timeout=15000)
+                        await asyncio.sleep(1)
+                    except Exception as e:
+                        log(f"   ⚠️ 카페 중복 확인 실패 (업로드 진행): {e}")
+                        await page.goto(f"https://cafe.naver.com/f-e/cafes/{CAFE_ID}", wait_until="domcontentloaded", timeout=15000)
+                        await asyncio.sleep(1)
+
                 for attempt in range(1, 3):  # 최대 2회 시도
                     try:
                         if attempt == 1:

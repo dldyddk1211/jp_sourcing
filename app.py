@@ -1521,6 +1521,15 @@ def upload_stop():
     return jsonify({"ok": True, "message": "업로드 중지 요청됨"})
 
 
+@app.route(f"{URL_PREFIX}/run/upload-reset", methods=["POST"])
+@login_required
+def upload_reset():
+    """업로드 중지 + 상태 초기화"""
+    request_upload_stop()
+    push_log("🔄 업로드 리셋 — 작업 중지 및 초기화")
+    return jsonify({"ok": True, "message": "업로드 리셋 완료"})
+
+
 _upload_check_stop = False
 
 def _run_upload_check(brand_filter=""):
