@@ -338,6 +338,16 @@ def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None, delay_
         brands_order = [p.get("brand_ko") or p.get("brand", "") for p in selected[:10]]
         push_log(f"🔀 브랜드 랜덤 적용: {' → '.join(brands_order[:5])}...")
 
+    # 활성 네이버 계정의 쿠키 경로 결정
+    naver_data = _load_naver_accounts()
+    active_slot = naver_data.get("active", 1)
+    active_cookie = _get_cookie_path(active_slot)
+    active_id = naver_data.get("accounts", {}).get(str(active_slot), {}).get("naver_id", "")
+    if active_id:
+        push_log(f"👤 네이버 계정: {active_id} (슬롯 {active_slot})")
+    else:
+        push_log(f"👤 네이버 계정: 기본 쿠키 사용 (슬롯 {active_slot})")
+
     push_log(f"📤 총 {len(selected)}개 업로드 시작")
     status["uploading"] = True
     try:
@@ -348,6 +358,7 @@ def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None, delay_
             delay_min=delay_min,
             delay_max=delay_max,
             on_single_success=_on_single_upload_success,
+            cookie_path=active_cookie,
         ))
         status["uploaded_count"] = count
         status["last_upload"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -505,7 +516,13 @@ def run_scheduled_upload(slot_id: str, brand: str, quantity: int):
 
     # 수량 제한
     to_upload = waiting[:quantity]
-    push_log(f"⏰ [{slot_id}] 자동 업로드 시작 — {brand} {len(to_upload)}개")
+
+    # 활성 네이버 계정의 쿠키 경로
+    naver_data = _load_naver_accounts()
+    active_slot = naver_data.get("active", 1)
+    active_cookie = _get_cookie_path(active_slot)
+    active_id = naver_data.get("accounts", {}).get(str(active_slot), {}).get("naver_id", "")
+    push_log(f"⏰ [{slot_id}] 자동 업로드 시작 — {brand} {len(to_upload)}개 (계정: {active_id or '기본'})")
 
     status["uploading"] = True
     try:
@@ -514,6 +531,7 @@ def run_scheduled_upload(slot_id: str, brand: str, quantity: int):
             status_callback=push_log,
             max_upload=quantity,
             on_single_success=_on_single_upload_success,
+            cookie_path=active_cookie,
         ))
         status["uploaded_count"] = count
         status["last_upload"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

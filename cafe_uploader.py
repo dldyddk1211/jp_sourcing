@@ -63,17 +63,18 @@ def save_cookies(cookies: list):
     logger.info(f"✅ 쿠키 저장 완료: {NAVER_COOKIE_PATH} ({len(cookies)}개)")
 
 
-def load_cookies() -> list:
+def load_cookies(cookie_path: str = None) -> list:
     """저장된 쿠키 불러오기"""
-    if not os.path.exists(NAVER_COOKIE_PATH):
+    path = cookie_path or NAVER_COOKIE_PATH
+    if not os.path.exists(path):
         return []
     try:
-        with open(NAVER_COOKIE_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             cookies = json.load(f)
-        logger.info(f"✅ 쿠키 로드 완료: {len(cookies)}개")
+        logger.info(f"✅ 쿠키 로드 완료: {path} ({len(cookies)}개)")
         return cookies
     except Exception as e:
-        logger.warning(f"⚠️ 쿠키 로드 실패: {e}")
+        logger.warning(f"⚠️ 쿠키 로드 실패 ({path}): {e}")
         return []
 
 
@@ -266,7 +267,7 @@ async def verify_login(context) -> bool:
 # 메인 업로드 함수
 # =============================================
 
-async def upload_products(products: list, status_callback=None, max_upload=None, delay_min=8, delay_max=13, on_single_success=None):
+async def upload_products(products: list, status_callback=None, max_upload=None, delay_min=8, delay_max=13, on_single_success=None, cookie_path: str = None):
     """
     상품 리스트를 네이버 카페에 업로드
 
@@ -274,6 +275,7 @@ async def upload_products(products: list, status_callback=None, max_upload=None,
         products       : 스크래퍼에서 받은 상품 딕셔너리 리스트
         status_callback: 진행상황 콜백
         max_upload     : 최대 업로드 개수 (None = 전체)
+        cookie_path    : 사용할 쿠키 파일 경로 (None = 기본)
 
     Returns:
         int: 업로드 성공 개수
@@ -284,7 +286,7 @@ async def upload_products(products: list, status_callback=None, max_upload=None,
             status_callback(msg)
 
     # 쿠키 존재 확인
-    cookies = load_cookies()
+    cookies = load_cookies(cookie_path)
     if not cookies:
         log("❌ 저장된 쿠키가 없습니다. 먼저 '네이버 로그인' 버튼을 눌러주세요")
         return 0
