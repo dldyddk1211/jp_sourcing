@@ -225,10 +225,11 @@ def _check_new_articles(known_ids: set, log_callback=None) -> set:
         new_ids.add(aid)
 
         if aid not in known_ids and known_ids:  # 첫 실행 시에는 알림 안 보냄
-            # 내가 쓴 글은 알림 제외
+            # 내가 쓴 글 또는 알림 제외 닉네임은 건너뜀
             writer = a.get("writer", "")
-            if CAFE_MY_NICKNAME and CAFE_MY_NICKNAME in writer:
-                logger.info(f"⏭️ 내 글 건너뜀: [{aid}] {a['title']}")
+            _skip_writers = [CAFE_MY_NICKNAME, "더원구매대행"] if CAFE_MY_NICKNAME else ["더원구매대행"]
+            if any(nick and nick in writer for nick in _skip_writers):
+                logger.info(f"⏭️ 알림 제외 건너뜀: [{aid}] {a['title']} (by {writer})")
                 continue
 
             # 새 글 발견!
