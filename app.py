@@ -1543,6 +1543,74 @@ def upload_preview():
     return jsonify({"ok": True, "items": items})
 
 
+# ── 블로그 업로드 실행/중지 ────────────────
+def run_blog_upload(checked_codes=None):
+    """블로그 업로드 백그라운드 실행"""
+    from blog_uploader import blog_upload_products, request_blog_upload_stop
+
+    products = load_latest_products()
+    # DB 상품 병합
+    try:
+        from product_db import get_unuploaded_products
+        db_products = get_unuploaded_products()
+        existing_codes = {p.get("product_code", "") for p in products if p.get("product_code")}
+        for dp in db_products:
+            if dp.get("product_code") and dp["product_code"] not in existing_codes:
+                existing_codes.add(dp["product_code"])
+                products.append(dp)
+    except Exception:
+        pass
+
+    checked_set = set(checked_codes) if checked_codes else set()
+    checked_set.discard("")
+    selected = [p for p in products if p.get("product_code", "") in checked_set]
+
+    if not selected:
+        push_log("⚠️ 블로그 업로드할 상품이 없습니다")
+        return
+
+    # 블로그 계정 쿠키 경로
+    blog_data = _load_blog_accounts()
+    active_slot = blog_data.get("active", 1)
+    blog_cookie = _get_blog_cookie_path(active_slot)
+    active_id = blog_data.get("accounts", {}).get(str(active_slot), {}).get("naver_id", "")
+    push_log(f"👤 블로그 계정: {active_id or '미설정'} (슬롯 {active_slot})")
+    push_log(f"📝 블로그 업로드 {len(selected)}개 시작")
+
+    try:
+        count = asyncio.run(blog_upload_products(
+            products=selected,
+            status_callback=push_log,
+            cookie_path=blog_cookie,
+        ))
+        push_log(f"🎉 블로그 업로드 완료: {count}개 성공")
+    except Exception as e:
+        push_log(f"❌ 블로그 업로드 오류: {e}")
+
+
+@app.route(f"{URL_PREFIX}/run/blog-upload", methods=["POST"])
+@login_required
+def manual_blog_upload():
+    data = request.json or {}
+    checked_codes = data.get("checked_codes")
+    thread = threading.Thread(
+        target=run_blog_upload,
+        args=(checked_codes,),
+        daemon=True,
+    )
+    thread.start()
+    return jsonify({"ok": True, "message": "블로그 업로드 시작됨"})
+
+
+@app.route(f"{URL_PREFIX}/run/blog-upload-stop", methods=["POST"])
+@login_required
+def blog_upload_stop():
+    from blog_uploader import request_blog_upload_stop
+    request_blog_upload_stop()
+    push_log("⏹ 블로그 업로드 중지 요청됨")
+    return jsonify({"ok": True})
+
+
 @app.route(f"{URL_PREFIX}/run/upload-stop", methods=["POST"])
 @login_required
 def upload_stop():
@@ -2068,6 +2136,115 @@ def naver_logout():
     delete_cookies()
     push_log("🗑️ 네이버 쿠키 삭제 완료")
     return jsonify({"ok": True, "message": "네이버 로그인 정보가 삭제되었습니다"})
+
+
+# ── 블로그 계정 관리 ────────────────────────
+_BLOG_ACCOUNTS_DB = os.path.join(get_path("db"), "blog_accounts.json")
+
+
+def _load_blog_accounts():
+    if os.path.exists(_BLOG_ACCOUNTS_DB):
+        try:
+            with open(_BLOG_ACCOUNTS_DB, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"active": 1, "accounts": {}}
+
+
+def _save_blog_accounts(data: dict):
+    os.makedirs(os.path.dirname(_BLOG_ACCOUNTS_DB), exist_ok=True)
+    with open(_BLOG_ACCOUNTS_DB, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _get_blog_cookie_path(slot: int) -> str:
+    return f"blog_cookies_{slot}.json"
+
+
+@app.route(f"{URL_PREFIX}/blog/accounts", methods=["GET"])
+@login_required
+def get_blog_accounts():
+    data = _load_blog_accounts()
+    result = {"active": data.get("active", 1), "accounts": {}}
+    for slot, acc in data.get("accounts", {}).items():
+        has_cookie = os.path.exists(_get_blog_cookie_path(int(slot)))
+        result["accounts"][slot] = {
+            "naver_id": acc.get("naver_id", ""),
+            "blog_id": acc.get("blog_id", ""),
+            "has_password": bool(acc.get("password")),
+            "has_cookie": has_cookie,
+        }
+    return jsonify(result)
+
+
+@app.route(f"{URL_PREFIX}/blog/accounts", methods=["POST"])
+@login_required
+def save_blog_account():
+    d = request.json or {}
+    slot = str(d.get("slot", 1))
+    naver_id = d.get("naver_id", "").strip()
+    blog_id = d.get("blog_id", "").strip()
+    password = d.get("password", "").strip()
+    if not naver_id:
+        return jsonify({"ok": False, "message": "아이디를 입력해주세요"})
+    data = _load_blog_accounts()
+    if "accounts" not in data:
+        data["accounts"] = {}
+    data["accounts"][slot] = {"naver_id": naver_id, "blog_id": blog_id, "password": password}
+    _save_blog_accounts(data)
+    push_log(f"💾 블로그 계정 {slot} 저장: {naver_id} (블로그: {blog_id})")
+    return jsonify({"ok": True})
+
+
+@app.route(f"{URL_PREFIX}/blog/accounts/delete", methods=["POST"])
+@login_required
+def delete_blog_account():
+    d = request.json or {}
+    slot = str(d.get("slot", 1))
+    data = _load_blog_accounts()
+    if slot in data.get("accounts", {}):
+        del data["accounts"][slot]
+        _save_blog_accounts(data)
+    cookie_path = _get_blog_cookie_path(int(slot))
+    if os.path.exists(cookie_path):
+        os.remove(cookie_path)
+    push_log(f"🗑️ 블로그 계정 {slot} 삭제")
+    return jsonify({"ok": True})
+
+
+@app.route(f"{URL_PREFIX}/blog/accounts/active", methods=["POST"])
+@login_required
+def set_active_blog_account():
+    d = request.json or {}
+    slot = int(d.get("slot", 1))
+    data = _load_blog_accounts()
+    data["active"] = slot
+    _save_blog_accounts(data)
+    push_log(f"✅ 활성 블로그 계정 변경: 계정 {slot}")
+    return jsonify({"ok": True})
+
+
+@app.route(f"{URL_PREFIX}/blog/login", methods=["POST"])
+@login_required
+def blog_login():
+    d = request.json or {}
+    slot = int(d.get("slot", 1))
+    cookie_path = _get_blog_cookie_path(slot)
+
+    def run_login():
+        from cafe_uploader import naver_manual_login_with_cookie_path
+        result = asyncio.run(naver_manual_login_with_cookie_path(
+            cookie_path=cookie_path, status_callback=push_log
+        ))
+        if result:
+            push_log(f"✅ 블로그 계정 {slot} 로그인 & 쿠키 저장 완료!")
+        else:
+            push_log(f"❌ 블로그 계정 {slot} 로그인 실패 또는 시간 초과")
+
+    thread = threading.Thread(target=run_login, daemon=True)
+    thread.start()
+    return jsonify({"ok": True, "message": f"블로그 계정 {slot} 로그인 브라우저가 열립니다."})
 
 
 @app.route(f"{URL_PREFIX}/run/stop", methods=["POST"])

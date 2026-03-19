@@ -65,6 +65,10 @@ CAFE_MENU_ID   = "100"            # 게시판 메뉴 ID
 CAFE_MENU_NAME = "스포츠 브랜드"    # 게시판 이름
 CAFE_MY_NICKNAME = "서포트센터장"  # 내 닉네임 (내 글은 알림 제외)
 
+# ── 네이버 블로그 설정 ─────────────────────
+BLOG_ID        = ""                # 블로그 아이디 (예: myblogid)
+BLOG_CATEGORY  = ""                # 블로그 카테고리 (선택)
+
 # ── 네이버 쿠키 기반 로그인 ──────────────
 NAVER_COOKIE_PATH = "naver_cookies.json"   # 쿠키 저장 경로
 NAVER_LOGIN_TIMEOUT = 120                   # 수동 로그인 대기 시간 (초)

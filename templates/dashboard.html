@@ -380,6 +380,10 @@
         <span class="nav-icon">&#x2615;</span>
         <span>네이버카페 업로드</span>
       </div>
+      <div class="nav-item" data-page="blog-upload" onclick="showPage('blog-upload')">
+        <span class="nav-icon">&#x1f4dd;</span>
+        <span>네이버블로그 업로드</span>
+      </div>
       <div class="nav-item" data-page="cafe-schedule" onclick="showPage('cafe-schedule')">
         <span class="nav-icon">&#x23F0;</span>
         <span>자동 스케줄</span>
@@ -1394,6 +1398,86 @@
         <div class="log-box log-mirror" style="height:250px">
           <div class="log-line info">[시스템] 대시보드 연결됨.</div>
         </div>
+      </div>
+    </div>
+
+    <!-- ═══ 6-B. 네이버 블로그 업로드 ═══ -->
+    <div class="page-section" id="page-blog-upload">
+      <div class="panel">
+        <div class="panel-title">&#x1f4dd; 네이버 블로그 업로드</div>
+
+        <!-- 블로그 계정 설정 -->
+        <div style="margin-bottom:16px;padding:12px;background:var(--card);border:1px solid var(--border);border-radius:8px;">
+          <div style="font-weight:600;margin-bottom:8px;">블로그 계정 설정</div>
+          <div id="blog-account-section">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;" data-blog-slot="1">
+              <input type="radio" name="blog-active" value="1" checked onchange="setActiveBlogAccount(1)">
+              <span style="font-size:0.82rem;color:var(--muted);min-width:50px;">계정 1</span>
+              <input type="text" id="blog-id-1" placeholder="네이버 아이디" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:120px;font-size:0.82rem;">
+              <input type="text" id="blog-blogid-1" placeholder="블로그 아이디" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:120px;font-size:0.82rem;">
+              <input type="password" id="blog-pw-1" placeholder="비밀번호" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:120px;font-size:0.82rem;">
+              <button class="btn b-blue" onclick="saveBlogAccount(1)" style="padding:5px 12px;font-size:0.78rem;">저장</button>
+              <button class="btn b-green" onclick="loginBlogAccount(1)" style="padding:5px 12px;font-size:0.78rem;">로그인</button>
+              <button class="btn b-red" onclick="deleteBlogAccount(1)" style="padding:5px 12px;font-size:0.78rem;">삭제</button>
+              <span id="blog-status-1" style="font-size:0.78rem;color:var(--muted);">미등록</span>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;" data-blog-slot="2">
+              <input type="radio" name="blog-active" value="2" onchange="setActiveBlogAccount(2)">
+              <span style="font-size:0.82rem;color:var(--muted);min-width:50px;">계정 2</span>
+              <input type="text" id="blog-id-2" placeholder="네이버 아이디" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:120px;font-size:0.82rem;">
+              <input type="text" id="blog-blogid-2" placeholder="블로그 아이디" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:120px;font-size:0.82rem;">
+              <input type="password" id="blog-pw-2" placeholder="비밀번호" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:120px;font-size:0.82rem;">
+              <button class="btn b-blue" onclick="saveBlogAccount(2)" style="padding:5px 12px;font-size:0.78rem;">저장</button>
+              <button class="btn b-green" onclick="loginBlogAccount(2)" style="padding:5px 12px;font-size:0.78rem;">로그인</button>
+              <button class="btn b-red" onclick="deleteBlogAccount(2)" style="padding:5px 12px;font-size:0.78rem;">삭제</button>
+              <span id="blog-status-2" style="font-size:0.78rem;color:var(--muted);">미등록</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 블로그 업로드 버튼 바 -->
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;">
+          <button class="btn b-gray" id="btn-load-blog-products" onclick="toggleBlogProducts()" style="padding:9px 18px;">
+            &#x1f4cb; 상품목록 들고 오기
+          </button>
+          <button class="btn b-green" id="btn-blog-upload" onclick="blogUploadSelected()" style="padding:9px 18px;">
+            &#x1f4dd; 블로그 업로드 (<span id="blog-sel-cnt">0</span>개)
+          </button>
+          <button class="btn b-red" id="btn-blog-stop" onclick="stopBlogUpload()" style="padding:9px 18px;display:none;">
+            &#x23F9; 업로드 중지
+          </button>
+          <button class="btn b-gray" id="btn-blog-reset" onclick="resetBlogUpload()" style="padding:9px 18px;">
+            &#x1f504; 리셋
+          </button>
+        </div>
+
+        <!-- 블로그 상품 목록 -->
+        <div id="blog-product-section" style="display:none;margin-bottom:16px;">
+          <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
+            <input type="text" id="blog-search" placeholder="상품명 검색..." onkeydown="if(event.key==='Enter')loadBlogProducts()"
+              style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:6px;width:200px;font-size:0.82rem;">
+            <button class="btn b-blue" onclick="blogSelectAll()" style="padding:6px 14px;font-size:0.8rem;">전체선택</button>
+            <button class="btn b-gray" onclick="blogDeselectAll()" style="padding:6px 14px;font-size:0.8rem;">선택해제</button>
+            <span id="blog-filter-result" style="font-size:0.8rem;color:var(--muted);"></span>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="data-table" style="width:100%;">
+              <thead>
+                <tr>
+                  <th style="width:35px;"><input type="checkbox" id="blog-check-all" onchange="blogToggleAll(this.checked)"></th>
+                  <th>이미지</th>
+                  <th>브랜드</th>
+                  <th>상품명</th>
+                  <th>가격(JPY)</th>
+                  <th>판매가</th>
+                </tr>
+              </thead>
+              <tbody id="blog-tbody"></tbody>
+            </table>
+          </div>
+          <div id="blog-pager" style="margin-top:10px;text-align:center;"></div>
+        </div>
+
       </div>
     </div>
 
@@ -3868,6 +3952,166 @@ setInterval(() => { loadProducts(curPage); loadBrands(); }, 30000);
 setInterval(loadUploadCheckStatus, 60000);
 updatePagePreview();
 calcExample();
+
+// ══════════════════════════════════════════
+// 블로그 업로드 관련 함수
+// ══════════════════════════════════════════
+let blogCheckedCodes = new Set();
+let blogPage = 1;
+
+async function loadBlogAccounts() {
+  try {
+    const res = await fetch(PREFIX + "/blog/accounts").then(r => r.json());
+    const active = res.active || 1;
+    for (let slot = 1; slot <= 2; slot++) {
+      const acc = (res.accounts || {})[slot] || {};
+      const idEl = document.getElementById(`blog-id-${slot}`);
+      const blogIdEl = document.getElementById(`blog-blogid-${slot}`);
+      const statusEl = document.getElementById(`blog-status-${slot}`);
+      if (idEl && acc.naver_id) idEl.value = acc.naver_id;
+      if (blogIdEl && acc.blog_id) blogIdEl.value = acc.blog_id;
+      if (statusEl) {
+        if (acc.has_cookie) statusEl.textContent = "✅ 쿠키 유효";
+        else if (acc.has_password) statusEl.textContent = "🔑 PW 저장됨";
+        else if (acc.naver_id) statusEl.textContent = "📝 아이디만 등록";
+        else statusEl.textContent = "미등록";
+      }
+      const radio = document.querySelector(`input[name="blog-active"][value="${slot}"]`);
+      if (radio) radio.checked = (slot === active);
+    }
+  } catch(e) { console.error("블로그 계정 로드 실패:", e); }
+}
+
+async function saveBlogAccount(slot) {
+  const naver_id = document.getElementById(`blog-id-${slot}`).value.trim();
+  const blog_id = document.getElementById(`blog-blogid-${slot}`).value.trim();
+  const password = document.getElementById(`blog-pw-${slot}`).value.trim();
+  if (!naver_id) { alert("네이버 아이디를 입력해주세요"); return; }
+  await post("/blog/accounts", { slot, naver_id, blog_id, password });
+  addLog(`💾 블로그 계정 ${slot} 저장: ${naver_id}`, "info");
+  loadBlogAccounts();
+}
+
+async function loginBlogAccount(slot) {
+  addLog(`🔐 블로그 계정 ${slot} 로그인 시작...`, "info");
+  await post("/blog/login", { slot });
+}
+
+async function deleteBlogAccount(slot) {
+  if (!confirm(`블로그 계정 ${slot}을 삭제하시겠습니까?`)) return;
+  await post("/blog/accounts/delete", { slot });
+  document.getElementById(`blog-id-${slot}`).value = "";
+  document.getElementById(`blog-blogid-${slot}`).value = "";
+  document.getElementById(`blog-pw-${slot}`).value = "";
+  loadBlogAccounts();
+}
+
+async function setActiveBlogAccount(slot) {
+  await post("/blog/accounts/active", { slot });
+  addLog(`✅ 활성 블로그 계정: ${slot}`, "info");
+}
+
+function toggleBlogProducts() {
+  const sec = document.getElementById("blog-product-section");
+  if (sec.style.display === "none") {
+    sec.style.display = "block";
+    loadBlogProducts();
+  } else {
+    sec.style.display = "none";
+  }
+}
+
+async function loadBlogProducts(page = 1) {
+  blogPage = page;
+  const search = document.getElementById("blog-search")?.value || "";
+  const url = `${PREFIX}/products?page=${page}&per_page=50&brand=ALL&search=${encodeURIComponent(search)}&status=대기`;
+  try {
+    const d = await fetch(url).then(r => r.json());
+    const tb = document.getElementById("blog-tbody");
+    if (!d.products || d.products.length === 0) {
+      tb.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">상품이 없습니다.</td></tr>`;
+      document.getElementById("blog-filter-result").textContent = "0개";
+      return;
+    }
+    document.getElementById("blog-filter-result").textContent = `${d.total || d.products.length}개`;
+    tb.innerHTML = d.products.map(p => {
+      const code = p.product_code || "";
+      const checked = blogCheckedCodes.has(code) ? "checked" : "";
+      const img = p.image_url || p.images?.[0] || "";
+      const brand = p.brand_ko || p.brand || "";
+      const name = p.name_ko || p.name || "";
+      const price = p.price_jpy ? `¥${Number(p.price_jpy).toLocaleString()}` : "";
+      const sell = p.sell_price ? `${Number(p.sell_price).toLocaleString()}원` : "";
+      return `<tr>
+        <td><input type="checkbox" class="blog-check" data-code="${code}" ${checked} onchange="onBlogCheck(this)"></td>
+        <td><img src="${img}" style="width:50px;height:50px;object-fit:cover;border-radius:4px;" onerror="this.style.display='none'"></td>
+        <td><span style="font-size:0.8rem;">${brand}</span></td>
+        <td style="font-size:0.8rem;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</td>
+        <td style="font-size:0.8rem;">${price}</td>
+        <td style="font-size:0.8rem;font-weight:600;">${sell}</td>
+      </tr>`;
+    }).join("");
+  } catch(e) { console.error(e); }
+}
+
+function onBlogCheck(el) {
+  const code = el.dataset.code;
+  if (el.checked) blogCheckedCodes.add(code);
+  else blogCheckedCodes.delete(code);
+  document.getElementById("blog-sel-cnt").textContent = blogCheckedCodes.size;
+}
+
+function blogSelectAll() {
+  document.querySelectorAll(".blog-check").forEach(cb => { cb.checked = true; onBlogCheck(cb); });
+}
+
+function blogDeselectAll() {
+  blogCheckedCodes.clear();
+  document.querySelectorAll(".blog-check").forEach(cb => cb.checked = false);
+  document.getElementById("blog-sel-cnt").textContent = "0";
+}
+
+function blogToggleAll(checked) {
+  document.querySelectorAll(".blog-check").forEach(cb => { cb.checked = checked; onBlogCheck(cb); });
+}
+
+async function blogUploadSelected() {
+  if (blogCheckedCodes.size === 0) {
+    addLog("⚠️ 블로그에 업로드할 상품을 선택해주세요", "warn");
+    return;
+  }
+  const btn = document.getElementById("btn-blog-upload");
+  if (btn) { btn.disabled = true; btn.innerHTML = "📝 업로드 중... <span class='spinner'></span>"; }
+  const stopBtn = document.getElementById("btn-blog-stop");
+  if (stopBtn) stopBtn.style.display = "inline-flex";
+
+  addLog(`📝 블로그 업로드 시작 (${blogCheckedCodes.size}개)`, "info");
+  await post("/run/blog-upload", { checked_codes: [...blogCheckedCodes] });
+}
+
+async function stopBlogUpload() {
+  const btn = document.getElementById("btn-blog-stop");
+  if (btn) { btn.disabled = true; btn.textContent = "⏹ 중지 요청 중..."; }
+  await post("/run/blog-upload-stop", {});
+  addLog("⏹ 블로그 업로드 중지 요청됨", "warn");
+}
+
+function resetBlogUpload() {
+  try { post("/run/blog-upload-stop", {}); } catch(e) {}
+  blogCheckedCodes.clear();
+  document.getElementById("blog-sel-cnt").textContent = "0";
+  const btn = document.getElementById("btn-blog-upload");
+  if (btn) { btn.disabled = false; btn.innerHTML = "📝 블로그 업로드 (<span id='blog-sel-cnt'>0</span>개)"; }
+  const stopBtn = document.getElementById("btn-blog-stop");
+  if (stopBtn) { stopBtn.style.display = "none"; stopBtn.disabled = false; stopBtn.textContent = "⏹ 업로드 중지"; }
+  const sec = document.getElementById("blog-product-section");
+  if (sec) sec.style.display = "none";
+  document.querySelectorAll(".blog-check").forEach(cb => cb.checked = false);
+  addLog("🔄 블로그 업로드 리셋 완료", "info");
+}
+
+// 페이지 로드 시 블로그 계정 불러오기
+document.addEventListener("DOMContentLoaded", loadBlogAccounts);
 
 // ── 페이지 이탈 방어 (크롤링/업로드 중 F5/닫기 방지) ──────
 let _taskActive = false;
