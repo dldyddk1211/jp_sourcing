@@ -2250,11 +2250,24 @@ def blog_login():
 @app.route(f"{URL_PREFIX}/blog/fetch-url", methods=["POST"])
 @login_required
 def blog_fetch_url():
-    """URL에서 제목, 본문, 이미지 추출"""
+    """URL에서 제목, 본문, 이미지 추출 (JS 렌더링 사이트는 Playwright 사용)"""
     d = request.json or {}
     url = d.get("url", "").strip()
     if not url:
         return jsonify({"error": "URL이 비어있습니다"})
+
+    # JS 렌더링이 필요한 사이트 목록
+    js_sites = ["smartstore.naver.com", "shopping.naver.com", "brand.naver.com"]
+    needs_playwright = any(site in url for site in js_sites)
+
+    if needs_playwright:
+        try:
+            result = asyncio.run(_fetch_url_playwright(url))
+            push_log(f"🌐 URL 추출 완료 (Playwright): {result.get('title', '')[:40]}... (이미지 {len(result.get('images', []))}개)")
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({"error": f"Playwright 추출 실패: {e}"})
+
     try:
         import requests as _req
         from bs4 import BeautifulSoup
@@ -2275,12 +2288,11 @@ def blog_fetch_url():
                 if title:
                     break
 
-        # 본문 추출 — article > main > body 순서
+        # 본문 추출
         body = ""
         for tag in ["article", "main", "[class*='content']", "[class*='detail']", "[class*='post']", "body"]:
             el = soup.select_one(tag)
             if el:
-                # 스크립트, 스타일 제거
                 for s in el.find_all(["script", "style", "nav", "header", "footer"]):
                     s.decompose()
                 text = el.get_text(separator="\n", strip=True)
@@ -2289,37 +2301,164 @@ def blog_fetch_url():
                     break
 
         # 이미지 추출
-        images = []
-        seen = set()
-        for img in soup.find_all("img"):
-            src = img.get("src") or img.get("data-src") or ""
-            if not src or src in seen:
-                continue
-            # 절대 URL로 변환
-            if src.startswith("//"):
-                src = "https:" + src
-            elif src.startswith("/"):
-                from urllib.parse import urlparse
-                parsed = urlparse(url)
-                src = f"{parsed.scheme}://{parsed.netloc}{src}"
-            # 작은 아이콘 제외 (width/height 속성)
-            w = img.get("width", "")
-            h = img.get("height", "")
-            if w and w.isdigit() and int(w) < 50:
-                continue
-            if h and h.isdigit() and int(h) < 50:
-                continue
-            if any(x in src.lower() for x in ["logo", "icon", "banner", "ad", "pixel", "tracking", "1x1"]):
-                continue
-            seen.add(src)
-            images.append(src)
-            if len(images) >= 20:
-                break
+        images = _extract_images_from_soup(soup, url)
+
+        # 본문이 너무 짧으면 Playwright로 재시도
+        if len(body) < 100:
+            try:
+                result = asyncio.run(_fetch_url_playwright(url))
+                push_log(f"🌐 URL 추출 완료 (Playwright 폴백): {result.get('title', '')[:40]}...")
+                return jsonify(result)
+            except Exception:
+                pass
 
         push_log(f"🌐 URL 추출 완료: {title[:40]}... (이미지 {len(images)}개)")
         return jsonify({"title": title.strip(), "body": body[:5000], "images": images})
     except Exception as e:
         return jsonify({"error": str(e)})
+
+
+def _extract_images_from_soup(soup, base_url):
+    """BeautifulSoup에서 이미지 URL 추출"""
+    from urllib.parse import urlparse
+    images = []
+    seen = set()
+    for img in soup.find_all("img"):
+        src = img.get("src") or img.get("data-src") or ""
+        if not src or src in seen:
+            continue
+        if src.startswith("//"):
+            src = "https:" + src
+        elif src.startswith("/"):
+            parsed = urlparse(base_url)
+            src = f"{parsed.scheme}://{parsed.netloc}{src}"
+        w = img.get("width", "")
+        h = img.get("height", "")
+        if w and w.isdigit() and int(w) < 50:
+            continue
+        if h and h.isdigit() and int(h) < 50:
+            continue
+        if any(x in src.lower() for x in ["logo", "icon", "banner", "ad", "pixel", "tracking", "1x1"]):
+            continue
+        seen.add(src)
+        images.append(src)
+        if len(images) >= 30:
+            break
+    return images
+
+
+async def _fetch_url_playwright(url: str) -> dict:
+    """Playwright로 JS 렌더링 후 콘텐츠 추출 (스마트스토어 등)"""
+    from playwright.async_api import async_playwright
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
+        page = await browser.new_page(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+        try:
+            await page.goto(url, wait_until="networkidle", timeout=30000)
+            await asyncio.sleep(3)
+
+            # 스마트스토어 상세 영역 스크롤 (이미지 lazy load 대응)
+            for _ in range(5):
+                await page.keyboard.press("PageDown")
+                await asyncio.sleep(0.5)
+
+            # 더보기 버튼 클릭 (상세 정보 펼치기)
+            try:
+                more_btn = page.locator("a:has-text('상품정보 더보기'), button:has-text('더보기'), [class*='more']").first
+                if await more_btn.count() > 0:
+                    await more_btn.click()
+                    await asyncio.sleep(2)
+                    for _ in range(5):
+                        await page.keyboard.press("PageDown")
+                        await asyncio.sleep(0.3)
+            except Exception:
+                pass
+
+            # 제목 추출
+            title = ""
+            for sel in ["h3._22kNQuEXmb", "h3[class*='title']", "._3oDjSvLDjZ", "h2", "h3", "title"]:
+                try:
+                    el = page.locator(sel).first
+                    if await el.count() > 0:
+                        title = (await el.inner_text()).strip()
+                        if title:
+                            break
+                except Exception:
+                    continue
+            if not title:
+                title = await page.title()
+
+            # 본문 텍스트 추출 (상품 상세)
+            body = ""
+            detail_selectors = [
+                "div._1Hj-MkenCi",          # 스마트스토어 상세
+                "div[class*='detail']",
+                "div._3e8dOKsKKM",           # 상품 설명
+                "div[class*='content']",
+                "div._2LlMKIiyqH",           # 상품 정보 영역
+                "article",
+                "main",
+            ]
+            for sel in detail_selectors:
+                try:
+                    el = page.locator(sel).first
+                    if await el.count() > 0:
+                        text = await el.inner_text()
+                        if len(text) > len(body):
+                            body = text
+                except Exception:
+                    continue
+
+            # 상품 기본 정보도 추가
+            info_text = ""
+            info_selectors = [
+                "div._2-uvQuRWK5",           # 가격/옵션
+                "div[class*='price']",
+                "div[class*='ProductInfo']",
+            ]
+            for sel in info_selectors:
+                try:
+                    el = page.locator(sel).first
+                    if await el.count() > 0:
+                        info_text += (await el.inner_text()).strip() + "\n\n"
+                except Exception:
+                    continue
+            if info_text:
+                body = info_text + "\n" + body
+
+            # 이미지 추출
+            images = []
+            seen = set()
+            img_elements = await page.query_selector_all("img")
+            for img in img_elements:
+                src = await img.get_attribute("src") or await img.get_attribute("data-src") or ""
+                if not src or src in seen:
+                    continue
+                if src.startswith("//"):
+                    src = "https:" + src
+                # 작은 이미지, 아이콘 제외
+                if any(x in src.lower() for x in ["logo", "icon", "banner", "ad", "pixel", "1x1", "gif", "svg"]):
+                    continue
+                # 스마트스토어 상품 이미지 필터 (최소 크기)
+                try:
+                    box = await img.bounding_box()
+                    if box and (box["width"] < 50 or box["height"] < 50):
+                        continue
+                except Exception:
+                    pass
+                seen.add(src)
+                images.append(src)
+                if len(images) >= 30:
+                    break
+
+            body = body.strip()[:8000]
+            return {"title": title.strip(), "body": body, "images": images}
+
+        finally:
+            await browser.close()
 
 
 @app.route(f"{URL_PREFIX}/blog/post-url-content", methods=["POST"])
