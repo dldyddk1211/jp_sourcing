@@ -2469,6 +2469,7 @@ def blog_post_url_content():
     title = d.get("title", "").strip()
     body = d.get("body", "").strip()
     images = d.get("images", [])
+    category = d.get("category", "").strip()
     if not title or not body:
         return jsonify({"ok": False, "error": "제목과 본문이 필요합니다"})
 
@@ -2476,7 +2477,8 @@ def blog_post_url_content():
         try:
             from blog_uploader import blog_post_custom_content
             result = asyncio.run(blog_post_custom_content(
-                title=title, body=body, images=images, log=push_log
+                title=title, body=body, images=images, log=push_log,
+                category=category
             ))
             if result:
                 push_log(f"✅ 블로그 URL 콘텐츠 발행 성공!")

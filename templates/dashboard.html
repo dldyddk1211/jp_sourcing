@@ -1486,6 +1486,8 @@
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
           <input type="text" id="blog-url-input" placeholder="URL을 입력하세요 (예: https://example.com/product/123)"
             style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:6px;flex:1;min-width:250px;font-size:0.82rem;">
+          <input type="text" id="blog-url-category" placeholder="카테고리 (예: USED ITEM)"
+            style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:6px;width:150px;font-size:0.82rem;">
           <button class="btn b-blue" onclick="fetchUrlContent()" style="padding:9px 18px;">&#x1f50d; 내용 가져오기</button>
           <button class="btn b-green" onclick="postUrlToBlog()" id="btn-url-blog-post" style="padding:9px 18px;display:none;">&#x1f4dd; 블로그 발행</button>
         </div>
@@ -4218,14 +4220,15 @@ async function postUrlToBlog() {
   const body = document.getElementById("blog-url-body").value.trim();
   if (!title || !body) { addBlogLog("⚠️ 제목과 본문을 확인해주세요", "warn"); return; }
   const images = blogUrlData ? (blogUrlData.images || []) : [];
+  const category = document.getElementById("blog-url-category").value.trim();
   const btn = document.getElementById("btn-url-blog-post");
   if (btn) { btn.disabled = true; btn.innerHTML = "📝 발행 중... <span class='spinner'></span>"; }
-  addBlogLog(`📝 블로그 발행 시작: ${title.substring(0,40)}...`, "info");
+  addBlogLog(`📝 블로그 발행 시작: ${title.substring(0,40)}...${category ? ` [${category}]` : ""}`, "info");
   try {
     const res = await fetch("/blog/post-url-content", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ title, body, images })
+      body: JSON.stringify({ title, body, images, category })
     });
     const data = await res.json();
     if (data.ok) { addBlogLog(`✅ 블로그 발행 성공!`, "info"); }

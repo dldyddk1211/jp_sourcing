@@ -546,8 +546,9 @@ async def _blog_upload_image(page, editor_frame, img_url: str, log=None):
 
 
 async def blog_post_custom_content(title: str, body: str, images: list = None,
-                                    log=None, cookie_path: str = None):
-    """URL에서 추출한 커스텀 콘텐츠를 블로그에 발행"""
+                                    log=None, cookie_path: str = None,
+                                    category: str = ""):
+    """URL에서 추출한 커스텀 콘텐츠를 블로그에 발행 (카테고리 선택 지원)"""
 
     def _log(msg):
         logger.info(msg)
@@ -625,6 +626,82 @@ async def blog_post_custom_content(title: str, body: str, images: list = None,
                 editor_frame = page
 
             await asyncio.sleep(2)
+
+            # 카테고리 선택
+            if category:
+                _log(f"📂 카테고리 선택: {category}")
+                cat_ok = False
+                # 카테고리 드롭다운 버튼 클릭
+                cat_btn_selectors = [
+                    "button.category",
+                    "button[class*='category']",
+                    "a[class*='category']",
+                    "div[class*='category'] button",
+                    "select[name='categoryNo']",
+                    "button:has-text('카테고리')",
+                    "span:has-text('카테고리')",
+                ]
+                target = editor_frame if editor_frame != page else page
+                for sel in cat_btn_selectors:
+                    try:
+                        el = target.locator(sel).first
+                        if await el.count() > 0:
+                            if sel.startswith("select"):
+                                # select 태그인 경우 옵션에서 선택
+                                options = await el.locator("option").all()
+                                for opt in options:
+                                    text = (await opt.inner_text()).strip()
+                                    if category.lower() in text.lower():
+                                        val = await opt.get_attribute("value")
+                                        await el.select_option(value=val)
+                                        cat_ok = True
+                                        _log(f"   ✅ 카테고리 선택 완료: {text}")
+                                        break
+                            else:
+                                await el.click()
+                                await asyncio.sleep(1)
+                            if cat_ok:
+                                break
+                    except Exception:
+                        continue
+
+                # 드롭다운 열린 경우 — 카테고리 항목 클릭
+                if not cat_ok:
+                    cat_item_selectors = [
+                        f"li:has-text('{category}')",
+                        f"a:has-text('{category}')",
+                        f"span:has-text('{category}')",
+                        f"div:has-text('{category}')",
+                        f"button:has-text('{category}')",
+                    ]
+                    for sel in cat_item_selectors:
+                        try:
+                            el = target.locator(sel).first
+                            if await el.count() > 0:
+                                await el.click()
+                                await asyncio.sleep(0.5)
+                                cat_ok = True
+                                _log(f"   ✅ 카테고리 선택 완료: {category}")
+                                break
+                        except Exception:
+                            continue
+                    # page 전체에서도 시도
+                    if not cat_ok:
+                        for sel in cat_item_selectors:
+                            try:
+                                el = page.locator(sel).first
+                                if await el.count() > 0:
+                                    await el.click()
+                                    await asyncio.sleep(0.5)
+                                    cat_ok = True
+                                    _log(f"   ✅ 카테고리 선택 완료: {category}")
+                                    break
+                            except Exception:
+                                continue
+
+                if not cat_ok:
+                    _log(f"   ⚠️ 카테고리 '{category}' 선택 실패 — 기본 카테고리로 진행")
+                await asyncio.sleep(1)
 
             # 제목 입력
             title_selectors = [
