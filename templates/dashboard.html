@@ -1479,6 +1479,44 @@
         </div>
 
       </div>
+
+      <!-- URL 콘텐츠 추출 → 블로그 글쓰기 -->
+      <div class="panel">
+        <div class="panel-title">&#x1f310; URL 콘텐츠 → 블로그 글쓰기</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+          <input type="text" id="blog-url-input" placeholder="URL을 입력하세요 (예: https://example.com/product/123)"
+            style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:6px;flex:1;min-width:250px;font-size:0.82rem;">
+          <button class="btn b-blue" onclick="fetchUrlContent()" style="padding:9px 18px;">&#x1f50d; 내용 가져오기</button>
+          <button class="btn b-green" onclick="postUrlToBlog()" id="btn-url-blog-post" style="padding:9px 18px;display:none;">&#x1f4dd; 블로그 발행</button>
+        </div>
+        <!-- 미리보기 영역 -->
+        <div id="blog-url-preview" style="display:none;padding:12px;background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;">
+          <div style="font-weight:600;margin-bottom:8px;">&#x1f4cb; 추출 결과 미리보기</div>
+          <div style="margin-bottom:8px;">
+            <label style="font-size:0.8rem;color:var(--muted);">제목</label>
+            <input type="text" id="blog-url-title" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:100%;font-size:0.82rem;margin-top:4px;">
+          </div>
+          <div style="margin-bottom:8px;">
+            <label style="font-size:0.8rem;color:var(--muted);">본문</label>
+            <textarea id="blog-url-body" rows="8" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;width:100%;font-size:0.82rem;margin-top:4px;resize:vertical;"></textarea>
+          </div>
+          <div>
+            <label style="font-size:0.8rem;color:var(--muted);">이미지 (<span id="blog-url-img-count">0</span>개)</label>
+            <div id="blog-url-images" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 블로그 업로드 로그 -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>&#x1f4cb; 블로그 로그</span>
+          <button onclick="clearBlogLog()" class="btn b-gray" style="padding:4px 10px;font-size:0.75rem">지우기</button>
+        </div>
+        <div class="log-box" id="blog-log-box" style="height:250px">
+          <div class="log-line info">[블로그] 대기 중...</div>
+        </div>
+      </div>
     </div>
 
     <!-- ═══ 6-1. 자동 스케줄 설정 ═══ -->
@@ -2534,6 +2572,18 @@ async function post(path, body) {
 
 function addLog(msg, cls="") {
   document.querySelectorAll(".log-box").forEach(box => {
+    // 블로그 전용 로그박스는 제외 (addBlogLog로만 추가)
+    if (box.id === "blog-log-box") {
+      // 블로그 관련 로그만 블로그 박스에 추가
+      if (msg.includes("블로그") || msg.includes("Blog") || msg.includes("blog")) {
+        const d = document.createElement("div");
+        d.className = "log-line " + cls;
+        d.textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
+        box.appendChild(d);
+        box.scrollTop = box.scrollHeight;
+      }
+      return;
+    }
     const d = document.createElement("div");
     d.className = "log-line " + cls;
     d.textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
@@ -4112,6 +4162,76 @@ function resetBlogUpload() {
   if (sec) sec.style.display = "none";
   document.querySelectorAll(".blog-check").forEach(cb => cb.checked = false);
   addLog("🔄 블로그 업로드 리셋 완료", "info");
+}
+
+// ── 블로그 로그 함수 ──
+function addBlogLog(msg, type = "info") {
+  const box = document.getElementById("blog-log-box");
+  if (!box) return;
+  const line = document.createElement("div");
+  line.className = "log-line " + type;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
+function clearBlogLog() {
+  const box = document.getElementById("blog-log-box");
+  if (box) box.innerHTML = '<div class="log-line info">[블로그] 대기 중...</div>';
+}
+
+// ── URL 콘텐츠 추출 ──
+let blogUrlData = null;
+
+async function fetchUrlContent() {
+  const url = document.getElementById("blog-url-input").value.trim();
+  if (!url) { addBlogLog("⚠️ URL을 입력해주세요", "warn"); return; }
+  addBlogLog(`🔍 URL 내용 가져오는 중: ${url}`, "info");
+  try {
+    const res = await fetch("/blog/fetch-url", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ url })
+    });
+    const data = await res.json();
+    if (data.error) { addBlogLog(`❌ 추출 실패: ${data.error}`, "error"); return; }
+    blogUrlData = data;
+    document.getElementById("blog-url-title").value = data.title || "";
+    document.getElementById("blog-url-body").value = data.body || "";
+    const imgBox = document.getElementById("blog-url-images");
+    imgBox.innerHTML = "";
+    (data.images || []).forEach((src, i) => {
+      const img = document.createElement("img");
+      img.src = src; img.style.cssText = "width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border);";
+      img.title = `이미지 ${i+1}`;
+      imgBox.appendChild(img);
+    });
+    document.getElementById("blog-url-img-count").textContent = (data.images || []).length;
+    document.getElementById("blog-url-preview").style.display = "block";
+    document.getElementById("btn-url-blog-post").style.display = "inline-flex";
+    addBlogLog(`✅ 추출 완료 — 제목: ${(data.title||"").substring(0,40)}... 이미지 ${(data.images||[]).length}개`, "info");
+  } catch(e) { addBlogLog(`❌ 요청 실패: ${e.message}`, "error"); }
+}
+
+async function postUrlToBlog() {
+  const title = document.getElementById("blog-url-title").value.trim();
+  const body = document.getElementById("blog-url-body").value.trim();
+  if (!title || !body) { addBlogLog("⚠️ 제목과 본문을 확인해주세요", "warn"); return; }
+  const images = blogUrlData ? (blogUrlData.images || []) : [];
+  const btn = document.getElementById("btn-url-blog-post");
+  if (btn) { btn.disabled = true; btn.innerHTML = "📝 발행 중... <span class='spinner'></span>"; }
+  addBlogLog(`📝 블로그 발행 시작: ${title.substring(0,40)}...`, "info");
+  try {
+    const res = await fetch("/blog/post-url-content", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ title, body, images })
+    });
+    const data = await res.json();
+    if (data.ok) { addBlogLog(`✅ 블로그 발행 성공!`, "info"); }
+    else { addBlogLog(`❌ 발행 실패: ${data.error || "알 수 없는 오류"}`, "error"); }
+  } catch(e) { addBlogLog(`❌ 요청 실패: ${e.message}`, "error"); }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = "📝 블로그 발행"; } }
 }
 
 // 페이지 로드 시 블로그 계정 불러오기

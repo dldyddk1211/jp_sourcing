@@ -543,3 +543,206 @@ async def _blog_upload_image(page, editor_frame, img_url: str, log=None):
             os.remove(tmp_path)
         except Exception:
             pass
+
+
+async def blog_post_custom_content(title: str, body: str, images: list = None,
+                                    log=None, cookie_path: str = None):
+    """URL에서 추출한 커스텀 콘텐츠를 블로그에 발행"""
+
+    def _log(msg):
+        logger.info(msg)
+        if log:
+            log(msg)
+
+    # 쿠키 로드
+    accounts_path = os.path.join("db", "blog_accounts.json")
+    active_slot = 1
+    if os.path.exists(accounts_path):
+        try:
+            with open(accounts_path, "r", encoding="utf-8") as f:
+                acc_data = json.load(f)
+            active_slot = acc_data.get("active", 1)
+        except Exception:
+            pass
+
+    cp = cookie_path or f"blog_cookies_{active_slot}.json"
+    cookies = load_blog_cookies(cp)
+    if not cookies:
+        _log("❌ 블로그 쿠키가 없습니다. 먼저 로그인해주세요")
+        return False
+
+    _log(f"🍪 블로그 쿠키 로드 (슬롯 {active_slot})")
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=False,
+            args=["--no-sandbox"]
+        )
+        context = await browser.new_context(
+            viewport={"width": 1280, "height": 900},
+            locale="ko-KR",
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            permissions=["clipboard-read", "clipboard-write"],
+        )
+        await context.add_cookies(cookies)
+
+        is_valid = await verify_blog_login(context)
+        if not is_valid:
+            _log("❌ 블로그 쿠키 만료 — 다시 로그인해주세요")
+            await browser.close()
+            return False
+
+        _log("✅ 블로그 로그인 확인!")
+        page = await context.new_page()
+
+        try:
+            # 글쓰기 페이지
+            write_url = "https://blog.naver.com/PostWrite.naver"
+            _log(f"🌐 블로그 글쓰기 이동: {write_url}")
+            await page.goto(write_url, wait_until="domcontentloaded", timeout=30000)
+            await asyncio.sleep(3)
+
+            if "login" in page.url.lower() or "nidlogin" in page.url:
+                _log("❌ 로그인 리다이렉트 — 쿠키 만료")
+                return False
+
+            # 에디터 프레임 찾기
+            editor_frame = None
+            for frame_sel in ["iframe#mainFrame", "iframe[name='mainFrame']"]:
+                try:
+                    fl = page.frame_locator(frame_sel)
+                    el = fl.locator("body").first
+                    if await el.count() > 0:
+                        editor_frame = fl
+                        break
+                except Exception:
+                    continue
+            if not editor_frame:
+                editor_frame = page
+
+            await asyncio.sleep(2)
+
+            # 제목 입력
+            title_selectors = [
+                "textarea.se_textarea",
+                "div.se-title-text span",
+                "textarea[placeholder*='제목']",
+                "div[contenteditable='true'][data-placeholder*='제목']",
+                "input[name='title']",
+            ]
+            title_ok = False
+            for sel in title_selectors:
+                try:
+                    el = editor_frame.locator(sel).first if editor_frame != page else page.locator(sel).first
+                    if await el.count() > 0:
+                        await el.click()
+                        await asyncio.sleep(0.3)
+                        await el.fill(title[:100])
+                        title_ok = True
+                        _log(f"✅ 제목 입력: {title[:40]}...")
+                        break
+                except Exception:
+                    continue
+            if not title_ok:
+                _log("❌ 제목 필드를 찾을 수 없습니다")
+                return False
+
+            # 본문 영역 찾기
+            body_selectors = [
+                "div.se-component-content div[contenteditable='true']",
+                "div[contenteditable='true'].se-text-paragraph",
+                "div.post_editor div[contenteditable='true']",
+                "div[contenteditable='true']",
+            ]
+            body_el = None
+            for sel in body_selectors:
+                try:
+                    el = editor_frame.locator(sel).first if editor_frame != page else page.locator(sel).first
+                    if await el.count() > 0:
+                        body_el = el
+                        break
+                except Exception:
+                    continue
+
+            if not body_el:
+                _log("❌ 본문 영역을 찾을 수 없습니다")
+                return False
+
+            await body_el.click()
+            await asyncio.sleep(0.5)
+
+            # 이미지 삽입
+            if images:
+                _log(f"📷 이미지 {len(images)}개 삽입 중...")
+                for idx, img_url in enumerate(images[:10]):
+                    try:
+                        await _blog_upload_image(page, editor_frame, img_url, _log)
+                        _log(f"   📷 이미지 [{idx+1}/{min(len(images),10)}] 완료")
+                        await asyncio.sleep(1)
+                    except Exception as e:
+                        _log(f"   ⚠️ 이미지 {idx+1} 실패: {e}")
+
+            # 본문 입력 (줄 단위)
+            lines = body.split("\n")
+            for line in lines:
+                if line.strip():
+                    await body_el.type(line, delay=10)
+                await body_el.press("Enter")
+                await asyncio.sleep(0.05)
+            _log(f"✅ 본문 입력 완료 ({len(lines)}줄)")
+
+            # 발행 버튼 클릭
+            await asyncio.sleep(1)
+            publish_selectors = [
+                "button:has-text('발행')",
+                "button.publish_btn__Y4pat",
+                "button[data-testid='publish']",
+                "button.se-publish-btn",
+                "button:has-text('공개발행')",
+            ]
+            published = False
+            for sel in publish_selectors:
+                try:
+                    el = editor_frame.locator(sel).first if editor_frame != page else page.locator(sel).first
+                    if await el.count() > 0:
+                        await el.click()
+                        await asyncio.sleep(2)
+                        published = True
+                        _log("✅ 발행 버튼 클릭")
+                        break
+                except Exception:
+                    continue
+
+            if not published:
+                _log("⚠️ 발행 버튼을 찾지 못했습니다 — 수동으로 발행해주세요")
+
+            # 발행 확인 팝업
+            confirm_selectors = [
+                "button:has-text('확인')",
+                "button:has-text('발행')",
+                "button.confirm_btn",
+            ]
+            for sel in confirm_selectors:
+                try:
+                    el = page.locator(sel).first
+                    if await el.count() > 0 and await el.is_visible():
+                        await el.click()
+                        await asyncio.sleep(1)
+                        break
+                except Exception:
+                    continue
+
+            _log("🎉 블로그 발행 완료!")
+            await asyncio.sleep(2)
+            return True
+
+        except Exception as e:
+            _log(f"❌ 블로그 발행 오류: {e}")
+            logger.exception(e)
+            return False
+        finally:
+            await browser.close()

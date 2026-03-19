@@ -2247,6 +2247,110 @@ def blog_login():
     return jsonify({"ok": True, "message": f"블로그 계정 {slot} 로그인 브라우저가 열립니다."})
 
 
+@app.route(f"{URL_PREFIX}/blog/fetch-url", methods=["POST"])
+@login_required
+def blog_fetch_url():
+    """URL에서 제목, 본문, 이미지 추출"""
+    d = request.json or {}
+    url = d.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "URL이 비어있습니다"})
+    try:
+        import requests as _req
+        from bs4 import BeautifulSoup
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        resp = _req.get(url, headers=headers, timeout=15)
+        resp.encoding = resp.apparent_encoding or "utf-8"
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # 제목 추출
+        title = ""
+        for sel in [soup.find("meta", property="og:title"),
+                    soup.find("meta", attrs={"name": "title"}),
+                    soup.find("title")]:
+            if sel:
+                title = sel.get("content", "") if sel.name == "meta" else sel.get_text()
+                if title:
+                    break
+
+        # 본문 추출 — article > main > body 순서
+        body = ""
+        for tag in ["article", "main", "[class*='content']", "[class*='detail']", "[class*='post']", "body"]:
+            el = soup.select_one(tag)
+            if el:
+                # 스크립트, 스타일 제거
+                for s in el.find_all(["script", "style", "nav", "header", "footer"]):
+                    s.decompose()
+                text = el.get_text(separator="\n", strip=True)
+                if len(text) > 100:
+                    body = text
+                    break
+
+        # 이미지 추출
+        images = []
+        seen = set()
+        for img in soup.find_all("img"):
+            src = img.get("src") or img.get("data-src") or ""
+            if not src or src in seen:
+                continue
+            # 절대 URL로 변환
+            if src.startswith("//"):
+                src = "https:" + src
+            elif src.startswith("/"):
+                from urllib.parse import urlparse
+                parsed = urlparse(url)
+                src = f"{parsed.scheme}://{parsed.netloc}{src}"
+            # 작은 아이콘 제외 (width/height 속성)
+            w = img.get("width", "")
+            h = img.get("height", "")
+            if w and w.isdigit() and int(w) < 50:
+                continue
+            if h and h.isdigit() and int(h) < 50:
+                continue
+            if any(x in src.lower() for x in ["logo", "icon", "banner", "ad", "pixel", "tracking", "1x1"]):
+                continue
+            seen.add(src)
+            images.append(src)
+            if len(images) >= 20:
+                break
+
+        push_log(f"🌐 URL 추출 완료: {title[:40]}... (이미지 {len(images)}개)")
+        return jsonify({"title": title.strip(), "body": body[:5000], "images": images})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
+@app.route(f"{URL_PREFIX}/blog/post-url-content", methods=["POST"])
+@login_required
+def blog_post_url_content():
+    """URL에서 추출한 콘텐츠를 블로그에 발행"""
+    d = request.json or {}
+    title = d.get("title", "").strip()
+    body = d.get("body", "").strip()
+    images = d.get("images", [])
+    if not title or not body:
+        return jsonify({"ok": False, "error": "제목과 본문이 필요합니다"})
+
+    def run_post():
+        try:
+            from blog_uploader import blog_post_custom_content
+            result = asyncio.run(blog_post_custom_content(
+                title=title, body=body, images=images, log=push_log
+            ))
+            if result:
+                push_log(f"✅ 블로그 URL 콘텐츠 발행 성공!")
+            else:
+                push_log(f"❌ 블로그 URL 콘텐츠 발행 실패")
+        except Exception as e:
+            push_log(f"❌ 블로그 발행 오류: {e}")
+
+    thread = threading.Thread(target=run_post, daemon=True)
+    thread.start()
+    return jsonify({"ok": True, "message": "블로그 발행 시작"})
+
+
 @app.route(f"{URL_PREFIX}/run/stop", methods=["POST"])
 def stop_all():
     """가벼운 중단: 크롤링/업로드 중지 + 브라우저 정리 (데이터 삭제 없음)"""
