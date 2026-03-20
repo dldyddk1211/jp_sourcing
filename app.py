@@ -1499,6 +1499,14 @@ def manual_upload():
     return jsonify({"ok": True, "message": "업로드 시작됨"})
 
 
+@app.route(f"{URL_PREFIX}/run/test", methods=["POST"])
+@login_required
+def run_test():
+    """테스트 버튼 핸들러"""
+    push_log("🧪 테스트 버튼 클릭됨 — 정상 작동 확인")
+    return jsonify({"ok": True, "message": "테스트 성공"})
+
+
 @app.route(f"{URL_PREFIX}/run/upload-preview", methods=["POST"])
 @login_required
 def upload_preview():
