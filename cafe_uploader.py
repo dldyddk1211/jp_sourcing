@@ -523,18 +523,40 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
         detail_images = get_detail_image_urls(product)
 
         # ── 1단계: 글쓰기 페이지로 직접 이동 ──
-        write_url = f"https://cafe.naver.com/f-e/cafes/{CAFE_ID}/articles/write?menuId={CAFE_MENU_ID}"
-        _log(f"   🌐 글쓰기 페이지 이동: {write_url}")
-        await page.goto(write_url, wait_until="domcontentloaded", timeout=30000)
-        await asyncio.sleep(3)
+        # 네이버 카페 URL 형식이 변경될 수 있으므로 여러 형식 시도
+        write_urls = [
+            f"https://cafe.naver.com/ca-fe/cafes/{CAFE_ID}/articles/write?boardType=L&menuId={CAFE_MENU_ID}",
+            f"https://cafe.naver.com/f-e/cafes/{CAFE_ID}/articles/write?menuId={CAFE_MENU_ID}",
+        ]
+        page_loaded = False
+        for try_url in write_urls:
+            _log(f"   🌐 글쓰기 페이지 이동: {try_url}")
+            try:
+                await page.goto(try_url, wait_until="domcontentloaded", timeout=30000)
+                await asyncio.sleep(3)
 
-        # 로그인 페이지로 리다이렉트 됐는지 확인
-        if "login" in page.url or "nidlogin" in page.url:
-            _log("   ❌ 쿠키 만료 — 재로그인 필요")
-            _set_fail_reason("쿠키 만료 — 재로그인 필요")
+                # 로그인 페이지로 리다이렉트 됐는지 확인
+                if "login" in page.url or "nidlogin" in page.url:
+                    _log("   ❌ 쿠키 만료 — 재로그인 필요")
+                    _set_fail_reason("쿠키 만료 — 재로그인 필요")
+                    return False
+
+                # 에러 페이지 / 빈 페이지 체크
+                if "error" in page.url or "cafe.naver.com/f-e/cafes" not in page.url and "cafe.naver.com/ca-fe/cafes" not in page.url and "write" not in page.url:
+                    _log(f"   ⚠️ 리다이렉트됨: {page.url} — 다음 URL 시도")
+                    continue
+
+                _log(f"   ✅ 현재 URL: {page.url}")
+                page_loaded = True
+                break
+            except Exception as e:
+                _log(f"   ⚠️ 페이지 이동 실패: {e} — 다음 URL 시도")
+                continue
+
+        if not page_loaded:
+            _log("   ❌ 글쓰기 페이지를 열 수 없습니다")
+            _set_fail_reason("글쓰기 페이지 열기 실패")
             return False
-
-        _log(f"   ✅ 현재 URL: {page.url}")
 
         # ── 2단계: 에디터 렌더링 대기 ──
         # 방법1: iframe 내부에서 찾기
