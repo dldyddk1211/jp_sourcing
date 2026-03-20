@@ -921,6 +921,46 @@
         </div>
       </div>
 
+      <!-- ── 텔레그램 계정 설정 ── -->
+      <div class="panel" style="margin-bottom:20px">
+        <div class="panel-title">
+          <span>&#x1f4ec; 텔레그램 계정 설정</span>
+        </div>
+        <p style="color:var(--muted);font-size:0.82rem;margin-bottom:16px">
+          카페 업로드 알림을 받을 텔레그램 봇을 설정합니다.
+        </p>
+        <div style="border:1px solid var(--border);border-radius:10px;padding:20px;background:var(--bg)">
+          <div style="display:grid;gap:14px;margin-bottom:20px">
+            <div>
+              <div style="font-size:0.82rem;color:var(--muted);margin-bottom:6px">
+                Bot Token <span style="font-size:0.72rem">(@BotFather에서 발급)</span>
+                <span id="tg-token-status" style="margin-left:8px;font-size:0.75rem"></span>
+              </div>
+              <input id="tg-bot-token" type="password" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;background:var(--bg);color:var(--text);font-family:monospace" placeholder="123456789:ABCdefGHI...">
+            </div>
+            <div>
+              <div style="font-size:0.82rem;color:var(--muted);margin-bottom:6px">
+                Chat ID <span style="font-size:0.72rem">(개인 또는 그룹)</span>
+              </div>
+              <input id="tg-chat-id" type="text" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;background:var(--bg);color:var(--text);font-family:monospace" placeholder="123456789">
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <button class="btn b-purple" onclick="saveTelegram()" style="padding:8px 20px">&#x1f4be; 저장</button>
+            <button class="btn b-blue" onclick="testTelegram()" style="padding:8px 20px">&#x1f9ea; 테스트 전송</button>
+            <span id="tg-result" style="font-size:0.82rem;color:var(--muted)"></span>
+          </div>
+        </div>
+        <div style="font-size:0.78rem;color:var(--muted);line-height:1.7;padding:14px;background:#0d0d0a;border:1px solid var(--border);border-radius:8px;margin-top:16px;">
+          <div style="font-weight:600;color:var(--text);margin-bottom:6px;">&#x1f4a1; 텔레그램 봇 설정 방법</div>
+          1. 텔레그램에서 <b>@BotFather</b> 검색 &#x2192; /newbot 명령<br>
+          2. 봇 이름 설정 후 발급된 <b>Bot Token</b>을 위에 입력<br>
+          3. 생성된 봇에게 아무 메시지 전송<br>
+          4. <b>Chat ID</b> 확인: 브라우저에서 <code>https://api.telegram.org/bot{TOKEN}/getUpdates</code> 접속 &#x2192; chat.id 값 복사<br>
+          5. 테스트 전송 버튼으로 확인
+        </div>
+      </div>
+
       <!-- ── AI API 설정 ── -->
       <div class="panel">
         <div class="panel-title">
@@ -1010,45 +1050,15 @@
     <div class="page-section" id="page-telegram">
       <div class="panel">
         <div class="panel-title">
-          <span>&#x1f4ec; 텔레그램 알림 설정</span>
+          <span>&#x1f4ec; 텔레그램 알림</span>
           <button class="btn b-gray" onclick="loadTelegramSettings()" style="padding:6px 12px;font-size:0.78rem">&#x1f504; 새로고침</button>
         </div>
-        <p style="color:var(--muted);font-size:0.82rem;margin-bottom:16px">
-          카페 업로드 진행 상황을 텔레그램으로 알림 받습니다.<br>
-          업로드 성공/실패/대기 알림이 실시간으로 전송됩니다.
-        </p>
 
-        <div style="border:1px solid var(--border);border-radius:10px;padding:20px;background:var(--bg)">
-          <div style="display:grid;gap:14px;margin-bottom:20px">
-            <div>
-              <div style="font-size:0.82rem;color:var(--muted);margin-bottom:6px">
-                Bot Token <span style="font-size:0.72rem">(@BotFather에서 발급)</span>
-                <span id="tg-token-status" style="margin-left:8px;font-size:0.75rem"></span>
-              </div>
-              <input id="tg-bot-token" type="password" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;background:var(--bg);color:var(--text);font-family:monospace" placeholder="123456789:ABCdefGHI...">
-            </div>
-            <div>
-              <div style="font-size:0.82rem;color:var(--muted);margin-bottom:6px">
-                Chat ID <span style="font-size:0.72rem">(개인 또는 그룹)</span>
-              </div>
-              <input id="tg-chat-id" type="text" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;background:var(--bg);color:var(--text);font-family:monospace" placeholder="123456789">
-            </div>
+        <div style="padding:16px;border:1px solid var(--border);border-radius:10px;background:var(--bg);margin-bottom:20px;">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span style="font-size:0.85rem;color:var(--muted)">텔레그램 계정(Bot Token / Chat ID) 설정은 <b>로그인/계정 설정</b>에서 관리합니다.</span>
+            <button class="btn b-blue" onclick="showPage('ai-settings')" style="padding:8px 16px;font-size:0.82rem">&#x1F511; 로그인/계정 설정으로 이동</button>
           </div>
-
-          <div style="display:flex;gap:10px;align-items:center">
-            <button class="btn b-purple" onclick="saveTelegram()" style="padding:8px 20px">&#x1f4be; 저장</button>
-            <button class="btn b-blue" onclick="testTelegram()" style="padding:8px 20px">&#x1f9ea; 테스트 전송</button>
-            <span id="tg-result" style="font-size:0.82rem;color:var(--muted)"></span>
-          </div>
-        </div>
-
-        <div style="font-size:0.78rem;color:var(--muted);line-height:1.7;padding:14px;background:#0d0d0a;border:1px solid var(--border);border-radius:8px;margin-top:16px;">
-          <div style="font-weight:600;color:var(--text);margin-bottom:6px;">&#x1f4a1; 텔레그램 봇 설정 방법</div>
-          1. 텔레그램에서 <b>@BotFather</b> 검색 &#x2192; /newbot 명령<br>
-          2. 봇 이름 설정 후 발급된 <b>Bot Token</b>을 위에 입력<br>
-          3. 생성된 봇에게 아무 메시지 전송<br>
-          4. <b>Chat ID</b> 확인: 브라우저에서 <code>https://api.telegram.org/bot{TOKEN}/getUpdates</code> 접속 &#x2192; chat.id 값 복사<br>
-          5. 테스트 전송 버튼으로 확인
         </div>
 
         <!-- 카페 모니터 & 자동 댓글 -->
@@ -1709,7 +1719,7 @@ function showPage(page, pushHash) {
   if (page === "products") { loadProducts(curPage); loadBrands(); }
   if (page === "dictionary") loadDict();
   if (page === "data-path") loadDataPath();
-  if (page === "ai-settings") { loadAiSettings(); loadNaverAccounts(); }
+  if (page === "ai-settings") { loadAiSettings(); loadNaverAccounts(); loadTelegramSettings(); }
   if (page === "telegram") { loadTelegramSettings(); checkMonitorStatus(); }
   if (page === "bigdata") { loadBigdataStats(); loadBigdataProducts(1); }
   if (page === "cafe-upload") {
