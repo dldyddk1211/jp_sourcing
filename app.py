@@ -2377,12 +2377,27 @@ def _extract_images_from_soup(soup, base_url):
 async def _fetch_url_playwright(url: str) -> dict:
     """Playwright로 JS 렌더링 후 콘텐츠 추출 (스마트스토어 등)"""
     from playwright.async_api import async_playwright
+    from cafe_uploader import load_cookies
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
-        page = await browser.new_page(
+        context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
+
+        # 네이버 계정 쿠키 로드 (로그인 상태로 접근)
+        try:
+            naver_data = _load_naver_accounts()
+            active_slot = naver_data.get("active", 1)
+            cookie_path = _get_cookie_path(active_slot)
+            cookies = load_cookies(cookie_path)
+            if cookies:
+                await context.add_cookies(cookies)
+                logger.info(f"🍪 네이버 쿠키 로드 (계정 {active_slot})")
+        except Exception:
+            pass
+
+        page = await context.new_page()
         try:
             await page.goto(url, wait_until="networkidle", timeout=30000)
             await asyncio.sleep(3)
