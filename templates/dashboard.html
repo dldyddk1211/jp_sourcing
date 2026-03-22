@@ -4214,7 +4214,7 @@ async function fetchUrlContent() {
   if (!url) { addBlogLog("⚠️ URL을 입력해주세요", "warn"); return; }
   addBlogLog(`🔍 URL 내용 가져오는 중: ${url}`, "info");
   try {
-    const res = await fetch("/blog/fetch-url", {
+    const res = await fetch(PREFIX + "/blog/fetch-url", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({ url })
@@ -4249,7 +4249,7 @@ async function postUrlToBlog() {
   if (btn) { btn.disabled = true; btn.innerHTML = "📝 발행 중... <span class='spinner'></span>"; }
   addBlogLog(`📝 블로그 발행 시작: ${title.substring(0,40)}...${category ? ` [${category}]` : ""}`, "info");
   try {
-    const res = await fetch("/blog/post-url-content", {
+    const res = await fetch(PREFIX + "/blog/post-url-content", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({ title, body, images, category })
