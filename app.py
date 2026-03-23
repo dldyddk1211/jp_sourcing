@@ -2436,67 +2436,26 @@ async def _fetch_url_playwright(url: str) -> dict:
             if not title:
                 title = await page.title()
 
-            # 본문 텍스트 추출 (상품 상세 — 공지사항 제외)
+            # 본문 텍스트 추출 — se-main-container 내 텍스트만
             body = ""
-            detail_selectors = [
-                "div._1Hj-MkenCi",          # 스마트스토어 상세
-                "div[class*='detail']",
-                "div._3e8dOKsKKM",           # 상품 설명
-                "div[class*='content']",
-                "div._2LlMKIiyqH",           # 상품 정보 영역
-                "article",
-                "main",
-            ]
-            for sel in detail_selectors:
-                try:
-                    el = page.locator(sel).first
-                    if await el.count() > 0:
-                        text = await el.inner_text()
-                        if len(text) > len(body):
-                            body = text
-                except Exception:
-                    continue
+            try:
+                main_container = page.locator("div.se-main-container").first
+                if await main_container.count() > 0:
+                    body = await main_container.inner_text()
+            except Exception:
+                pass
 
-            # 공지사항/안내문 부분 제거 — 실제 상품 내용만 추출
-            _notice_keywords = [
-                "공지사항", "공지 사항", "교환/반품", "교환 및 반품", "교환/환불",
-                "배송안내", "배송 안내", "주의사항", "주의 사항", "유의사항",
-                "AS안내", "A/S 안내", "고객센터", "문의사항",
-            ]
-            if body:
-                lines = body.split("\n")
-                filtered_lines = []
-                skip_section = False
-                for line in lines:
-                    stripped = line.strip()
-                    # 공지사항 키워드가 포함된 줄부터 해당 섹션 스킵
-                    if any(kw in stripped for kw in _notice_keywords):
-                        skip_section = True
+            # se-main-container 못 찾으면 폴백
+            if not body:
+                for sel in ["div._1Hj-MkenCi", "div._3e8dOKsKKM", "div[class*='detail']", "div[class*='content']"]:
+                    try:
+                        el = page.locator(sel).first
+                        if await el.count() > 0:
+                            text = await el.inner_text()
+                            if len(text) > len(body):
+                                body = text
+                    except Exception:
                         continue
-                    # 빈 줄이 나오면 스킵 해제 (다음 섹션 시작)
-                    if skip_section and stripped == "":
-                        skip_section = False
-                        continue
-                    if not skip_section:
-                        filtered_lines.append(line)
-                body = "\n".join(filtered_lines)
-
-            # 상품 기본 정보도 추가
-            info_text = ""
-            info_selectors = [
-                "div._2-uvQuRWK5",           # 가격/옵션
-                "div[class*='price']",
-                "div[class*='ProductInfo']",
-            ]
-            for sel in info_selectors:
-                try:
-                    el = page.locator(sel).first
-                    if await el.count() > 0:
-                        info_text += (await el.inner_text()).strip() + "\n\n"
-                except Exception:
-                    continue
-            if info_text:
-                body = info_text + "\n" + body
 
             # 이미지 추출 — se-main-container 내 shop-phinf 이미지만
             images = []
