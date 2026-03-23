@@ -2436,19 +2436,23 @@ async def _fetch_url_playwright(url: str) -> dict:
             if not title:
                 title = await page.title()
 
-            # 본문 텍스트 추출 — se-main-container 내 se-text, se-sectionTitle 컴포넌트만
-            # se-quotation(인삿말/공지) 제외
+            # 본문 텍스트 추출 — se-main-container 내 se-text, se-sectionTitle만
+            # se-quotation(인삿말/공지) 완전 제외
             body = ""
             try:
                 body = await page.evaluate("""() => {
                     const container = document.querySelector('div.se-main-container');
                     if (!container) return '';
                     const lines = [];
-                    // se-text, se-sectionTitle 컴포넌트만 (se-quotation 제외)
-                    const components = container.querySelectorAll(
-                        'div.se-component.se-text, div.se-component.se-sectionTitle'
-                    );
+                    // se-component를 순회하되, se-quotation/se-horizontalLine/se-image 제외
+                    const components = container.querySelectorAll('div.se-component');
                     for (const comp of components) {
+                        // se-quotation, se-image, se-horizontalLine 등 제외
+                        if (comp.classList.contains('se-quotation')) continue;
+                        if (comp.classList.contains('se-image')) continue;
+                        if (comp.classList.contains('se-horizontalLine')) continue;
+                        // se-text, se-sectionTitle만 처리
+                        if (!comp.classList.contains('se-text') && !comp.classList.contains('se-sectionTitle')) continue;
                         const paragraphs = comp.querySelectorAll('p.se-text-paragraph');
                         for (const p of paragraphs) {
                             const text = p.innerText.replace(/\\u200B/g, '').trim();
