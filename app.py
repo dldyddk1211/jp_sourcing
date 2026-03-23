@@ -2436,12 +2436,20 @@ async def _fetch_url_playwright(url: str) -> dict:
             if not title:
                 title = await page.title()
 
-            # 본문 텍스트 추출 — se-main-container 내 텍스트만
+            # 본문 텍스트 추출 — se-main-container 내 se-text-paragraph에서 텍스트만
             body = ""
             try:
-                main_container = page.locator("div.se-main-container").first
-                if await main_container.count() > 0:
-                    body = await main_container.inner_text()
+                body = await page.evaluate("""() => {
+                    const container = document.querySelector('div.se-main-container');
+                    if (!container) return '';
+                    const lines = [];
+                    const paragraphs = container.querySelectorAll('p.se-text-paragraph');
+                    for (const p of paragraphs) {
+                        const text = p.innerText.replace(/\\u200B/g, '').trim();
+                        if (text) lines.push(text);
+                    }
+                    return lines.join('\\n');
+                }""")
             except Exception:
                 pass
 
