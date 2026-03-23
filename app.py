@@ -2413,11 +2413,14 @@ async def _fetch_url_playwright(url: str) -> dict:
                 if await more_btn.count() > 0:
                     await more_btn.click()
                     await asyncio.sleep(2)
-                    for _ in range(5):
-                        await page.keyboard.press("PageDown")
-                        await asyncio.sleep(0.3)
             except Exception:
                 pass
+
+            # 상세 페이지 끝까지 스크롤 (lazy load 이미지 전부 로드)
+            for _ in range(20):
+                await page.keyboard.press("PageDown")
+                await asyncio.sleep(0.3)
+            await asyncio.sleep(2)
 
             # 제목 추출
             title = ""
@@ -2498,20 +2501,50 @@ async def _fetch_url_playwright(url: str) -> dict:
             # 이미지 추출 — shop-phinf.pstatic.net 패턴만 (스마트스토어 상품 이미지)
             images = []
             seen = set()
+
+            # img 태그에서 src, data-src, data-lazy-src 모두 확인
             all_imgs = await page.query_selector_all("img")
             for img in all_imgs:
-                src = await img.get_attribute("src") or await img.get_attribute("data-src") or ""
-                if not src or src in seen:
-                    continue
-                if src.startswith("//"):
-                    src = "https:" + src
-                # shop-phinf.pstatic.net 이미지만 수집
-                if "shop-phinf.pstatic.net" not in src:
-                    continue
-                seen.add(src)
-                images.append(src)
+                for attr in ["src", "data-src", "data-lazy-src", "data-original"]:
+                    src = await img.get_attribute(attr) or ""
+                    if src and "shop-phinf.pstatic.net" in src:
+                        if src.startswith("//"):
+                            src = "https:" + src
+                        if src not in seen:
+                            seen.add(src)
+                            images.append(src)
+                        break
                 if len(images) >= 30:
                     break
+
+            # JS로 페이지 내 모든 shop-phinf 이미지 URL 수집 (img 태그 누락 대응)
+            if len(images) < 5:
+                try:
+                    js_images = await page.evaluate("""() => {
+                        const urls = new Set();
+                        // img 태그
+                        document.querySelectorAll('img').forEach(img => {
+                            ['src','data-src','data-lazy-src','data-original'].forEach(attr => {
+                                const v = img.getAttribute(attr) || '';
+                                if (v.includes('shop-phinf.pstatic.net')) urls.add(v.startsWith('//') ? 'https:'+v : v);
+                            });
+                        });
+                        // background-image
+                        document.querySelectorAll('*').forEach(el => {
+                            const bg = getComputedStyle(el).backgroundImage || '';
+                            const m = bg.match(/url\\(["']?(.*?shop-phinf\\.pstatic\\.net.*?)["']?\\)/);
+                            if (m) urls.add(m[1].startsWith('//') ? 'https:'+m[1] : m[1]);
+                        });
+                        return [...urls];
+                    }""")
+                    for src in js_images:
+                        if src not in seen:
+                            seen.add(src)
+                            images.append(src)
+                        if len(images) >= 30:
+                            break
+                except Exception:
+                    pass
 
             body = body.strip()[:8000]
             return {"title": title.strip(), "body": body, "images": images}
