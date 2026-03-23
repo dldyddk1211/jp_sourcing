@@ -4228,10 +4228,23 @@ async function fetchUrlContent() {
     const imgBox = document.getElementById("blog-url-images");
     imgBox.innerHTML = "";
     (data.images || []).forEach((src, i) => {
+      const wrap = document.createElement("div");
+      wrap.style.cssText = "position:relative;display:inline-block;";
       const img = document.createElement("img");
       img.src = src; img.style.cssText = "width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border);";
       img.title = `이미지 ${i+1}`;
-      imgBox.appendChild(img);
+      const delBtn = document.createElement("button");
+      delBtn.textContent = "✕";
+      delBtn.style.cssText = "position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:var(--red);color:#fff;border:none;cursor:pointer;font-size:11px;line-height:20px;padding:0;text-align:center;";
+      delBtn.onclick = function() {
+        const idx = blogUrlData.images.indexOf(src);
+        if (idx > -1) blogUrlData.images.splice(idx, 1);
+        wrap.remove();
+        document.getElementById("blog-url-img-count").textContent = blogUrlData.images.length;
+      };
+      wrap.appendChild(img);
+      wrap.appendChild(delBtn);
+      imgBox.appendChild(wrap);
     });
     document.getElementById("blog-url-img-count").textContent = (data.images || []).length;
     document.getElementById("blog-url-preview").style.display = "block";

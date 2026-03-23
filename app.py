@@ -2498,31 +2498,28 @@ async def _fetch_url_playwright(url: str) -> dict:
             if info_text:
                 body = info_text + "\n" + body
 
-            # 이미지 추출 — 상품 상세 본문 영역 내 shop-phinf 이미지만
+            # 이미지 추출 — se-main-container 내 shop-phinf 이미지만
             images = []
             seen = set()
 
-            # 상세 본문 영역 셀렉터 (상품 설명 이미지가 있는 곳)
-            detail_selectors = [
-                "div._1Hj-MkenCi",          # 스마트스토어 상세
-                "div._3e8dOKsKKM",           # 상품 설명
-                "div[class*='detail']",
-                "div[class*='content']",
+            # 스마트스토어 상세 본문: se-main-container > se-image-resource
+            detail_img_selectors = [
+                "div.se-main-container img.se-image-resource",
+                "div.se-viewer img.se-image-resource",
+                "div._1Hj-MkenCi img",
+                "div._3e8dOKsKKM img",
             ]
-            detail_el = None
-            for sel in detail_selectors:
+            detail_imgs = []
+            for sel in detail_img_selectors:
                 try:
-                    el = await page.query_selector(sel)
-                    if el:
-                        detail_el = el
+                    imgs = await page.query_selector_all(sel)
+                    if imgs:
+                        detail_imgs = imgs
                         break
                 except Exception:
                     continue
 
-            # 상세 영역 내 이미지만 추출
-            if detail_el:
-                detail_imgs = await detail_el.query_selector_all("img")
-            else:
+            if not detail_imgs:
                 detail_imgs = await page.query_selector_all("img")
 
             for img in detail_imgs:
