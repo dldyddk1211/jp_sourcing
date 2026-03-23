@@ -2436,17 +2436,24 @@ async def _fetch_url_playwright(url: str) -> dict:
             if not title:
                 title = await page.title()
 
-            # 본문 텍스트 추출 — se-main-container 내 se-text-paragraph에서 텍스트만
+            # 본문 텍스트 추출 — se-main-container 내 se-text, se-sectionTitle 컴포넌트만
+            # se-quotation(인삿말/공지) 제외
             body = ""
             try:
                 body = await page.evaluate("""() => {
                     const container = document.querySelector('div.se-main-container');
                     if (!container) return '';
                     const lines = [];
-                    const paragraphs = container.querySelectorAll('p.se-text-paragraph');
-                    for (const p of paragraphs) {
-                        const text = p.innerText.replace(/\\u200B/g, '').trim();
-                        if (text) lines.push(text);
+                    // se-text, se-sectionTitle 컴포넌트만 (se-quotation 제외)
+                    const components = container.querySelectorAll(
+                        'div.se-component.se-text, div.se-component.se-sectionTitle'
+                    );
+                    for (const comp of components) {
+                        const paragraphs = comp.querySelectorAll('p.se-text-paragraph');
+                        for (const p of paragraphs) {
+                            const text = p.innerText.replace(/\\u200B/g, '').trim();
+                            if (text) lines.push(text);
+                        }
                     }
                     return lines.join('\\n');
                 }""")
