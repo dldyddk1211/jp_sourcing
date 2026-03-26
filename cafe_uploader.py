@@ -573,16 +573,18 @@ async def upload_products(products: list, status_callback=None, max_upload=None,
                         notify_upload_success(name_short, success_count, len(upload_list), post_url)
                         try:
                             from product_db import update_cafe_status
-                            code = product.get("product_code", "")
-                            if code:
-                                update_cafe_status(code, "완료", datetime.now().isoformat())
-                        except Exception:
-                            pass
+                            _code = product.get("product_code", "")
+                            if _code:
+                                update_cafe_status(_code, "완료", datetime.now().isoformat())
+                                log(f"   📝 DB 상태 업데이트: {_code} → 완료")
+                        except Exception as db_err:
+                            log(f"   ⚠️ DB 상태 업데이트 실패: {db_err}")
                         if on_single_success:
                             try:
                                 on_single_success(product)
-                            except Exception:
-                                pass
+                                log(f"   📝 JSON 상태 업데이트 완료")
+                            except Exception as json_err:
+                                log(f"   ⚠️ JSON 상태 업데이트 실패: {json_err}")
                         uploaded = True
                     else:
                         # 실패했지만 실제로 등록됐을 수 있음 → 카페 검색으로 확인
