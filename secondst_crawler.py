@@ -127,6 +127,7 @@ async def scrape_2ndstreet(
                     "button:has-text('すべての Cookie を受け入れる')",
                     "button:has-text('すべて許可する')",
                     "button:has-text('保存して閉じる')",
+                    "button:has-text('以上の内容を確認しました')",
                     "#onetrust-accept-btn-handler",
                 ]:
                     try:
