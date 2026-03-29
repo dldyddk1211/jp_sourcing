@@ -695,8 +695,26 @@
             </select>
           </div>
           <div>
-            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">키워드</label>
-            <input type="text" id="vt-keyword" placeholder="예: LOUIS VUITTON" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:0.82rem;width:180px;">
+            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">브랜드</label>
+            <select id="vt-brand" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:0.82rem;min-width:160px;">
+              <option value="">전체</option>
+              <option value="001235" selected>PRADA</option>
+              <option value="001064">LOUIS VUITTON</option>
+              <option value="001169">GUCCI</option>
+              <option value="001225">CHANEL</option>
+              <option value="001339">HERMES</option>
+              <option value="001287">CELINE</option>
+              <option value="001114">COACH</option>
+              <option value="001389">BALENCIAGA</option>
+              <option value="001129">BURBERRY</option>
+              <option value="001218">FENDI</option>
+              <option value="001171">BOTTEGA VENETA</option>
+              <option value="001336">LOEWE</option>
+              <option value="001103">MICHAEL KORS</option>
+              <option value="001130">MARC JACOBS</option>
+              <option value="001253">SAINT LAURENT</option>
+              <option value="001307">JIMMY CHOO</option>
+            </select>
           </div>
           <div>
             <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">페이지</label>
@@ -3569,7 +3587,7 @@ let vtLogSource = null;
 async function vtStartScrape() {
   const site = document.getElementById("vt-site").value;
   const cat = document.getElementById("vt-category").value;
-  const keyword = document.getElementById("vt-keyword").value.trim();
+  const brand = document.getElementById("vt-brand").value;
   const pages = document.getElementById("vt-pages").value.trim();
   const logEl = document.getElementById("vt-log");
   logEl.innerHTML = "";
@@ -3578,7 +3596,7 @@ async function vtStartScrape() {
     const res = await fetch(PREFIX + "/run/scrape", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({site_id: site, category_id: cat, keyword, pages})
+      body: JSON.stringify({site_id: site, category_id: cat, brand_code: brand, pages})
     });
     const d = await res.json();
     if (d.ok) {

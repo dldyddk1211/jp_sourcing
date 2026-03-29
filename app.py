@@ -193,6 +193,7 @@ def run_scrape(site_id="xebio", category_id="sale", keyword="", pages="", brand_
                 category=category_id,
                 keyword=keyword,
                 pages=pages,
+                brand_code=brand_code,
             ))
         else:
             push_log("   🚀 Xebio 크롤러 시작 (Playwright 브라우저 열기)...")

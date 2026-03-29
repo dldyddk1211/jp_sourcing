@@ -55,6 +55,7 @@ async def scrape_2ndstreet(
     keyword="",
     pages="",
     max_pages=5,
+    brand_code="",
 ):
     """
     2ndstreet.jp에서 빈티지 상품 수집
@@ -106,6 +107,10 @@ async def scrape_2ndstreet(
 
             # ── URL 구성 ──
             url = f"https://www.2ndstreet.jp/search?category={category}"
+            if brand_code:
+                url += f"&brand%5B%5D={brand_code}"
+                url += "&conditions%5B%5D=A&conditions%5B%5D=B&conditions%5B%5D=NS"
+                url += "&sortBy=recommend"
             if keyword:
                 url += f"&keyword={keyword}"
             url += f"&page={page_num}"
