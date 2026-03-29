@@ -727,10 +727,37 @@
 
       <!-- 로그 -->
       <div class="panel">
-        <div class="panel-title"><span>&#x1f4dc; 수집 로그</span></div>
+        <div class="panel-title">
+          <span>&#x1f4dc; 수집 로그</span>
+          <button onclick="document.getElementById('vt-log').innerHTML=''" class="btn b-gray" style="padding:4px 10px;font-size:0.75rem">지우기</button>
+        </div>
         <div id="vt-log" style="background:#0a0a0a;border:1px solid var(--border);border-radius:6px;padding:10px;height:200px;overflow-y:auto;font-family:monospace;font-size:0.75rem;color:var(--muted);">
           빈티지 수집 로그가 여기에 표시됩니다...
         </div>
+      </div>
+
+      <!-- 수집 결과 테이블 -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>&#x1f4e6; 수집된 상품 (<span id="vt-count">0</span>개)</span>
+          <button onclick="vtLoadProducts()" class="btn b-gray" style="padding:4px 10px;font-size:0.75rem">&#x1f504; 새로고침</button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="tbl" style="width:100%;font-size:0.78rem;">
+            <thead>
+              <tr>
+                <th style="width:60px">이미지</th>
+                <th style="width:100px">브랜드</th>
+                <th>상품명</th>
+                <th style="width:70px">등급</th>
+                <th style="width:90px">가격(JPY)</th>
+                <th style="width:90px">판매가</th>
+              </tr>
+            </thead>
+            <tbody id="vt-tbody"></tbody>
+          </table>
+        </div>
+        <div id="vt-pager" style="margin-top:8px;text-align:center;"></div>
       </div>
     </div>
 
@@ -3584,6 +3611,8 @@ async function deleteBigdataSite() {
 
 // ── 빈티지 수집 ─────────────────────────────
 let vtLogSource = null;
+let vtPage = 1;
+
 async function vtStartScrape() {
   const site = document.getElementById("vt-site").value;
   const cat = document.getElementById("vt-category").value;
@@ -3600,13 +3629,18 @@ async function vtStartScrape() {
     });
     const d = await res.json();
     if (d.ok) {
-      logEl.innerHTML += '<div style="color:var(--green)">수집 시작됨</div>';
+      logEl.innerHTML += '<div style="color:var(--green)">✅ 수집 시작됨</div>';
       // SSE 로그 연결
       if (vtLogSource) vtLogSource.close();
       vtLogSource = new EventSource(PREFIX + "/stream/logs");
       vtLogSource.onmessage = e => {
-        logEl.innerHTML += `<div>${e.data}</div>`;
+        const msg = e.data;
+        logEl.innerHTML += `<div>${msg}</div>`;
         logEl.scrollTop = logEl.scrollHeight;
+        // 수집 완료 감지 → 테이블 자동 로드
+        if (msg.includes("수집 완료") || msg.includes("DB:")) {
+          setTimeout(() => vtLoadProducts(), 1000);
+        }
       };
     } else {
       logEl.innerHTML += `<div style="color:var(--red)">${d.message || "시작 실패"}</div>`;
@@ -3615,12 +3649,64 @@ async function vtStartScrape() {
     logEl.innerHTML += `<div style="color:var(--red)">오류: ${e}</div>`;
   }
 }
+
 async function vtStopScrape() {
   try {
     await fetch(PREFIX + "/run/stop", {method: "POST"});
     if (vtLogSource) { vtLogSource.close(); vtLogSource = null; }
     document.getElementById("vt-log").innerHTML += '<div style="color:var(--yellow)">중지 요청됨</div>';
   } catch(e) {}
+}
+
+async function vtLoadProducts(page = 1) {
+  vtPage = page;
+  const brand = document.getElementById("vt-brand")?.value || "";
+  const brandName = brand ? document.getElementById("vt-brand").selectedOptions[0]?.text : "";
+  try {
+    const params = new URLSearchParams({page, per_page: 50, site_id: "2ndstreet"});
+    if (brandName && brandName !== "전체") params.set("brand", brandName);
+    const res = await fetch(PREFIX + "/bigdata/products?" + params.toString());
+    const d = await res.json();
+    const tbody = document.getElementById("vt-tbody");
+    document.getElementById("vt-count").textContent = d.total || 0;
+
+    if (!d.products || !d.products.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px;">수집된 상품이 없습니다</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = d.products.map(p => {
+      const img = p.img_url ? `<img src="${p.img_url}" style="width:50px;height:50px;object-fit:cover;border-radius:4px;">` : "-";
+      const brand = p.brand_ko || p.brand || "";
+      const name = (p.name_ko || p.name || "").substring(0, 40);
+      const grade = p.condition_grade || "-";
+      const jpy = p.price_jpy ? `¥${Number(p.price_jpy).toLocaleString()}` : "-";
+      const krw = p.sell_price ? `${Number(p.sell_price).toLocaleString()}원` : "-";
+      return `<tr>
+        <td>${img}</td>
+        <td>${brand}</td>
+        <td style="font-size:0.75rem;">${name}</td>
+        <td>${grade}</td>
+        <td>${jpy}</td>
+        <td>${krw}</td>
+      </tr>`;
+    }).join("");
+
+    // 페이지네이션
+    const totalPages = Math.ceil((d.total || 0) / 50);
+    const pager = document.getElementById("vt-pager");
+    if (totalPages > 1) {
+      let html = "";
+      for (let i = 1; i <= Math.min(totalPages, 10); i++) {
+        html += `<button onclick="vtLoadProducts(${i})" class="btn ${i === page ? 'b-blue' : 'b-gray'}" style="padding:4px 10px;font-size:0.75rem;margin:2px;">${i}</button>`;
+      }
+      pager.innerHTML = html;
+    } else {
+      pager.innerHTML = "";
+    }
+  } catch(e) {
+    console.error("vtLoadProducts 오류:", e);
+  }
 }
 
 function downloadBigdataCsv() {
