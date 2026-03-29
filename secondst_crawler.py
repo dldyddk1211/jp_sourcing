@@ -115,6 +115,17 @@ async def scrape_2ndstreet(
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=30000)
                 await asyncio.sleep(2)
+
+                # 쿠키 동의 팝업 자동 닫기
+                try:
+                    cookie_btn = page.locator("button:has-text('すべての Cookie を受け入れる'), button:has-text('Accept'), button:has-text('同意'), [id*='cookie'] button, [class*='cookie'] button").first
+                    if await cookie_btn.count() > 0 and await cookie_btn.is_visible():
+                        await cookie_btn.click()
+                        log("   🍪 쿠키 동의 팝업 닫기")
+                        await asyncio.sleep(1)
+                except Exception:
+                    pass
+
             except PlaywrightTimeout:
                 log(f"   ⚠️ 페이지 {page_num} 타임아웃")
                 continue
