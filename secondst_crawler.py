@@ -132,6 +132,7 @@ async def scrape_2ndstreet(
 
             # ── 상품 카드 탐색 ──
             card_selectors = [
+                "a[href*='/goods/']",
                 "a[href*='/item/']",
                 "[class*='itemCard']",
                 "[class*='item-card']",
@@ -261,13 +262,17 @@ async def _extract_product_from_card(el, page) -> dict:
                 href = "https://www.2ndstreet.jp" + href
             product["link"] = href
             # URL에서 상품코드 추출
-            code_match = re.search(r'/id/(\d+)', href)
+            code_match = re.search(r'goodsId/(\d+)', href)
             if code_match:
                 product["product_code"] = code_match.group(1)
             else:
-                code_match = re.search(r'/code/(\w+)', href)
+                code_match = re.search(r'/id/(\d+)', href)
                 if code_match:
                     product["product_code"] = code_match.group(1)
+                else:
+                    code_match = re.search(r'/code/(\w+)', href)
+                    if code_match:
+                        product["product_code"] = code_match.group(1)
     except Exception:
         pass
 
