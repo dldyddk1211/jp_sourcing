@@ -965,8 +965,14 @@ async def _extract_detail_page(page) -> dict:
             detail["condition_grade"] = spec_info["grade"]
         if spec_info.get("color"):
             detail["color"] = spec_info["color"]
+        if spec_info.get("material"):
+            detail["material"] = spec_info["material"]
         if spec_info.get("size"):
             detail["size"] = spec_info["size"]
+        if spec_info.get("measured_size"):
+            detail["measured_size"] = spec_info["measured_size"]
+        if spec_info.get("description") and not detail.get("description"):
+            detail["description"] = spec_info["description"]
         if spec_info.get("price") and spec_info["price"] > 100:
             detail["price_jpy"] = spec_info["price"]
 
