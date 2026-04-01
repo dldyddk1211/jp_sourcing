@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TheOne - 나의 주문</title>
+  <style>
+    :root {
+      --bg:#0f1117; --card:#1a1d27; --border:#2a2d3a;
+      --accent:#d4a54a; --green:#2ecc71; --red:#e74c3c; --yellow:#f39c12; --blue:#4f8ef7;
+      --text:#e0e0e0; --muted:#7a7f9a; --dim:#444860;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { background:var(--bg); color:var(--text); font-family:'Noto Sans KR',sans-serif; }
+    .header {
+      background:var(--card); border-bottom:1px solid var(--border);
+      padding:14px 24px; display:flex; align-items:center; justify-content:space-between;
+    }
+    .header-logo { font-size:1.2rem; font-weight:800; }
+    .header-logo b { color:var(--accent); }
+    .header-nav { display:flex; gap:16px; align-items:center; }
+    .header-nav a { color:var(--muted); text-decoration:none; font-size:0.85rem; transition:color .15s; }
+    .header-nav a:hover { color:var(--accent); }
+    .container { max-width:900px; margin:30px auto; padding:0 16px; }
+    .panel {
+      background:var(--card); border:1px solid var(--border);
+      border-radius:12px; padding:24px;
+    }
+    .panel-title { font-size:1rem; font-weight:700; margin-bottom:16px; color:var(--accent); }
+    table { width:100%; border-collapse:collapse; font-size:0.82rem; }
+    th { text-align:left; padding:10px 8px; color:var(--muted); font-weight:600; font-size:0.75rem;
+         border-bottom:1px solid var(--border); }
+    td { padding:10px 8px; border-bottom:1px solid rgba(42,45,58,0.4); }
+    .status-badge {
+      display:inline-block; padding:3px 10px; border-radius:12px;
+      font-size:0.72rem; font-weight:700;
+    }
+    .st-new { background:rgba(243,156,18,0.15); color:var(--yellow); }
+    .st-confirmed { background:rgba(79,142,247,0.15); color:var(--blue); }
+    .st-processing { background:rgba(212,165,74,0.15); color:var(--accent); }
+    .st-shipped { background:rgba(108,207,255,0.15); color:#6cf; }
+    .st-completed { background:rgba(46,204,113,0.15); color:var(--green); }
+    .st-cancelled { background:rgba(231,76,60,0.15); color:var(--red); }
+    .empty { text-align:center; color:var(--muted); padding:40px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-logo"><b>TheOne</b> <span style="font-weight:400;font-size:0.85rem;color:var(--muted)">Vintage</span></div>
+    <div class="header-nav">
+      <a href="{{ url_prefix }}/shop">쇼핑몰</a>
+      <a href="{{ url_prefix }}/shop/my-orders" style="color:var(--accent);font-weight:700;">나의 주문</a>
+      <span style="color:var(--dim)">|</span>
+      <span style="font-size:0.8rem;color:var(--muted);">{{ username }}</span>
+      <a href="{{ url_prefix }}/logout">로그아웃</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="panel">
+      <div class="panel-title">나의 주문/문의 내역</div>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>일시</th>
+            <th>유형</th>
+            <th>브랜드</th>
+            <th>상품명</th>
+            <th>고유번호</th>
+            <th>가격</th>
+            <th>상태</th>
+          </tr>
+        </thead>
+        <tbody id="order-body">
+          <tr><td colspan="8" class="empty">로딩 중...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+const PREFIX = "{{ url_prefix }}";
+const statusMap = {
+  "new": ["신규", "st-new"],
+  "confirmed": ["확인", "st-confirmed"],
+  "processing": ["처리중", "st-processing"],
+  "shipped": ["배송중", "st-shipped"],
+  "completed": ["완료", "st-completed"],
+  "cancelled": ["취소", "st-cancelled"],
+};
+
+async function loadMyOrders() {
+  const tbody = document.getElementById("order-body");
+  try {
+    const res = await fetch(PREFIX + "/shop/api/my-orders");
+    const d = await res.json();
+    if (!d.orders || !d.orders.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">주문/문의 내역이 없습니다</td></tr>';
+      return;
+    }
+    tbody.innerHTML = d.orders.map((o, i) => {
+      const [stLabel, stClass] = statusMap[o.status] || [o.status, ""];
+      const typeIcon = o.type === "order" ? "🛒" : "💬";
+      const typeLabel = o.type === "order" ? "주문" : "문의";
+      return `<tr>
+        <td style="color:var(--dim)">${i+1}</td>
+        <td style="white-space:nowrap;font-size:0.78rem;">${o.created_at || ''}</td>
+        <td>${typeIcon} ${typeLabel}</td>
+        <td style="font-weight:600;">${o.brand || ''}</td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.product_name || ''}</td>
+        <td style="font-family:monospace;font-size:0.75rem;">${o.product_code || ''}</td>
+        <td style="font-weight:700;color:var(--accent);">${o.price || ''}</td>
+        <td><span class="status-badge ${stClass}">${stLabel}</span></td>
+      </tr>`;
+    }).join("");
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty" style="color:var(--red);">로드 실패: ${e}</td></tr>`;
+  }
+}
+
+loadMyOrders();
+</script>
+</body>
+</html>

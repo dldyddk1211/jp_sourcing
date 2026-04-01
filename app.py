@@ -204,6 +204,35 @@ def shop():
                            user_level=user_level)
 
 
+@app.route(f"{URL_PREFIX}/shop/my-orders")
+@login_required
+def shop_my_orders():
+    """고객용 나의 주문리스트 페이지"""
+    return render_template("my_orders.html",
+                           url_prefix=URL_PREFIX, env=APP_ENV,
+                           username=session.get("username"),
+                           is_admin=session.get("role", "admin") == "admin")
+
+
+@app.route(f"{URL_PREFIX}/shop/api/my-orders")
+@login_required
+def shop_my_orders_api():
+    """고객 본인 주문/문의 리스트"""
+    _init_orders_db()
+    username = session.get("username", "")
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM orders WHERE username = ? ORDER BY created_at DESC LIMIT 100",
+            (username,)
+        ).fetchall()
+        orders = [{c: r[c] for c in r.keys()} for r in rows]
+        return jsonify({"ok": True, "orders": orders})
+    finally:
+        conn.close()
+
+
 def _calc_vintage_price(jpy: int, margin_type="b2c") -> int:
     """빈티지 상품 한국 판매가 계산 (b2c 또는 b2b)"""
     if not jpy or jpy <= 0:
