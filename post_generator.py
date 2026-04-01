@@ -279,11 +279,92 @@ _KATAKANA_MAP = {
     "マウンテン": "마운틴", "ジャケット": "재킷",
     # ── 오클리 ──
     "オークリー": "오클리",
-    # ── 기타 ──
+    # ── 기타 스포츠 ──
     "テイタム": "테이텀", "ゲルフープ": "겔후프",
     "オールコート": "올코트", "インドア": "인도어",
     "砂入り人工芝用": "인조잔디용", "人工芝": "인조잔디",
     "ベルト付き": "벨트부착",
+    # ── 의류 ──
+    "ジャケット": "자켓", "コート": "코트", "ブルゾン": "블루종",
+    "ダウンジャケット": "다운자켓", "ダウンベスト": "다운베스트",
+    "テーラードジャケット": "테일러드자켓", "ライダースジャケット": "라이더스자켓",
+    "ステンカラーコート": "스텐카라코트", "トレンチコート": "트렌치코트",
+    "シャツ": "셔츠", "ブラウス": "블라우스", "Tシャツ": "T셔츠",
+    "ポロシャツ": "폴로셔츠", "長袖シャツ": "긴팔셔츠", "半袖シャツ": "반팔셔츠",
+    "パンツ": "팬츠", "デニムパンツ": "데님팬츠", "スラックス": "슬랙스",
+    "ショートパンツ": "반바지", "スカート": "스커트",
+    "ワンピース": "원피스", "ドレス": "드레스",
+    "ニット": "니트", "セーター": "스웨터", "カーディガン": "가디건",
+    "パーカー": "후드", "スウェット": "스웨트", "ベスト": "베스트",
+    "ジップパーカー": "집업후드", "プルオーバー": "풀오버",
+    "マフラー": "머플러", "ストール": "스톨", "スカーフ": "스카프",
+    "セットアップ": "셋업", "スーツ": "수트",
+    # ── 가방 ──
+    "ショルダーバッグ": "숄더백", "トートバッグ": "토트백", "ハンドバッグ": "핸드백",
+    "リュック": "백팩", "ポーチ": "파우치", "ボストンバッグ": "보스턴백",
+    "クラッチバッグ": "클러치백", "ウエストバッグ": "웨이스트백",
+    "ボディバッグ": "바디백", "バックパック": "백팩",
+    "メッセンジャーバッグ": "메신저백", "ブリーフケース": "서류가방",
+    "バッグ": "가방",
+    # ── 소재 ──
+    "レザー": "가죽", "ナイロン": "나일론", "キャンバス": "캔버스",
+    "デニム": "데님", "スエード": "스웨이드", "ファー": "퍼",
+    "サテン": "새틴", "コットン": "코튼", "ウール": "울",
+    "シルク": "실크", "カシミヤ": "캐시미어", "ポリエステル": "폴리에스터",
+    "エナメル": "에나멜", "パテント": "페이턴트",
+    "モノグラム": "모노그램", "ダミエ": "다미에", "エピ": "에피",
+    # ── 악세서리/소품 ──
+    "ネックレス": "목걸이", "ブレスレット": "팔찌", "リング": "반지",
+    "ピアス": "피어싱", "イヤリング": "귀걸이",
+    "ベルト": "벨트", "サングラス": "선글라스",
+    "財布": "지갑", "長財布": "장지갑",
+    "コインケース": "동전지갑", "カードケース": "카드케이스",
+    "キーケース": "키케이스", "キーリング": "키링",
+    "帽子": "모자", "キャップ": "캡", "ハット": "햇",
+    # ── 패턴/상태 ──
+    "無地": "무지", "総柄": "올오버패턴", "チェック": "체크",
+    "ストライプ": "스트라이프", "ドット": "도트", "花柄": "꽃무늬",
+    "マルチカラー": "멀티컬러", "リバーシブル": "리버서블",
+    # ── 사이즈 ──
+    "マチ": "폭", "高さ": "높이", "幅": "너비",
+    "肩幅": "어깨폭", "身幅": "품", "着丈": "총길이",
+    "袖丈": "소매길이", "ウエスト": "허리", "ヒップ": "엉덩이",
+    "股上": "밑위", "股下": "밑단",
+    # ── 골프 ──
+    "ゴルフウェア": "골프웨어", "ゴルフシューズ": "골프화",
+    # ── 아웃도어/등산 ──
+    "ゴアテックス": "고어텍스", "GTX": "GTX",
+    "トレッキングシューズ": "트레킹화", "トレッキング": "트레킹",
+    "ハイキングシューズ": "하이킹화", "ハイキング": "하이킹",
+    "登山靴": "등산화", "登山": "등산",
+    "クライミング": "클라이밍", "トレイル": "트레일",
+    "トレイルランニング": "트레일러닝",
+    "ウォータープルーフ": "방수", "防水": "방수",
+    "ミッドカット": "미드컷", "ローカット": "로우컷", "ハイカット": "하이컷",
+    "ビブラム": "비브람", "ソフトシェル": "소프트쉘", "ハードシェル": "하드쉘",
+    "フリース": "플리스", "ウインドブレーカー": "윈드브레이커",
+    "レインウェア": "레인웨어", "レインコート": "레인코트",
+    # ── 스포츠 빠진 단어 ──
+    "バスケットボール": "농구", "バスケットボールシューズ": "농구화",
+    "バレーボール": "배구", "バレーボールシューズ": "배구화",
+    "バドミントン": "배드민턴", "バドミントンシューズ": "배드민턴화",
+    "ラグビー": "럭비", "ベースボール": "야구",
+    "ソフトボール": "소프트볼", "ハンドボール": "핸드볼",
+    "クロスカントリー": "크로스컨트리",
+    "アシックス": "아식스", "ミズノ": "미즈노",
+    "ニューバランス": "뉴발란스", "プーマ": "푸마",
+    "アンダーアーマー": "언더아머", "リーボック": "리복",
+    "コンバース": "컨버스", "ヴァンズ": "반스",
+    "クミ": "쿠미", "ソックス": "양말",
+    "ライン": "라인", "足組": "2족세트",
+    # ── 기타 빠진 단어 ──
+    "ドライフィット": "드라이핏", "タイト": "타이트",
+    "ロングスリーブ": "롱슬리브", "ショートスリーブ": "반팔",
+    "フィットネス": "피트니스", "トップ": "탑", "トップス": "상의",
+    "ボトムス": "하의", "ボトム": "하의",
+    "ジャージ": "져지", "スナップボタン": "스냅버튼",
+    "カジュアルシャツ": "캐주얼셔츠", "ショートスリーブシャツ": "반팔셔츠",
+    "バスケウェア": "농구웨어",
 }
 
 
@@ -369,7 +450,7 @@ _CATEGORY_REMOVE = [
 
 
 def _clean_name(name: str, product_code: str = "") -> str:
-    """상품명 정리: 성별 접두사·품번·카테고리 제거, 카타카나 번역, 한국어 표기 통일"""
+    """상품명 정리: 성별 접두사·품번·카테고리 제거, 한국어 표기 통일"""
     # 성별 접두사 제거: (남성), (남성、여성), (メンズ) 등
     name = re.sub(
         r'^\s*\((?:남성|여성|유니섹스|남녀공용|키즈|주니어|メンズ|ウィメンズ|レディース)'
@@ -378,7 +459,6 @@ def _clean_name(name: str, product_code: str = "") -> str:
     )
     if product_code:
         name = name.replace(product_code, '').strip()
-    name = _translate_katakana(name)
     for key, (opt_a, opt_b) in _KOREAN_RANDOM.items():
         if key in name:
             name = name.replace(key, random.choice([opt_a, opt_b]))
@@ -418,9 +498,13 @@ def _gemini_translate_name(text: str) -> str:
     ja_words = _extract_japanese_words(text)
 
     try:
-        prompt = f"""아래 상품명에 포함된 일본어 부분만 한국어로 번역해주세요.
-이미 한국어/영어/숫자인 부분은 그대로 유지하세요.
-번역 결과만 출력하세요. 설명이나 부연은 절대 쓰지 마세요.
+        prompt = f"""아래 상품명에 포함된 일본어 부분만 자연스러운 한국어로 번역해주세요.
+규칙:
+- 카타카나를 한국어 발음으로 음역하지 마세요 (예: ナイロン→나일론 금지)
+- 의미를 살려 자연스러운 한국어로 번역하세요
+- 브랜드명/모델명은 영문 표기가 있으면 영문으로 유지
+- 이미 한국어/영어/숫자인 부분은 그대로 유지
+- 번역 결과만 출력하세요. 설명이나 부연은 절대 쓰지 마세요.
 
 상품명: {text}"""
         if provider == "gemini":
@@ -456,9 +540,12 @@ def _auto_save_translations(original: str, translated: str, ja_words: list):
         if not words_str:
             return
 
-        prompt = f"""스포츠 신발/의류 상품명에 나오는 아래 일본어 단어들을 한국어 발음으로 음역해주세요.
-모델명, 브랜드명, 고유명사는 뜻이 아닌 발음을 한국어로 적어주세요.
-예: サブリナ=사브리나, バスケット=바스켓, ゲーマー=게이머, バッシュ=바슈
+        prompt = f"""아래 일본어 단어들을 자연스러운 한국어로 번역해주세요.
+규칙:
+- 카타카나를 한국어 발음으로 음역하지 마세요 (예: ナイロン=나일론 ❌ → 나일론 소재 또는 뜻에 맞는 한국어)
+- 뜻이 있는 단어는 의미를 살려 번역하세요 (예: 防水=방수, 軽量=경량)
+- 브랜드명, 모델명, 고유명사는 영문 표기가 있으면 영문으로, 없으면 한국에서 통용되는 표기로
+- 색상, 소재, 카테고리 등은 한국에서 일반적으로 쓰는 표현으로
 각 줄에 "일본어=한국어" 형식으로만 출력하세요.
 
 {words_str}"""
@@ -482,6 +569,60 @@ def _auto_save_translations(original: str, translated: str, ja_words: list):
 
     except Exception as e:
         logger.warning(f"번역 사전 자동 저장 실패: {e}")
+
+
+def _generate_ai_title(product: dict) -> str:
+    """AI로 카페 게시글에 적합한 제목 생성"""
+    provider = _ai_config["provider"]
+    has_key = (provider == "gemini" and _ai_config["gemini_key"]) or \
+              (provider == "claude" and _ai_config["claude_key"]) or \
+              (provider == "openai" and _ai_config.get("openai_key"))
+    if provider == "none" or not has_key:
+        return ""
+
+    brand = product.get("brand_ko", "") or product.get("brand", "")
+    name_ja = product.get("name", "")
+    name_ko = product.get("name_ko", "") or name_ja
+    code = product.get("product_code", "")
+
+    import random as _rnd
+    prefix = _rnd.choice(["일본구매대행", "일본구대"])
+
+    try:
+        prompt = f"""네이버 카페 일본 구매대행 게시글 제목을 1개만 만들어주세요.
+
+규칙:
+- 반드시 "{prefix}"로 시작
+- 브랜드명(영문)을 반드시 포함
+- 품번({code})을 포함
+- 일본어 절대 사용 금지
+- 카타카나 음역 절대 금지 — 의미를 살린 자연스러운 한국어만 사용
+- 자연스러운 한국어만 사용
+- 30~50자 이내
+- 제목만 출력 (설명/부연 없이)
+
+상품 정보:
+- 브랜드: {brand}
+- 상품명(일본어): {name_ja}
+- 상품명(한국어): {name_ko}
+- 품번: {code}"""
+
+        if provider == "gemini":
+            result = _call_gemini(prompt)
+        elif provider == "openai":
+            result = _call_openai(prompt)
+        else:
+            result = _call_claude(prompt)
+
+        result = result.strip().split("\n")[0].strip()
+        # 따옴표 제거
+        result = result.strip('"\'「」【】')
+        if result and len(result) > 10 and not _has_japanese(result):
+            return result
+    except Exception as e:
+        logger.warning(f"AI 제목 생성 실패: {e}")
+
+    return ""
 
 
 # ── 제목 / 태그 ────────────────────────────
@@ -530,10 +671,10 @@ def make_title(product: dict) -> str:
     if _has_japanese(brand):
         brand = _gemini_translate_name(brand)
 
-    # 최종 확인: 그래도 일본어가 남아있으면 카타카나 사전으로 치환
+    # 최종 확인: 그래도 일본어가 남아있으면 AI 3차 번역 시도
     if _has_japanese(name):
-        logger.warning(f"⚠️ 제목 번역 최종 실패 — 카타카나 사전 치환: {name}")
-        name = _translate_katakana(name)
+        logger.warning(f"⚠️ 제목 번역 최종 실패 — AI 3차 번역 시도: {name}")
+        name = _gemini_translate_name(name)
 
     # 핵심 키워드 조합 (빈 값 제외)
     keywords = [k for k in ["일본구매대행", brand, name, code] if k]
@@ -595,7 +736,7 @@ def _remove_tag_line(content: str) -> str:
 
 # ── 프롬프트 생성 ──────────────────────────
 
-def _build_prompt(product: dict, price_info: dict) -> str:
+def _build_prompt(product: dict, price_info: dict, ai_title: str = "") -> str:
     """AI 공통 프롬프트"""
     name_ja = product.get("name", "")
     brand = product.get("brand_ko") or product.get("brand", "")
@@ -618,9 +759,9 @@ def _build_prompt(product: dict, price_info: dict) -> str:
         logger.info(f"📝 [{code}] 상세 설명 일본어 감지 — Gemini 번역 시도")
         description = _translate_description(description)
 
-    # 인트로 랜덤 선택
-    full_name = f"{name_ko_clean} {code}".strip()
-    intro_line1, intro_line2 = _pick_intro(full_name)
+    # 인트로 랜덤 선택 (AI 제목이 있으면 그걸 사용)
+    intro_name = ai_title if ai_title else f"{name_ko_clean} {code}".strip()
+    intro_line1, intro_line2 = _pick_intro(intro_name)
 
     return f"""당신은 일본 구매대행 전문 카페 운영자입니다.
 아래 상품 정보로 네이버 카페 게시글 본문을 작성해주세요.
@@ -682,15 +823,21 @@ def _build_prompt(product: dict, price_info: dict) -> str:
 (예시: 농구화 특성상 발을 안정적으로 잡아주는 핏이므로 정사이즈 주문을 권장합니다.
 발볼이 넓으신 분은 반 사이즈 업도 고려해 보세요.)
 정품 안내: 일본 공식 유통 정품이며, 미개봉 새상품으로 발송됩니다.
+
 해외 구매대행 상품이라 교환/반품이 어려울 수 있는 점 유의 부탁드려요!!
 
 
 위 형식에서 (🔍 상품 상세 정보)와 (💎 핵심 구매 포인트) 부분만 채워서 전체를 출력하세요.
+
+[필수 규칙]
 👉 구매 문의 섹션이나 네이버 폼 URL은 절대 포함하지 마세요 (별도 템플릿에서 처리됨).
-⚠️ 구매 전 확인 사항의 사이즈 추천도 상품에 맞게 상세하게 채워주세요.
-마크다운 문법은 절대 쓰지 마세요.
-일본어는 절대 출력하지 마세요.
-공급사/매입처(Xebio, SuperSports 등) 이름은 절대 언급하지 마세요.
+👉 ⚠️ 구매 전 확인 사항의 사이즈 추천도 상품에 맞게 상세하게 채워주세요.
+👉 마크다운 문법은 절대 쓰지 마세요.
+👉 공급사/매입처(Xebio, SuperSports 등) 이름은 절대 언급하지 마세요.
+👉 각 섹션 사이에 빈 줄 2줄씩 띄워주세요 (가독성).
+👉 일본어 절대 출력 금지 — 카타카나를 한국어 발음으로 음역하지 마세요!
+   모든 일본어는 AI를 통해 의미를 살린 자연스러운 한국어로 번역하세요.
+   (예: ショルダーバッグ → 어깨가방, 防水 → 방수, 軽量 → 경량, ナイロン → 나일론 소재)
 
 마지막 줄에 추천 태그 7개를 쉼표로 구분해서 작성하세요 (검색 키워드용, #은 빼고).
 형식: [추천태그] {random.choice(["러닝화","런닝화"])}추천,나이키{random.choice(["러닝","런닝"])},데일리{random.choice(["러닝화","런닝화"])},조깅화,쿠셔닝{random.choice(["러닝화","런닝화"])},가벼운운동화,일본직구신발"""
@@ -934,8 +1081,7 @@ def _retranslate_content(content: str) -> str:
     except Exception as e:
         logger.warning(f"본문 재번역 실패: {e}")
 
-    # 재번역 실패 시 카타카나 사전으로 단어 단위 치환
-    content = _translate_katakana(content)
+    # 재번역 실패해도 카타카나 음역 사전 치환은 하지 않음 (AI 번역만 사용)
     return content
 
 
@@ -1017,6 +1163,16 @@ def generate_cafe_post(product: dict, price_info: dict) -> dict:
     provider = _ai_config["provider"]
     logger.info(f"📝 [{code}] 게시글 생성 시작 — AI: {provider}")
 
+    # AI로 제목 생성 (실패 시 게시글 작성 중단)
+    if provider != "none":
+        ai_title = _generate_ai_title(product)
+        if ai_title:
+            title = ai_title
+            logger.info(f"📝 [{code}] AI 제목: {title}")
+        else:
+            logger.error(f"❌ [{code}] AI 제목 생성 실패 — 게시글 작성 중단")
+            return None
+
     if provider == "none":
         logger.info(f"📝 [{code}] AI=none — 기본 템플릿 사용")
         fb = _make_fallback_content(product, price_info)
@@ -1024,7 +1180,7 @@ def generate_cafe_post(product: dict, price_info: dict) -> dict:
         return {"title": title, "content": fb, "tags": tags,
                 "content_intro": fb_intro, "content_detail": fb_detail}
 
-    prompt = _build_prompt(product, price_info)
+    prompt = _build_prompt(product, price_info, ai_title=title)
 
     # AI 호출 순서: Claude → Gemini → OpenAI (3번 시도)
     ai_providers = [
