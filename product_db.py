@@ -167,6 +167,29 @@ def bulk_exists(site_id: str, products: list, days=15) -> set:
         conn.close()
 
 
+def bulk_check_price(site_id: str, products: list) -> dict:
+    """상품 리스트의 DB 가격을 일괄 조회.
+    Returns: {product_code: price_jpy} (DB에 있는 것만)
+    """
+    conn = _conn()
+    try:
+        result = {}
+        codes = [p.get("product_code", "") for p in products if p.get("product_code")]
+        for i in range(0, len(codes), 100):
+            batch = codes[i:i+100]
+            placeholders = ",".join(["?" for _ in batch])
+            rows = conn.execute(
+                f"SELECT product_code, price_jpy FROM products "
+                f"WHERE site_id=? AND product_code IN ({placeholders})",
+                [site_id] + batch
+            ).fetchall()
+            for row in rows:
+                result[row["product_code"]] = row["price_jpy"]
+        return result
+    finally:
+        conn.close()
+
+
 def insert_products(products: list) -> int:
     """상품 리스트를 DB에 저장. 중복 시 가격/이미지/상태 업데이트 (cafe_status 유지). 저장+업데이트 수 반환"""
     if not products:
