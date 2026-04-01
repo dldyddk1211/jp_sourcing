@@ -516,6 +516,194 @@ async def scrape_2ndstreet(
     return products
 
 
+# ── 상세 페이지 재수집 (설명 없는 상품) ──────────────────
+
+_rescrape_running = False
+_rescrape_stop = False
+
+def is_rescrape_running():
+    return _rescrape_running
+
+def stop_rescrape():
+    global _rescrape_stop
+    _rescrape_stop = True
+
+async def rescrape_details(log=None):
+    """DB에서 설명이 없는 2ndstreet 상품의 상세 페이지를 재수집"""
+    global _rescrape_running, _rescrape_stop
+    if _rescrape_running:
+        if log:
+            log("⚠️ 이미 재수집 진행 중입니다")
+        return
+
+    _rescrape_running = True
+    _rescrape_stop = False
+    if not log:
+        log = lambda msg: logger.info(msg)
+
+    try:
+        from product_db import _conn as db_conn
+        import sqlite3
+
+        conn = db_conn()
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("""
+            SELECT product_code, link, name, brand FROM products
+            WHERE site_id='2ndstreet'
+              AND (description IS NULL OR description='')
+              AND link IS NOT NULL AND link != ''
+        """).fetchall()
+        conn.close()
+
+        if not rows:
+            log("✅ 설명이 없는 상품이 없습니다")
+            return
+
+        log(f"🔄 상세 페이지 재수집 시작: {len(rows)}개 상품")
+
+        pw = await async_playwright().start()
+        browser = await pw.chromium.launch(
+            headless=False,
+            slow_mo=200,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-translate",
+                "--disable-features=TranslateUI,Translate",
+                "--lang=ja",
+                "--accept-lang=ja",
+            ],
+        )
+        context = await browser.new_context(
+            viewport={"width": 1280, "height": 900},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            locale="ja-JP",
+            extra_http_headers={"Accept-Language": "ja"},
+        )
+        await context.add_init_script("""
+            Object.defineProperty(navigator, 'language', {get: () => 'ja'});
+            Object.defineProperty(navigator, 'languages', {get: () => ['ja', 'ja-JP']});
+        """)
+        page = await context.new_page()
+
+        success = 0
+        fail = 0
+
+        for idx, row in enumerate(rows):
+            if _rescrape_stop:
+                log("⛔ 중지 요청 — 재수집 중단")
+                break
+
+            code = row["product_code"]
+            link = row["link"]
+            name = (row["name"] or "")[:35]
+            brand = row["brand"] or ""
+
+            log(f"   📄 [{idx+1}/{len(rows)}] {brand} {name}")
+
+            try:
+                await page.goto(link, wait_until="domcontentloaded", timeout=20000)
+                await asyncio.sleep(3)
+
+                # WorldShopping body-lock 해제 + 쿠키 처리
+                await page.evaluate("""() => {
+                    document.body.classList.remove('zigzag-worldshopping-style-body-lock');
+                    document.querySelectorAll(
+                        '[id*="zigzag-worldshopping"], [id*="ws-"], ' +
+                        'iframe[src*="worldshopping"], ' +
+                        '[class*="WorldShopping"]:not(body):not(script):not(style), ' +
+                        '[class*="worldshopping"]:not(body):not(script):not(style)'
+                    ).forEach(el => el.remove());
+                    document.body.style.overflow = 'auto';
+                    const btn = document.querySelector('#onetrust-accept-btn-handler');
+                    if (btn) btn.click();
+                    const ot = document.querySelector('#onetrust-consent-sdk');
+                    if (ot) ot.remove();
+                    document.querySelectorAll('.goog-te-banner-frame, .skiptranslate').forEach(el => el.remove());
+                    if (document.documentElement) document.documentElement.style.top = '0';
+                    if (document.body) document.body.style.top = '0';
+                }""")
+                await asyncio.sleep(1)
+
+                # 스크롤 다운 (lazy-loading)
+                for _ in range(6):
+                    await page.evaluate('() => window.scrollBy(0, 400)')
+                    await asyncio.sleep(0.3)
+                await asyncio.sleep(1)
+
+                # 상세 정보 추출
+                detail = await _extract_detail_page(page)
+
+                # DB 업데이트
+                updated_fields = []
+                conn = db_conn()
+                if detail.get("description"):
+                    conn.execute(
+                        "UPDATE products SET description=? WHERE product_code=? AND site_id='2ndstreet'",
+                        (detail["description"], code)
+                    )
+                    updated_fields.append(f"설명({len(detail['description'])}자)")
+                if detail.get("detail_images"):
+                    import json as _json
+                    conn.execute(
+                        "UPDATE products SET detail_images=? WHERE product_code=? AND site_id='2ndstreet'",
+                        (_json.dumps(detail["detail_images"]), code)
+                    )
+                    updated_fields.append(f"이미지({len(detail['detail_images'])}개)")
+                if detail.get("condition_grade"):
+                    conn.execute(
+                        "UPDATE products SET condition_grade=? WHERE product_code=? AND site_id='2ndstreet'",
+                        (detail["condition_grade"], code)
+                    )
+                    updated_fields.append(f"등급({detail['condition_grade']})")
+                if detail.get("color"):
+                    conn.execute(
+                        "UPDATE products SET color=? WHERE product_code=? AND site_id='2ndstreet'",
+                        (detail["color"], code)
+                    )
+                    updated_fields.append("컬러")
+                if detail.get("material"):
+                    conn.execute(
+                        "UPDATE products SET material=? WHERE product_code=? AND site_id='2ndstreet'",
+                        (detail["material"], code)
+                    )
+                    updated_fields.append("소재")
+                # 실측 사이즈 → description에 추가
+                if detail.get("measured_size") and not detail.get("description"):
+                    measured = detail["measured_size"]
+                    conn.execute(
+                        "UPDATE products SET description=? WHERE product_code=? AND site_id='2ndstreet'",
+                        (f"실측: {measured}", code)
+                    )
+                    updated_fields.append(f"실측({measured[:30]})")
+                conn.commit()
+                conn.close()
+
+                if updated_fields:
+                    log(f"      ✅ {', '.join(updated_fields)}")
+                    success += 1
+                else:
+                    log(f"      ⚠️ 추출 데이터 없음")
+                    fail += 1
+
+                await asyncio.sleep(_random.uniform(2, 3))
+
+            except Exception as e:
+                log(f"      ❌ 실패: {str(e)[:60]}")
+                fail += 1
+                continue
+
+        await browser.close()
+        await pw.stop()
+
+        log(f"🏪 상세 재수집 완료: 성공 {success}개, 실패 {fail}개")
+
+    except Exception as e:
+        log(f"❌ 재수집 오류: {e}")
+    finally:
+        _rescrape_running = False
+        _rescrape_stop = False
+
+
 def _translate_and_save(product: dict, log_func=None):
     """상품 1건 즉시 번역 + DB 저장 (AI 번역 우선)"""
     try:

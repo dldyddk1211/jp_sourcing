@@ -103,17 +103,33 @@ def login():
             session["logged_in"] = True
             session["username"] = username
             session["role"] = "admin"
+            session["level"] = "b2b"
             logger.info(f"관리자 로그인: {username}")
             return redirect(f"{URL_PREFIX}/")
         # 2) 고객 확인
         customer = get_customer(username)
         if customer and check_customer_pw(customer, password):
-            session["logged_in"] = True
-            session["username"] = username
-            session["role"] = "customer"
-            logger.info(f"고객 로그인: {username}")
-            return redirect(f"{URL_PREFIX}/shop")
-        error = "아이디 또는 비밀번호가 올바르지 않습니다"
+            cust_status = customer["status"] if "status" in customer.keys() else "approved"
+            expires_at = customer["expires_at"] if "expires_at" in customer.keys() else ""
+            if cust_status == "pending":
+                error = "가입 승인 대기 중입니다. 관리자 승인 후 이용 가능합니다."
+                logger.info(f"승인 대기 로그인 시도: {username}")
+            elif cust_status == "rejected":
+                error = "가입이 거절되었습니다. 관리자에게 문의해주세요."
+            elif expires_at and expires_at < datetime.now().strftime("%Y-%m-%d"):
+                error = f"사용 기간이 만료되었습니다. (만료일: {expires_at}) 관리자에게 문의해주세요."
+                logger.info(f"기간 만료 로그인 시도: {username} (만료: {expires_at})")
+            else:
+                session["logged_in"] = True
+                session["username"] = username
+                session["role"] = "customer"
+                session["level"] = customer["level"] if "level" in customer.keys() else "b2c"
+                logger.info(f"고객 로그인: {username} (level={session['level']})")
+                return redirect(f"{URL_PREFIX}/shop")
+        elif customer:
+            error = "비밀번호가 올바르지 않습니다"
+        else:
+            error = "아이디 또는 비밀번호가 올바르지 않습니다"
         logger.warning(f"로그인 실패: {username}")
 
     return render_template("login.html",
@@ -145,14 +161,13 @@ def signup():
             error = "이미 존재하는 아이디입니다"
         else:
             if create_user(username, password, name, phone):
-                session["logged_in"] = True
-                session["username"] = username
-                session["role"] = "customer"
-                return redirect(f"{URL_PREFIX}/shop")
+                logger.info(f"회원가입 (승인대기): {username}")
+                return render_template("signup.html", error=None, success=True,
+                                       url_prefix=URL_PREFIX, env=APP_ENV)
             else:
                 error = "회원가입 실패. 다시 시도해주세요."
 
-    return render_template("signup.html", error=error,
+    return render_template("signup.html", error=error, success=False,
                            url_prefix=URL_PREFIX, env=APP_ENV)
 
 
@@ -160,10 +175,12 @@ def signup():
 @login_required
 def shop():
     """고객용 빈티지 상품 카탈로그"""
+    user_level = session.get("level", "b2c")
     return render_template("shop.html",
                            url_prefix=URL_PREFIX, env=APP_ENV,
                            username=session.get("username"),
-                           is_admin=session.get("role", "admin") == "admin")
+                           is_admin=session.get("role", "admin") == "admin",
+                           user_level=user_level)
 
 
 def _calc_vintage_price(jpy: int, margin_type="b2c") -> int:
@@ -191,6 +208,9 @@ def shop_api_products():
     bag_type = request.args.get("bag_type", "").strip()
     keyword = request.args.get("keyword", "").strip()
     site = request.args.get("site", "").strip()
+    price_min = request.args.get("price_min", 0, type=int)
+    price_max = request.args.get("price_max", 0, type=int)
+    user_level = session.get("level", "b2c")
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 24, type=int)
     sort = request.args.get("sort", "newest")
@@ -257,6 +277,28 @@ def shop_api_products():
             sql += " AND (name LIKE ? OR brand LIKE ?)"
             params.extend([f"%{keyword}%", f"%{keyword}%"])
 
+        # 가격대 필터 (한국 원화 → 엔화 역산, 레벨별 마진 적용)
+        if price_min > 0 or price_max > 0:
+            cfg = _vintage_price_config
+            rate = get_cached_rate() or 9.23
+            fee = cfg["jp_fee_pct"] / 100
+            markup = cfg["buy_markup_pct"] / 100
+            margin_key = "margin_b2b_pct" if user_level == "b2b" else "margin_b2c_pct"
+            margin = cfg.get(margin_key, 15.0) / 100
+            jp_ship = cfg.get("jp_domestic_shipping", 800)
+            intl_ship = cfg["intl_shipping_krw"]
+            # 역산: krw = (jpy + jp_ship) * (1+fee) * rate * (1+markup) * (1+margin) + intl_ship
+            # jpy = (krw - intl_ship) / ((1+fee) * rate * (1+markup) * (1+margin)) - jp_ship
+            multiplier = (1 + fee) * rate * (1 + markup) * (1 + margin)
+            if price_min > 0 and multiplier > 0:
+                jpy_min = max(0, (price_min - intl_ship) / multiplier - jp_ship)
+                sql += " AND price_jpy >= ?"
+                params.append(int(jpy_min))
+            if price_max > 0 and multiplier > 0:
+                jpy_max = (price_max - intl_ship) / multiplier - jp_ship
+                sql += " AND price_jpy <= ?"
+                params.append(int(jpy_max))
+
         if sort == "price_asc":
             sql += " ORDER BY price_jpy ASC"
         elif sort == "price_desc":
@@ -290,14 +332,17 @@ def shop_api_products():
                 "name_ja": r["name"],
                 "brand": r["brand"],
                 "price_jpy": r["price_jpy"],
-                "price_b2c": _calc_vintage_price(r["price_jpy"], "b2c"),
-                "price_b2b": _calc_vintage_price(r["price_jpy"], "b2b"),
+                "price_krw": _calc_vintage_price(r["price_jpy"], user_level),
+                "price_b2c": _calc_vintage_price(r["price_jpy"], "b2c") if user_level == "b2b" else 0,
+                "price_b2b": _calc_vintage_price(r["price_jpy"], "b2b") if user_level == "b2b" else 0,
+                "user_level": user_level,
                 "img_url": r["img_url"],
                 "link": r["link"],
                 "condition_grade": r["condition_grade"] if "condition_grade" in r.keys() else "",
-                "product_code": r["product_code"] or "",
+                "product_code": r["internal_code"] if "internal_code" in r.keys() and r["internal_code"] else r["product_code"] or "",
                 "size_info": r["color"] if "color" in r.keys() else "",
                 "material": r["material"] if "material" in r.keys() else "",
+                "color_raw": r["color"] if "color" in r.keys() else "",
                 "description": r["description"] if r["description"] and r["description"] != "商品のお問い合わせ" else "",
                 "detail_images": detail_imgs[:8],
             })
@@ -341,7 +386,10 @@ def get_members():
         else:
             rows = conn.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()
         members = [{"username": r["username"], "name": r["name"], "phone": r["phone"],
-                     "role": r["role"], "created_at": r["created_at"]} for r in rows]
+                     "role": r["role"], "level": r["level"] if "level" in r.keys() else "b2c",
+                     "status": r["status"] if "status" in r.keys() else "approved",
+                     "expires_at": r["expires_at"] if "expires_at" in r.keys() else "",
+                     "created_at": r["created_at"]} for r in rows]
         return jsonify({"members": members, "total": len(members)})
     finally:
         conn.close()
@@ -359,6 +407,96 @@ def delete_member(username):
         if result.rowcount > 0:
             logger.info(f"회원 삭제: {username}")
             return jsonify({"ok": True, "message": f"{username} 삭제 완료"})
+        return jsonify({"ok": False, "message": "해당 회원을 찾을 수 없습니다"})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/members/<path:username>/status", methods=["POST"])
+@admin_required
+def change_member_status(username):
+    """회원 승인/거절 + 기간 설정"""
+    from datetime import timedelta
+    data = request.json or {}
+    new_status = data.get("status", "")
+    period = data.get("period", "")  # free, 1m, 3m, 6m
+    if new_status not in ("approved", "rejected", "pending"):
+        return jsonify({"ok": False, "message": "잘못된 상태"})
+
+    expires_at = ""
+    if new_status == "approved" and period:
+        if period == "free":
+            expires_at = ""  # 무제한
+        elif period == "1m":
+            expires_at = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+        elif period == "3m":
+            expires_at = (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%d")
+        elif period == "6m":
+            expires_at = (datetime.now() + timedelta(days=180)).strftime("%Y-%m-%d")
+        elif period == "12m":
+            expires_at = (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d")
+
+    from user_db import _conn
+    conn = _conn()
+    try:
+        conn.execute("UPDATE users SET status = ?, expires_at = ? WHERE username = ?",
+                     (new_status, expires_at, username))
+        conn.commit()
+        label = {"approved": "승인", "rejected": "거절", "pending": "대기"}[new_status]
+        exp_msg = f" (만료: {expires_at})" if expires_at else " (무제한)"
+        logger.info(f"회원 {label}: {username}{exp_msg}")
+        return jsonify({"ok": True, "message": f"{username} → {label}{exp_msg}"})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/members/<path:username>/extend", methods=["POST"])
+@admin_required
+def extend_member(username):
+    """회원 기간 연장"""
+    from datetime import timedelta
+    data = request.json or {}
+    period = data.get("period", "3m")
+    days_map = {"1m": 30, "3m": 90, "6m": 180, "12m": 365}
+    days = days_map.get(period, 90)
+
+    from user_db import _conn
+    conn = _conn()
+    try:
+        row = conn.execute("SELECT expires_at FROM users WHERE username = ?", (username,)).fetchone()
+        if not row:
+            return jsonify({"ok": False, "message": "해당 회원을 찾을 수 없습니다"})
+        # 기존 만료일 기준으로 연장 (이미 만료된 경우 오늘부터)
+        current = row["expires_at"] if row["expires_at"] else ""
+        if current and current >= datetime.now().strftime("%Y-%m-%d"):
+            base = datetime.strptime(current, "%Y-%m-%d")
+        else:
+            base = datetime.now()
+        new_expires = (base + timedelta(days=days)).strftime("%Y-%m-%d")
+        conn.execute("UPDATE users SET expires_at = ?, status = 'approved' WHERE username = ?", (new_expires, username))
+        conn.commit()
+        logger.info(f"회원 기간 연장: {username} → {new_expires}")
+        return jsonify({"ok": True, "message": f"{username} → {new_expires}까지 연장"})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/members/<path:username>/level", methods=["POST"])
+@admin_required
+def change_member_level(username):
+    """회원 레벨 변경 (b2c/b2b)"""
+    data = request.json or {}
+    level = data.get("level", "b2c")
+    if level not in ("b2c", "b2b"):
+        return jsonify({"ok": False, "message": "잘못된 레벨"})
+    from user_db import _conn
+    conn = _conn()
+    try:
+        result = conn.execute("UPDATE users SET level = ? WHERE username = ?", (level, username))
+        conn.commit()
+        if result.rowcount > 0:
+            logger.info(f"회원 레벨 변경: {username} → {level}")
+            return jsonify({"ok": True, "message": f"{username} → {level.upper()}"})
         return jsonify({"ok": False, "message": "해당 회원을 찾을 수 없습니다"})
     finally:
         conn.close()
@@ -2090,6 +2228,40 @@ def translate_products():
     except Exception as e:
         push_log(f"❌ 번역 오류: {e}")
         return jsonify({"ok": False, "message": str(e)})
+
+
+@app.route(f"{URL_PREFIX}/products/rescrape-details", methods=["POST"])
+@admin_required
+def rescrape_details_api():
+    """2ndstreet 설명 없는 상품의 상세 페이지 재수집"""
+    from secondst_crawler import is_rescrape_running, rescrape_details
+    if is_rescrape_running():
+        return jsonify({"ok": False, "message": "이미 재수집 진행 중입니다"})
+
+    def _run():
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(rescrape_details(log=push_log))
+        loop.close()
+
+    import threading
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    push_log("🔄 2ndstreet 상세 페이지 재수집 시작...")
+    return jsonify({"ok": True, "message": "상세 페이지 재수집을 시작합니다"})
+
+
+@app.route(f"{URL_PREFIX}/products/rescrape-details/stop", methods=["POST"])
+@admin_required
+def rescrape_details_stop():
+    """재수집 중지"""
+    from secondst_crawler import stop_rescrape, is_rescrape_running
+    if not is_rescrape_running():
+        return jsonify({"ok": False, "message": "진행 중인 재수집이 없습니다"})
+    stop_rescrape()
+    push_log("⛔ 재수집 중지 요청")
+    return jsonify({"ok": True, "message": "재수집 중지 요청됨"})
 
 
 @app.route(f"{URL_PREFIX}/settings/dict", methods=["GET"])

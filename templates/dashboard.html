@@ -555,6 +555,7 @@
           <button class="btn b-orange" id="btn-unlock" onclick="unlockStatus()" style="display:none" title="상태가 stuck 상태일 때 잠금 해제">&#x1f513; 잠금해제</button>
           <button class="btn b-red"    id="btn-reset"  onclick="runReset()">&#x1f504; 리셋</button>
           <button class="btn b-gray"   id="btn-translate" onclick="runTranslate()">&#x1f310; 한국어 번역</button>
+          <button class="btn b-blue"   id="btn-rescrape" onclick="runRescrape()">&#x1f504; 상세 재수집</button>
           <button class="btn b-gray"   onclick="downloadCsv()" id="btn-csv">&#x1f4e5; CSV 다운로드</button>
         </div>
         <div class="opts">
@@ -646,8 +647,10 @@
                 <th>아이디</th>
                 <th>이름</th>
                 <th>연락처</th>
+                <th>상태</th>
+                <th>레벨</th>
                 <th>가입일</th>
-                <th style="width:80px">관리</th>
+                <th style="width:120px">관리</th>
               </tr>
             </thead>
             <tbody id="member-tbody">
@@ -732,11 +735,11 @@
             <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">카테고리</label>
             <select id="vt-category" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:0.82rem;">
               <option value="">전체 (자동분류)</option>
-              <option value="951002">가방</option>
-              <option value="951001">의류</option>
-              <option value="951003">신발</option>
-              <option value="951004">시계</option>
-              <option value="951005">악세서리</option>
+              <option value="950001">가방</option>
+              <option value="950002">의류</option>
+              <option value="950003">신발</option>
+              <option value="950004">시계</option>
+              <option value="950005">악세서리</option>
             </select>
           </div>
           <div>
@@ -2735,6 +2738,20 @@ async function runTranslate() {
   finally { if (btn) { btn.disabled = false; btn.textContent = "\uD83C\uDF10 \uD55C\uAD6D\uC5B4 \uBC88\uC5ED"; } }
 }
 
+async function runRescrape() {
+  const btn = document.getElementById("btn-rescrape");
+  if (btn) { btn.disabled = true; btn.textContent = "\uD83D\uDD04 재수집 중..."; }
+  addLog("\uD83D\uDD04 2ndstreet 상세 페이지 재수집 시작...", "info");
+  try {
+    const r = await fetch(PREFIX + "/products/rescrape-details", { method: "POST" });
+    const d = await r.json();
+    if (d.ok) { addLog("\u2705 " + d.message, "ok"); }
+    else { addLog("\u274C " + d.message, "err"); if (btn) { btn.disabled = false; btn.textContent = "\uD83D\uDD04 상세 재수집"; } }
+  } catch(e) { addLog("\u274C 재수집 요청 실패: " + e, "err"); if (btn) { btn.disabled = false; btn.textContent = "\uD83D\uDD04 상세 재수집"; } }
+  // 진행 중이므로 30초 후 버튼 복원 (실제 완료는 로그로 확인)
+  setTimeout(() => { if (btn) { btn.disabled = false; btn.textContent = "\uD83D\uDD04 상세 재수집"; } }, 30000);
+}
+
 async function togglePause() {
   const btn = document.getElementById("btn-pause");
   if (!isPaused) { await post("/run/pause", {}); isPaused = true; btn.textContent = "\u25B6\uFE0F \uC7AC\uAC1C"; btn.classList.replace("b-yellow","b-green"); }
@@ -3647,21 +3664,62 @@ async function loadMembers() {
     document.getElementById("member-count").textContent = `총 ${d.total || 0}명`;
 
     if (!d.members || !d.members.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">등록된 회원이 없습니다</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">등록된 회원이 없습니다</td></tr>';
       return;
     }
-    tbody.innerHTML = d.members.map((m, i) => `
+    tbody.innerHTML = d.members.map((m, i) => {
+      const lvl = m.level || 'b2c';
+      const lvlColor = lvl === 'b2b' ? '#4f8ef7' : 'var(--green)';
+      const st = m.status || 'approved';
+      const stColor = st === 'approved' ? 'var(--green)' : st === 'pending' ? 'var(--yellow)' : 'var(--red)';
+      const stLabel = st === 'approved' ? '승인' : st === 'pending' ? '대기' : '거절';
+      return `
       <tr>
         <td style="color:var(--muted)">${i + 1}</td>
         <td style="font-weight:600">${m.username}</td>
         <td>${m.name || '-'}</td>
         <td>${m.phone || '-'}</td>
+        <td>
+          <span style="color:${stColor};font-weight:600;font-size:0.72rem;">${stLabel}</span>
+          ${st === 'pending' ? `
+            <select id="period-${m.username}" style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:2px 4px;border-radius:3px;font-size:0.62rem;margin-left:4px;">
+              <option value="free">프리</option>
+              <option value="1m">1개월</option>
+              <option value="3m" selected>3개월</option>
+              <option value="6m">6개월</option>
+              <option value="12m">12개월</option>
+            </select>
+            <button onclick="approveMember('${m.username}')" class="btn b-green" style="padding:2px 6px;font-size:0.65rem;">승인</button>
+            <button onclick="rejectMember('${m.username}')" class="btn b-red" style="padding:2px 6px;font-size:0.65rem;">거절</button>
+          ` : ''}
+          ${st === 'approved' ? `
+            <div style="display:flex;align-items:center;gap:4px;margin-top:3px;">
+              <span style="font-size:0.62rem;color:var(--muted);">${m.expires_at ? '~'+m.expires_at : '무제한'}</span>
+              ${m.expires_at ? `
+                <select id="ext-${m.username}" style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:1px 3px;border-radius:3px;font-size:0.58rem;">
+                  <option value="1m">+1개월</option>
+                  <option value="3m" selected>+3개월</option>
+                  <option value="6m">+6개월</option>
+                  <option value="12m">+12개월</option>
+                </select>
+                <button onclick="extendMember('${m.username}')" class="btn b-blue" style="padding:1px 5px;font-size:0.58rem;">연장</button>
+              ` : ''}
+            </div>
+          ` : ''}
+        </td>
+        <td>
+          <select onchange="changeMemberLevel('${m.username}', this.value)" style="background:#1a1a1a;border:1px solid var(--border);color:${lvlColor};padding:3px 6px;border-radius:4px;font-size:0.72rem;font-weight:600;">
+            <option value="b2c" ${lvl==='b2c'?'selected':''}>B2C</option>
+            <option value="b2b" ${lvl==='b2b'?'selected':''}>B2B</option>
+          </select>
+        </td>
         <td style="color:var(--muted);font-size:0.75rem">${m.created_at || ''}</td>
         <td>
           <button onclick="deleteMember('${m.username}')" class="btn b-red" style="padding:3px 8px;font-size:0.7rem;">삭제</button>
         </td>
       </tr>
-    `).join("");
+    `;
+    }).join("");
   } catch(e) {
     console.error("회원 로드 실패:", e);
   }
@@ -3675,6 +3733,60 @@ async function deleteMember(username) {
     if (d.ok) loadMembers();
     else alert(d.message || "삭제 실패");
   } catch(e) { alert("삭제 실패: " + e); }
+}
+
+async function approveMember(username) {
+  const periodEl = document.getElementById("period-" + username);
+  const period = periodEl ? periodEl.value : "3m";
+  try {
+    const res = await fetch(PREFIX + "/members/" + encodeURIComponent(username) + "/status", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({status: "approved", period})
+    });
+    const d = await res.json();
+    if (d.ok) loadMembers();
+    else alert(d.message || "승인 실패");
+  } catch(e) { alert("승인 실패: " + e); }
+}
+
+async function rejectMember(username) {
+  if (!confirm(`'${username}' 가입을 거절하시겠습니까?`)) return;
+  try {
+    const res = await fetch(PREFIX + "/members/" + encodeURIComponent(username) + "/status", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({status: "rejected"})
+    });
+    const d = await res.json();
+    if (d.ok) loadMembers();
+    else alert(d.message || "거절 실패");
+  } catch(e) { alert("거절 실패: " + e); }
+}
+
+async function extendMember(username) {
+  const extEl = document.getElementById("ext-" + username);
+  const period = extEl ? extEl.value : "3m";
+  try {
+    const res = await fetch(PREFIX + "/members/" + encodeURIComponent(username) + "/extend", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({period})
+    });
+    const d = await res.json();
+    if (d.ok) { alert(d.message); loadMembers(); }
+    else alert(d.message || "연장 실패");
+  } catch(e) { alert("연장 실패: " + e); }
+}
+
+async function changeMemberLevel(username, level) {
+  try {
+    const res = await fetch(PREFIX + "/members/" + encodeURIComponent(username) + "/level", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({level})
+    });
+    const d = await res.json();
+    if (d.ok) loadMembers();
+    else alert(d.message || "변경 실패");
+  } catch(e) { alert("레벨 변경 실패: " + e); }
 }
 
 // ── 빅데이터 관리 ─────────────────────────────
@@ -3890,7 +4002,7 @@ async function vtStartScrape() {
       logEl.innerHTML += '<div style="color:var(--green)">✅ 수집 시작됨</div>';
       // SSE 로그 연결
       if (vtLogSource) vtLogSource.close();
-      vtLogSource = new EventSource(PREFIX + "/stream/logs");
+      vtLogSource = new EventSource(PREFIX + "/logs/stream");
       vtLogSource.onmessage = e => {
         const msg = e.data;
         logEl.innerHTML += `<div>${msg}</div>`;
