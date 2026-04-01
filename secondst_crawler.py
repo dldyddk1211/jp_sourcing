@@ -142,9 +142,12 @@ async def scrape_2ndstreet(
         log("   📄 페이지 미지정 → 첫 페이지에서 총 수량 확인 후 자동 설정")
 
     products = []
+    CHUNK_SIZE = 5  # 5페이지씩 끊어서 수집 + 상세처리
 
-    try:
-        # ── Playwright 브라우저 시작 ──
+    async def _open_browser():
+        """브라우저 시작 (재시작 포함)"""
+        global _browser, _playwright
+        await force_close_browser()
         _playwright = await async_playwright().start()
         _browser = await _playwright.chromium.launch(
             headless=False,
@@ -157,17 +160,15 @@ async def scrape_2ndstreet(
                 "--accept-lang=ja",
             ],
         )
-        context = await _browser.new_context(
+        ctx = await _browser.new_context(
             viewport={"width": 1280, "height": 900},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             locale="ja-JP",
             extra_http_headers={"Accept-Language": "ja"},
         )
-        # 크롬 번역 완전 비활성화
-        await context.add_init_script("""
+        await ctx.add_init_script("""
             Object.defineProperty(navigator, 'language', {get: () => 'ja'});
             Object.defineProperty(navigator, 'languages', {get: () => ['ja', 'ja-JP']});
-            // 번역 바 자동 닫기
             const _closeTranslate = () => {
                 const bar = document.querySelector('html[class*="translated"]');
                 if (bar) { document.documentElement.removeAttribute('class'); }
@@ -178,7 +179,10 @@ async def scrape_2ndstreet(
             };
             setInterval(_closeTranslate, 500);
         """)
-        page = await context.new_page()
+        return await ctx.new_page()
+
+    try:
+        page = await _open_browser()
 
         for page_num in page_list:
             if _check_stop():
@@ -414,106 +418,114 @@ async def scrape_2ndstreet(
             delay = _random.uniform(3, 5)
             await asyncio.sleep(delay)
 
-            # 배치 휴식 (batch_size 페이지마다)
+            # ── 5페이지마다 상세 처리 + 브라우저 재시작 ──
             pages_done = page_list.index(page_num) + 1 if page_num in page_list else 0
-            if pages_done > 0 and pages_done % batch_size == 0 and pages_done < len(page_list):
+            if pages_done > 0 and pages_done % CHUNK_SIZE == 0 and len(products) > 0:
+                log(f"\n🔄 [{pages_done}페이지 완료] 상세 스크래핑 시작 ({len(products)}개)...")
+                await _process_detail_pages(page, products, log, _random, category)
+                log(f"   ✅ {len(products)}개 처리 완료 — 브라우저 재시작")
+                products.clear()
+                # 브라우저 재시작 (메모리 확보)
+                page = await _open_browser()
+                await asyncio.sleep(batch_rest)
+
+            # 배치 휴식 (batch_size 페이지마다)
+            elif pages_done > 0 and pages_done % batch_size == 0 and pages_done < len(page_list):
                 log(f"   😴 {pages_done}페이지 완료 — {batch_rest}초 휴식 중... (서버 부하 방지)")
                 await asyncio.sleep(batch_rest)
 
-        # ── 상세 페이지 스크래핑 ──
+        # ── 남은 상품 상세 처리 ──
         if products:
-            log(f"🔍 상세 페이지 스크래핑 시작 ({len(products)}개)...")
-            for idx, prod in enumerate(products):
-                if _check_stop():
-                    log("⛔ 중지 요청 — 상세 스크래핑 중단")
-                    break
-                link = prod.get("link", "")
-                if not link:
-                    continue
-                try:
-                    log(f"   📄 [{idx+1}/{len(products)}] 상세: {prod.get('brand','')} {(prod.get('name') or '')[:35]} ¥{prod.get('price_jpy',0):,}")
-                    await page.goto(link, wait_until="domcontentloaded", timeout=20000)
-                    await asyncio.sleep(2)
-
-                    # WorldShopping body-lock 해제 + 쿠키 배너 JS 클릭
-                    try:
-                        await page.evaluate("""() => {
-                            document.body.classList.remove('zigzag-worldshopping-style-body-lock');
-                            document.querySelectorAll(
-                                '[id*="zigzag-worldshopping"], [id*="ws-"], ' +
-                                'iframe[src*="worldshopping"], ' +
-                                '[class*="WorldShopping"]:not(body):not(script):not(style), ' +
-                                '[class*="worldshopping"]:not(body):not(script):not(style)'
-                            ).forEach(el => el.remove());
-                            document.body.style.overflow = 'auto';
-                            const btn = document.querySelector('#onetrust-accept-btn-handler');
-                            if (btn) btn.click();
-                            const ot = document.querySelector('#onetrust-consent-sdk');
-                            if (ot) ot.remove();
-                            const df = document.querySelector('.onetrust-pc-dark-filter');
-                            if (df) df.remove();
-                            document.querySelectorAll('.goog-te-banner-frame, .skiptranslate').forEach(el => el.remove());
-                            if (document.documentElement) document.documentElement.style.top = '0';
-                            if (document.body) document.body.style.top = '0';
-                        }""")
-                    except Exception:
-                        pass
-                    # 남은 팝업 닫기
-                    for sel in ["button:has-text('以上の内容を確認しました')", "button:has-text('閉じる')"]:
-                        try:
-                            btn = page.locator(sel).first
-                            if await btn.count() > 0 and await btn.is_visible():
-                                await btn.click(timeout=3000)
-                                await asyncio.sleep(0.5)
-                        except:
-                            pass
-
-                    detail = await _extract_detail_page(page)
-                    if detail.get("detail_images"):
-                        prod["detail_images"] = detail["detail_images"]
-                    if detail.get("description"):
-                        prod["description"] = detail["description"]
-                    if detail.get("condition_grade"):
-                        prod["condition_grade"] = detail["condition_grade"]
-                    if detail.get("color"):
-                        prod["color"] = detail["color"]
-                    if detail.get("material"):
-                        prod["material"] = detail["material"]
-                    if detail.get("size"):
-                        prod["size"] = detail["size"]
-                    if detail.get("measured_size"):
-                        prod["color"] = detail["measured_size"]  # 실측 사이즈를 color 필드에 저장
-                    if detail.get("description"):
-                        prod["description"] = detail["description"]
-                    if detail.get("price_jpy") and detail["price_jpy"] > 100:
-                        prod["price_jpy"] = detail["price_jpy"]
-                    # 자동 카테고리 분류
-                    if not prod.get("category_id") or prod["category_id"] == category:
-                        auto_cat_id, auto_subcat = _classify_category(
-                            prod.get("name", ""),
-                            detail.get("breadcrumb", "")
-                        )
-                        if auto_cat_id:
-                            prod["category_id"] = auto_cat_id
-                            prod["subcategory"] = auto_subcat
-                    # 즉시 번역 + DB 저장
-                    _translate_and_save(prod, log)
-                    name_ko = (prod.get("name_ko") or "")[:35]
-                    log(f"      ✅ {name_ko} | 이미지 {len(detail.get('detail_images',[]))}개 | {prod.get('subcategory','?')}")
-                    await asyncio.sleep(_random.uniform(2, 3))
-                except Exception as e:
-                    log(f"      ⚠️ 상세 스크래핑 실패: {e}")
-                    # 상세 실패해도 기본 정보로 저장
-                    _translate_and_save(prod, log)
-                    continue
+            log(f"\n🔍 마지막 상세 스크래핑 ({len(products)}개)...")
+            await _process_detail_pages(page, products, log, _random, category)
 
     except Exception as e:
         log(f"❌ 크롤링 오류: {e}")
     finally:
         await force_close_browser()
 
-    log(f"🏪 2ndstreet 수집 완료: 총 {len(products)}개")
+    log(f"🏪 2ndstreet 수집 완료")
     return products
+
+
+async def _process_detail_pages(page, products, log, _random, category=""):
+    """상품 리스트의 상세 페이지를 스크래핑하고 DB에 저장"""
+    for idx, prod in enumerate(products):
+        if _check_stop():
+            log("⛔ 중지 요청 — 상세 스크래핑 중단")
+            break
+        link = prod.get("link", "")
+        if not link:
+            _translate_and_save(prod, log)
+            continue
+        try:
+            log(f"   📄 [{idx+1}/{len(products)}] {prod.get('brand','')} {(prod.get('name') or '')[:35]} ¥{prod.get('price_jpy',0):,}")
+            await page.goto(link, wait_until="domcontentloaded", timeout=20000)
+            await asyncio.sleep(2)
+
+            # WorldShopping body-lock 해제 + 쿠키 배너 JS 클릭
+            try:
+                await page.evaluate("""() => {
+                    document.body.classList.remove('zigzag-worldshopping-style-body-lock');
+                    document.querySelectorAll(
+                        '[id*="zigzag-worldshopping"], [id*="ws-"], ' +
+                        'iframe[src*="worldshopping"], ' +
+                        '[class*="WorldShopping"]:not(body):not(script):not(style), ' +
+                        '[class*="worldshopping"]:not(body):not(script):not(style)'
+                    ).forEach(el => el.remove());
+                    document.body.style.overflow = 'auto';
+                    const btn = document.querySelector('#onetrust-accept-btn-handler');
+                    if (btn) btn.click();
+                    const ot = document.querySelector('#onetrust-consent-sdk');
+                    if (ot) ot.remove();
+                    document.querySelectorAll('.goog-te-banner-frame, .skiptranslate').forEach(el => el.remove());
+                    if (document.documentElement) document.documentElement.style.top = '0';
+                    if (document.body) document.body.style.top = '0';
+                }""")
+            except Exception:
+                pass
+            for sel in ["button:has-text('以上の内容を確認しました')", "button:has-text('閉じる')"]:
+                try:
+                    btn = page.locator(sel).first
+                    if await btn.count() > 0 and await btn.is_visible():
+                        await btn.click(timeout=3000)
+                        await asyncio.sleep(0.5)
+                except:
+                    pass
+
+            detail = await _extract_detail_page(page)
+            if detail.get("detail_images"):
+                prod["detail_images"] = detail["detail_images"]
+            if detail.get("description"):
+                prod["description"] = detail["description"]
+            if detail.get("condition_grade"):
+                prod["condition_grade"] = detail["condition_grade"]
+            if detail.get("color"):
+                prod["color"] = detail["color"]
+            if detail.get("material"):
+                prod["material"] = detail["material"]
+            if detail.get("measured_size"):
+                prod["color"] = detail["measured_size"]
+            if detail.get("price_jpy") and detail["price_jpy"] > 100:
+                prod["price_jpy"] = detail["price_jpy"]
+            # 자동 카테고리 분류
+            if not prod.get("category_id") or prod["category_id"] == category:
+                auto_cat_id, auto_subcat = _classify_category(
+                    prod.get("name", ""),
+                    detail.get("breadcrumb", "")
+                )
+                if auto_cat_id:
+                    prod["category_id"] = auto_cat_id
+                    prod["subcategory"] = auto_subcat
+            # 즉시 번역 + DB 저장
+            _translate_and_save(prod, log)
+            name_ko = (prod.get("name_ko") or "")[:35]
+            log(f"      ✅ {name_ko} | {prod.get('subcategory','?')}")
+            await asyncio.sleep(_random.uniform(2, 3))
+        except Exception as e:
+            log(f"      ⚠️ 상세 실패: {str(e)[:50]}")
+            _translate_and_save(prod, log)
+            continue
 
 
 # ── 상세 페이지 재수집 (설명 없는 상품) ──────────────────
