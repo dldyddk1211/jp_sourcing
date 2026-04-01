@@ -250,7 +250,106 @@ def shop_notify():
         send_telegram(msg)
     except Exception as e:
         logger.warning(f"주문 알림 전송 실패: {e}")
+
+    # 주문 DB에 저장
+    try:
+        _save_order(ntype, username, customer_name, brand, name, code, price, price_jpy)
+    except Exception as e:
+        logger.warning(f"주문 저장 실패: {e}")
     return jsonify({"ok": True})
+
+
+def _init_orders_db():
+    """주문 테이블 초기화"""
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT DEFAULT 'inquiry',
+            username TEXT DEFAULT '',
+            customer_name TEXT DEFAULT '',
+            brand TEXT DEFAULT '',
+            product_name TEXT DEFAULT '',
+            product_code TEXT DEFAULT '',
+            price TEXT DEFAULT '',
+            price_jpy INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'new',
+            memo TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime'))
+        )""")
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        conn.close()
+
+
+def _save_order(ntype, username, customer_name, brand, product_name, product_code, price, price_jpy):
+    _init_orders_db()
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        conn.execute("""INSERT INTO orders (type, username, customer_name, brand, product_name, product_code, price, price_jpy)
+                        VALUES (?,?,?,?,?,?,?,?)""",
+                     (ntype, username, customer_name, brand, product_name, product_code, price, price_jpy))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/orders")
+@admin_required
+def get_orders():
+    """주문/문의 리스트 조회"""
+    _init_orders_db()
+    type_filter = request.args.get("type", "")
+    status_filter = request.args.get("status", "")
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        sql = "SELECT * FROM orders WHERE 1=1"
+        params = []
+        if type_filter:
+            sql += " AND type = ?"
+            params.append(type_filter)
+        if status_filter:
+            sql += " AND status = ?"
+            params.append(status_filter)
+        sql += " ORDER BY created_at DESC LIMIT 200"
+        rows = conn.execute(sql, params).fetchall()
+        orders = []
+        for r in rows:
+            orders.append({c: r[c] for c in r.keys()})
+        return jsonify({"ok": True, "orders": orders})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/orders/<int:order_id>", methods=["PATCH"])
+@admin_required
+def update_order(order_id):
+    """주문 상태/메모 업데이트"""
+    data = request.json or {}
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        updates = []
+        params = []
+        if "status" in data:
+            updates.append("status = ?")
+            params.append(data["status"])
+        if "memo" in data:
+            updates.append("memo = ?")
+            params.append(data["memo"])
+        if not updates:
+            return jsonify({"ok": False})
+        params.append(order_id)
+        conn.execute(f"UPDATE orders SET {', '.join(updates)} WHERE id = ?", params)
+        conn.commit()
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
 
 
 @app.route(f"{URL_PREFIX}/shop/api/products")
