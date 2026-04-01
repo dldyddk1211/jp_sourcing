@@ -114,21 +114,16 @@ async def scrape_2ndstreet(
     category="951002",
     keyword="",
     pages="",
-    max_pages=5,
+    max_pages=999,
     brand_code="",
+    batch_size=10,
+    batch_rest=120,
 ):
     """
-    2ndstreet.jp에서 빈티지 상품 수집
+    2ndstreet.jp에서 빈티지 상품 수집 (대량 안전 수집)
 
-    Args:
-        status_callback: 실시간 로그 콜백
-        category: 카테고리 코드 (951002=가방, 951001=의류 등)
-        keyword: 검색 키워드
-        pages: 페이지 범위 (예: "1-3")
-        max_pages: 최대 페이지 수
-
-    Returns:
-        list of product dicts
+    pages 미입력 시 → 검색 결과 수 확인 후 전체 페이지 자동 수집
+    batch_size 페이지마다 batch_rest초 휴식
     """
     global _browser, _playwright
 
@@ -137,11 +132,14 @@ async def scrape_2ndstreet(
         if status_callback:
             status_callback(msg)
 
+    import random as _random
     log("🏪 2ndstreet.jp 크롤링 시작")
 
-    # 페이지 범위 파싱
-    page_list = _parse_pages(pages, max_pages)
-    log(f"   📄 수집 페이지: {page_list}")
+    # 페이지 범위: 직접 지정 or 자동 (첫 페이지에서 총 수량 확인 후 결정)
+    auto_detect_pages = not pages or not pages.strip()
+    page_list = _parse_pages(pages, max_pages) if not auto_detect_pages else [1]
+    if auto_detect_pages:
+        log("   📄 페이지 미지정 → 첫 페이지에서 총 수량 확인 후 자동 설정")
 
     products = []
 
@@ -151,13 +149,35 @@ async def scrape_2ndstreet(
         _browser = await _playwright.chromium.launch(
             headless=False,
             slow_mo=300,
-            args=["--disable-blink-features=AutomationControlled"],
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-translate",
+                "--disable-features=TranslateUI,Translate",
+                "--lang=ja",
+                "--accept-lang=ja",
+            ],
         )
         context = await _browser.new_context(
             viewport={"width": 1280, "height": 900},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             locale="ja-JP",
+            extra_http_headers={"Accept-Language": "ja"},
         )
+        # 크롬 번역 완전 비활성화
+        await context.add_init_script("""
+            Object.defineProperty(navigator, 'language', {get: () => 'ja'});
+            Object.defineProperty(navigator, 'languages', {get: () => ['ja', 'ja-JP']});
+            // 번역 바 자동 닫기
+            const _closeTranslate = () => {
+                const bar = document.querySelector('html[class*="translated"]');
+                if (bar) { document.documentElement.removeAttribute('class'); }
+                const iframe = document.querySelector('.goog-te-banner-frame, #\\:1\\.container');
+                if (iframe) iframe.remove();
+                const body = document.querySelector('body[style*="top"]');
+                if (body) body.style.top = '0';
+            };
+            setInterval(_closeTranslate, 500);
+        """)
         page = await context.new_page()
 
         for page_num in page_list:
@@ -182,36 +202,118 @@ async def scrape_2ndstreet(
 
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                await asyncio.sleep(2)
+                await asyncio.sleep(5)
 
-                # 쿠키 동의 팝업 자동 닫기 (여러 단계)
-                for cookie_sel in [
-                    "button:has-text('すべての Cookie を受け入れる')",
-                    "button:has-text('すべて許可する')",
-                    "button:has-text('保存して閉じる')",
-                    "button:has-text('以上の内容を確認しました')",
-                    "button:has-text('閉じる')",
-                    "#onetrust-accept-btn-handler",
-                    "[class*='WorldShopping'] [class*='close']",
-                    "[class*='worldshopping'] button",
-                ]:
-                    try:
-                        btn = page.locator(cookie_sel).first
-                        if await btn.count() > 0 and await btn.is_visible():
-                            await btn.click()
-                            log(f"   🍪 쿠키 동의 닫기")
-                            await asyncio.sleep(1)
-                    except Exception:
-                        continue
-
-                # 하단 WorldShopping 배너 / 쿠폰 팝업 강제 제거
+                # 1) 크롬 번역 바 닫기 — 페이지 빈 공간 클릭
                 try:
-                    await page.evaluate("""() => {
-                        document.querySelectorAll('[id*="worldshopping"], [class*="worldshopping"], [class*="WorldShopping"], [id*="ws-"]').forEach(el => el.remove());
-                        document.querySelectorAll('[class*="coupon"], [class*="Coupon"]').forEach(el => { if(el.style) el.style.display = 'none'; });
-                    }""")
+                    await page.mouse.click(640, 300)
+                    await asyncio.sleep(1)
                 except Exception:
                     pass
+
+                # 2) 쿠키 배너 + 팝업 처리 (3라운드)
+                for _round in range(3):
+                    # WorldShopping 쿠키 배너 (iframe 내부)
+                    try:
+                        ws_frames = page.frames
+                        for frame in ws_frames:
+                            if "worldshopping" in (frame.url or "").lower() or "onetrust" in (frame.url or "").lower():
+                                for ws_sel in [
+                                    "button:has-text('すべての Cookie を受け入れる')",
+                                    "button:has-text('受け入れる')",
+                                    "#onetrust-accept-btn-handler",
+                                    "button[class*='accept']",
+                                ]:
+                                    try:
+                                        ws_btn = frame.locator(ws_sel).first
+                                        if await ws_btn.count() > 0 and await ws_btn.is_visible():
+                                            await ws_btn.click()
+                                            log(f"   🍪 iframe 쿠키 배너 닫기")
+                                            await asyncio.sleep(2)
+                                    except Exception:
+                                        continue
+                    except Exception:
+                        pass
+
+                    # 메인 페이지 쿠키/팝업 버튼 클릭
+                    for cookie_sel in [
+                        # 쿠키 동의
+                        "#onetrust-accept-btn-handler",
+                        "button:has-text('すべての Cookie を受け入れる')",
+                        "button:has-text('모든 Cookie 허용')",
+                        "button:has-text('すべて許可する')",
+                        "button:has-text('모두 허용')",
+                        "button:has-text('保存して閉じる')",
+                        "button:has-text('저장하고 닫기')",
+                        # 해외 안내
+                        "button:has-text('以上の内容を確認しました')",
+                        "button:has-text('이상의 내용을 확인했습니다')",
+                        "button:has-text('확인했습니다')",
+                        # 닫기
+                        "button:has-text('閉じる')",
+                        "button:has-text('닫기')",
+                        "button:has-text('×')",
+                        "[class*='search'] [class*='close']",
+                        # WorldShopping
+                        "[class*='WorldShopping'] [class*='close']",
+                        "[class*='worldshopping'] button",
+                        "[class*='ws-dialog'] button",
+                    ]:
+                        try:
+                            btn = page.locator(cookie_sel).first
+                            if await btn.count() > 0 and await btn.is_visible():
+                                await btn.click()
+                                log(f"   🍪 팝업 닫기: {cookie_sel[:40]}")
+                                await asyncio.sleep(1.5)
+                        except Exception:
+                            continue
+
+                    # JS 강제 제거
+                    try:
+                        await page.evaluate("""() => {
+                            // WorldShopping 배너 + iframe
+                            document.querySelectorAll('[id*="worldshopping"], [class*="worldshopping"], [class*="WorldShopping"], [id*="ws-"], iframe[src*="worldshopping"]').forEach(el => el.remove());
+                            // 쿠키 배너 (OneTrust 포함)
+                            document.querySelectorAll('[id*="onetrust"], [class*="onetrust"], [class*="cookie-banner"], [class*="CookieBanner"], #onetrust-consent-sdk, .onetrust-pc-dark-filter').forEach(el => el.remove());
+                            // 쿠폰 팝업
+                            document.querySelectorAll('[class*="coupon"], [class*="Coupon"], [class*="modal-overlay"]').forEach(el => el.remove());
+                            // 정렬/검색 안내 팝업
+                            document.querySelectorAll('[class*="balloon"], [class*="tooltip"], [class*="guide"], [class*="announce"]').forEach(el => el.remove());
+                            // 크롬 번역 바 제거
+                            document.querySelectorAll('.goog-te-banner-frame, .skiptranslate, #goog-gt-tt').forEach(el => el.remove());
+                            document.documentElement.style.top = '0';
+                            document.body.style.top = '0';
+                            document.body.style.overflow = 'auto';
+                        }""")
+                    except Exception:
+                        pass
+                    await asyncio.sleep(1)
+
+                # 첫 페이지에서 총 상품 수 확인 → 전체 페이지 자동 설정
+                if auto_detect_pages and page_num == 1:
+                    try:
+                        total_text = await page.evaluate("""() => {
+                            const els = document.querySelectorAll('*');
+                            for (const el of els) {
+                                const t = el.innerText || '';
+                                const m = t.match(/検索結果[：:]\s*([\d,]+)\s*点/);
+                                if (m) return m[1];
+                            }
+                            return '';
+                        }""")
+                        if total_text:
+                            total_items = int(total_text.replace(",", ""))
+                            items_per_page = 30
+                            total_pages = (total_items + items_per_page - 1) // items_per_page
+                            page_list = list(range(1, total_pages + 1))
+                            log(f"   🔢 검색결과: {total_items:,}개 → 총 {total_pages}페이지 수집 예정")
+                            log(f"   ⏱️ {batch_size}페이지마다 {batch_rest}초 휴식")
+                        else:
+                            page_list = list(range(1, 6))
+                            log("   ⚠️ 검색결과 수 확인 실패 → 기본 5페이지")
+                    except Exception as e:
+                        page_list = list(range(1, 6))
+                        log(f"   ⚠️ 총 수량 확인 실패: {e} → 기본 5페이지")
 
             except PlaywrightTimeout:
                 log(f"   ⚠️ 페이지 {page_num} 타임아웃")
@@ -244,7 +346,33 @@ async def scrape_2ndstreet(
                     continue
 
             if not items:
-                # 셀렉터 디스커버리 — 페이지 구조 덤프
+                # 팝업이 남아있을 수 있으므로 JS로 강제 제거 후 재시도
+                log("   ⚠️ 상품 카드 미발견 — 팝업 재처리 후 재시도...")
+                try:
+                    await page.evaluate("""() => {
+                        document.querySelectorAll('[id*="worldshopping"], [class*="worldshopping"], [class*="WorldShopping"], [id*="ws-"], [id*="onetrust"], [class*="onetrust"], [class*="cookie"], [class*="modal"], [class*="overlay"], [class*="popup"], [class*="dialog"]').forEach(el => el.remove());
+                        document.body.style.overflow = 'auto';
+                        document.documentElement.style.top = '0';
+                        document.body.style.top = '0';
+                    }""")
+                except Exception:
+                    pass
+                await asyncio.sleep(3)
+
+                # 재시도
+                for sel in card_selectors:
+                    try:
+                        els = page.locator(sel)
+                        cnt = await els.count()
+                        if cnt > 0:
+                            items = els
+                            used_selector = sel
+                            log(f"   ✅ 재시도 성공: {sel} ({cnt}개)")
+                            break
+                    except Exception:
+                        continue
+
+            if not items:
                 log("   ⚠️ 상품 카드를 찾을 수 없습니다. 페이지 구조 분석 중...")
                 try:
                     html_snippet = await page.evaluate("""() => {
@@ -285,15 +413,26 @@ async def scrape_2ndstreet(
                         product["category_id"] = category
                         product["scraped_at"] = datetime.now().isoformat()
                         page_products.append(product)
+                        brand = product.get("brand", "")
+                        name = (product.get("name") or "")[:40]
+                        price = product.get("price_jpy", 0)
+                        log(f"      📌 [{i+1}/{cnt}] {brand} {name} ¥{price:,}")
                 except Exception as e:
                     logger.debug(f"상품 추출 오류 [{i}]: {e}")
                     continue
 
-            log(f"   📦 페이지 {page_num}: {len(page_products)}개 수집")
+            log(f"   📦 페이지 {page_num}/{len(page_list)}: {len(page_products)}개 수집 (누적 {len(products) + len(page_products)}개)")
             products.extend(page_products)
 
-            # 다음 페이지 전 대기
-            await asyncio.sleep(1.5)
+            # 다음 페이지 전 대기 (3~5초 랜덤)
+            delay = _random.uniform(3, 5)
+            await asyncio.sleep(delay)
+
+            # 배치 휴식 (batch_size 페이지마다)
+            pages_done = page_list.index(page_num) + 1 if page_num in page_list else 0
+            if pages_done > 0 and pages_done % batch_size == 0 and pages_done < len(page_list):
+                log(f"   😴 {pages_done}페이지 완료 — {batch_rest}초 휴식 중... (서버 부하 방지)")
+                await asyncio.sleep(batch_rest)
 
         # ── 상세 페이지 스크래핑 ──
         if products:
@@ -306,12 +445,32 @@ async def scrape_2ndstreet(
                 if not link:
                     continue
                 try:
-                    log(f"   📄 [{idx+1}/{len(products)}] 상세 로드: {prod.get('brand','')} {prod.get('name','')[:30]}")
+                    log(f"   📄 [{idx+1}/{len(products)}] 상세: {prod.get('brand','')} {(prod.get('name') or '')[:35]} ¥{prod.get('price_jpy',0):,}")
                     await page.goto(link, wait_until="domcontentloaded", timeout=20000)
                     await asyncio.sleep(2)
 
-                    # 팝업 닫기
-                    for sel in ["button:has-text('以上の内容を確認しました')", "button:has-text('閉じる')", "button:has-text('すべての Cookie を受け入れる')"]:
+                    # 번역 바 닫기 — 빈 공간 클릭
+                    try:
+                        await page.mouse.click(640, 300)
+                        await asyncio.sleep(0.5)
+                    except Exception:
+                        pass
+                    # iframe 쿠키 배너 처리
+                    try:
+                        for frame in page.frames:
+                            if "worldshopping" in (frame.url or "").lower() or "onetrust" in (frame.url or "").lower():
+                                for ws_sel in ["button:has-text('すべての Cookie を受け入れる')", "#onetrust-accept-btn-handler", "button[class*='accept']"]:
+                                    try:
+                                        ws_btn = frame.locator(ws_sel).first
+                                        if await ws_btn.count() > 0 and await ws_btn.is_visible():
+                                            await ws_btn.click()
+                                            await asyncio.sleep(1)
+                                    except Exception:
+                                        continue
+                    except Exception:
+                        pass
+                    # 메인 페이지 팝업 닫기
+                    for sel in ["#onetrust-accept-btn-handler", "button:has-text('すべての Cookie を受け入れる')", "button:has-text('모든 Cookie 허용')", "button:has-text('以上の内容を確認しました')", "button:has-text('이상의 내용을 확인했습니다')", "button:has-text('閉じる')", "button:has-text('닫기')"]:
                         try:
                             btn = page.locator(sel).first
                             if await btn.count() > 0 and await btn.is_visible():
@@ -319,18 +478,36 @@ async def scrape_2ndstreet(
                                 await asyncio.sleep(0.5)
                         except:
                             pass
+                    # JS 강제 제거
+                    try:
+                        await page.evaluate("""() => {
+                            document.querySelectorAll('[id*="worldshopping"], [class*="worldshopping"], [class*="WorldShopping"], [id*="ws-"], iframe[src*="worldshopping"], [id*="onetrust"], [class*="onetrust"], #onetrust-consent-sdk, .onetrust-pc-dark-filter').forEach(el => el.remove());
+                            document.body.style.overflow = 'auto';
+                            document.documentElement.style.top = '0';
+                            document.body.style.top = '0';
+                        }""")
+                    except Exception:
+                        pass
 
                     detail = await _extract_detail_page(page)
                     if detail.get("detail_images"):
                         prod["detail_images"] = detail["detail_images"]
                     if detail.get("description"):
                         prod["description"] = detail["description"]
-                    if detail.get("condition_grade") and not prod.get("condition_grade"):
+                    if detail.get("condition_grade"):
                         prod["condition_grade"] = detail["condition_grade"]
-                    if detail.get("color") and not prod.get("color"):
+                    if detail.get("color"):
                         prod["color"] = detail["color"]
+                    if detail.get("material"):
+                        prod["material"] = detail["material"]
                     if detail.get("size"):
                         prod["size"] = detail["size"]
+                    if detail.get("measured_size"):
+                        prod["color"] = detail["measured_size"]  # 실측 사이즈를 color 필드에 저장
+                    if detail.get("description"):
+                        prod["description"] = detail["description"]
+                    if detail.get("price_jpy") and detail["price_jpy"] > 100:
+                        prod["price_jpy"] = detail["price_jpy"]
                     # 자동 카테고리 분류
                     if not prod.get("category_id") or prod["category_id"] == category:
                         auto_cat_id, auto_subcat = _classify_category(
@@ -340,10 +517,15 @@ async def scrape_2ndstreet(
                         if auto_cat_id:
                             prod["category_id"] = auto_cat_id
                             prod["subcategory"] = auto_subcat
-                    log(f"      ✅ 이미지 {len(detail.get('detail_images',[]))}개, 카테고리: {prod.get('subcategory','?')}")
-                    await asyncio.sleep(1)
+                    # 즉시 번역 + DB 저장
+                    _translate_and_save(prod, log)
+                    name_ko = (prod.get("name_ko") or "")[:35]
+                    log(f"      ✅ {name_ko} | 이미지 {len(detail.get('detail_images',[]))}개 | {prod.get('subcategory','?')}")
+                    await asyncio.sleep(_random.uniform(2, 3))
                 except Exception as e:
                     log(f"      ⚠️ 상세 스크래핑 실패: {e}")
+                    # 상세 실패해도 기본 정보로 저장
+                    _translate_and_save(prod, log)
                     continue
 
     except Exception as e:
@@ -352,41 +534,30 @@ async def scrape_2ndstreet(
         await force_close_browser()
 
     log(f"🏪 2ndstreet 수집 완료: 총 {len(products)}개")
-
-    # ── 번역 (사전 번역 → 구글 번역) ──
-    if products:
-        log("🌏 일본어 → 한국어 번역 중...")
-        try:
-            from translator import translate_ja_ko, translate_brand, translate_vintage_name
-            import re as _re
-            translated = 0
-            for i, p in enumerate(products):
-                if p.get("name") and not p.get("name_ko"):
-                    # 1차: 빈티지 사전 번역
-                    name_ko = translate_vintage_name(p["name"])
-                    # 2차: 사전 번역 후에도 일본어가 남아있으면 구글 번역
-                    if _re.search(r'[\u3040-\u30FF\u4E00-\u9FFF]', name_ko):
-                        name_ko = translate_ja_ko(p["name"])
-                    p["name_ko"] = name_ko
-                    translated += 1
-                if p.get("brand") and not p.get("brand_ko"):
-                    p["brand_ko"] = translate_brand(p["brand"])
-                if (i + 1) % 20 == 0:
-                    log(f"   🌐 번역 진행: {i+1}/{len(products)}개")
-            log(f"   ✅ 번역 완료: {translated}개")
-        except Exception as e:
-            log(f"   ⚠️ 번역 오류: {e}")
-
-    # ── DB 저장 ──
-    if products:
-        try:
-            from product_db import insert_products
-            new_count = insert_products(products)
-            log(f"💾 빅데이터 DB: {new_count}개 신규 저장")
-        except Exception as e:
-            log(f"⚠️ DB 저장 실패: {e}")
-
     return products
+
+
+def _translate_and_save(product: dict, log_func=None):
+    """상품 1건 즉시 번역 + DB 저장 (AI 번역 우선)"""
+    try:
+        from translator import translate_ja_ko, translate_brand
+        if product.get("name") and not product.get("name_ko"):
+            # AI가 최우선으로 번역 (translate_ja_ko 내부에서 처리)
+            product["name_ko"] = translate_ja_ko(product["name"])
+        if product.get("description") and not product.get("description_ko"):
+            product["description_ko"] = translate_ja_ko(product["description"])
+        if product.get("brand") and not product.get("brand_ko"):
+            product["brand_ko"] = translate_brand(product["brand"])
+    except Exception as e:
+        if log_func:
+            log_func(f"      ⚠️ 번역 오류: {e}")
+
+    try:
+        from product_db import insert_products
+        insert_products([product])
+    except Exception as e:
+        if log_func:
+            log_func(f"      ⚠️ DB 저장 실패: {e}")
 
 
 async def _extract_product_from_card(el, page) -> dict:
@@ -548,26 +719,71 @@ async def _extract_detail_page(page) -> dict:
             except:
                 continue
 
-        # 상품 스펙 테이블에서 정보 추출
-        spec_info = await page.evaluate("""() => {
-            const result = {grade: '', color: '', size: ''};
-            // th/td 테이블 또는 dt/dd 리스트
-            const rows = document.querySelectorAll('tr, dl');
+        # 상품 스펙 추출 (일본어/한국어 번역 둘 다 대응)
+        spec_info = await page.evaluate(r"""() => {
+            const result = {grade: '', color: '', size: '', price: 0, material: '', pattern: '', model: '', description: '', measured_size: ''};
+            const bodyText = document.body.innerText || '';
+
+            // 1) 컨디션 (일본어/한국어 둘 다)
+            const gm = bodyText.match(/(?:商品の状態|상품의 상태)[：:\s]*(?:中古|중고)\s*([A-D])/);
+            if (gm) result.grade = gm[1];
+            else if (bodyText.includes('未使用品') || bodyText.includes('미사용품') || bodyText.match(/(?:新品|신품)/)) result.grade = 'NS';
+
+            // 2) 가격 (税込/세금포함)
+            const pm = bodyText.match(/[¥￥]\s?([\d,]+)\s*(?:税込|세금)/);
+            if (pm) result.price = parseInt(pm[1].replace(/,/g, ''));
+            if (!result.price) {
+                const pm2 = bodyText.match(/[¥￥]\s?([\d,]+)/);
+                if (pm2 && parseInt(pm2[1].replace(/,/g, '')) > 100) result.price = parseInt(pm2[1].replace(/,/g, ''));
+            }
+
+            // 3) 상세 테이블 (th/td 패턴 — 일본어+한국어 라벨 매칭)
+            const rows = document.querySelectorAll('table tr, dl');
             for (const row of rows) {
-                const text = row.innerText || '';
-                if (text.includes('状態') || text.includes('コンディション')) {
-                    const m = text.match(/中古([A-Z])|新品|未使用|([A-Z])ランク/);
-                    if (m) result.grade = m[1] || m[2] || '新品';
-                }
-                if (text.includes('カラー') || text.includes('色')) {
-                    const parts = text.split(/[：:]|\\t|\\n/).filter(s => s.trim());
-                    if (parts.length >= 2) result.color = parts[parts.length-1].trim();
-                }
-                if (text.includes('サイズ')) {
-                    const parts = text.split(/[：:]|\\t|\\n/).filter(s => s.trim());
-                    if (parts.length >= 2) result.size = parts[parts.length-1].trim();
+                const cells = row.querySelectorAll('th, dt');
+                const vals = row.querySelectorAll('td, dd');
+                if (cells.length === 0 || vals.length === 0) continue;
+                const label = (cells[0].innerText || '').trim();
+                const value = (vals[0].innerText || '').trim();
+                if (!value || value === '—' || value === '-' || value === 'ー') continue;
+
+                if (label.match(/型番|형번/)) result.model = value;
+                else if (label.match(/カラー|칼라|컬러|色/)) result.color = value;
+                else if (label.match(/素材|소재|生地|천/)) result.material = value;
+                else if (label.match(/柄|무늬|模様/)) result.pattern = value;
+                else if (label.match(/^サイズ$|^사이즈$/) || (label.match(/サイズ|사이즈/) && !label.match(/実寸|실측/))) result.size = value;
+                else if (label.match(/実寸|실측/)) result.measured_size = value;
+            }
+
+            // 4) 상품 설명 (일본어/한국어)
+            // 제외할 텍스트
+            const excludes = ['キーワード', '검색창', 'お問い合わせ', '문의', 'カテゴリ', '카테고리', 'ブランド検索'];
+            function isValidDesc(text) {
+                if (!text || text.length < 10) return false;
+                for (const ex of excludes) { if (text.includes(ex)) return false; }
+                return true;
+            }
+            // 상품 설명 헤더 다음 텍스트
+            const allEls = document.querySelectorAll('h2, h3, div, section, p');
+            for (const el of allEls) {
+                const t = (el.innerText || '').trim();
+                if (t.match(/^(商品\s*説明|상품\s*설명)$/)) {
+                    const next = el.nextElementSibling;
+                    if (next) {
+                        const dt = next.innerText.trim();
+                        if (isValidDesc(dt)) { result.description = dt; break; }
+                    }
                 }
             }
+            // 폴백: comment 클래스
+            if (!result.description) {
+                const descEl = document.querySelector('[class*="goodsComment"], [class*="itemComment"]');
+                if (descEl) {
+                    const dt = descEl.innerText.trim();
+                    if (isValidDesc(dt)) result.description = dt;
+                }
+            }
+
             return result;
         }""")
         if spec_info.get("grade"):
@@ -576,6 +792,8 @@ async def _extract_detail_page(page) -> dict:
             detail["color"] = spec_info["color"]
         if spec_info.get("size"):
             detail["size"] = spec_info["size"]
+        if spec_info.get("price") and spec_info["price"] > 100:
+            detail["price_jpy"] = spec_info["price"]
 
         # 1차: breadcrumb에서 카테고리 추출
         category_info = await page.evaluate("""() => {
