@@ -680,21 +680,21 @@ async def _extract_detail_page(page) -> dict:
             if len(detail["detail_images"]) >= 20:
                 break
 
-        # 상품 설명 텍스트
+        # 상품 설명 텍스트 (검색 안내 팝업 제외)
+        _desc_excludes = ['キーワード', '検索窓', 'お問い合わせ', '注文取消し', '配送でのお買い物', '店舗取り寄せ']
         desc_selectors = [
             "[class*='goodsComment']",
             "[class*='itemComment']",
-            "[class*='description']",
             "[class*='detail_comment']",
-            "[class*='goodsDetail']",
         ]
         for sel in desc_selectors:
             try:
                 el = page.locator(sel).first
                 if await el.count() > 0:
                     text = (await el.inner_text()).strip()
-                    if text and len(text) > len(detail["description"]):
-                        detail["description"] = text
+                    if text and len(text) > 10 and not any(ex in text for ex in _desc_excludes):
+                        if len(text) > len(detail["description"]):
+                            detail["description"] = text
             except:
                 continue
 
