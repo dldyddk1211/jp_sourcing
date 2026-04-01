@@ -853,14 +853,21 @@ async def _extract_detail_page(page) -> dict:
     }
 
     try:
-        # 상세 이미지 (큰 이미지)
+        # 상세 이미지 (상품 사진만 — 아이콘/SVG/로고 제외)
         imgs = await page.query_selector_all("img[src*='cdn2.2ndstreet.jp']")
         seen = set()
+        _img_excludes = ['.svg', '/icon', '/logo', '/header/', '/cmn/', '/common/', '/banner/']
         for img in imgs:
             src = await img.get_attribute("src") or ""
             if not src or src in seen:
                 continue
-            # 썸네일(_tn) 제외, 큰 이미지만
+            # 아이콘/SVG/공통 이미지 제외
+            if any(ex in src.lower() for ex in _img_excludes):
+                continue
+            # 상품 이미지만 (goods/ 또는 product/ 경로, 또는 .jpg/.png/.webp)
+            if not any(ext in src.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                continue
+            # 썸네일(_tn) → 큰 이미지로 변환
             if "_tn." in src:
                 src = src.replace("_tn.", ".")
             if src in seen:
