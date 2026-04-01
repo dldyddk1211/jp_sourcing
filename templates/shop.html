@@ -176,19 +176,19 @@
     }
     .modal-close:hover { color:var(--text); }
     .modal-nav {
-      position:absolute; top:50%; transform:translateY(-50%);
-      background:rgba(0,0,0,0.5); border:none; color:#fff;
-      font-size:1.6rem; width:40px; height:60px; cursor:pointer;
-      z-index:20; border-radius:8px; display:flex; align-items:center; justify-content:center;
-      transition:background 0.2s;
+      position:fixed; top:50%; transform:translateY(-50%);
+      background:rgba(30,30,30,0.85); border:2px solid rgba(212,165,74,0.4); color:var(--accent);
+      font-size:2rem; width:52px; height:80px; cursor:pointer;
+      z-index:10001; border-radius:12px; display:flex; align-items:center; justify-content:center;
+      transition:all 0.2s; backdrop-filter:blur(4px);
     }
-    .modal-nav:hover { background:rgba(212,165,74,0.7); }
-    .modal-nav-prev { left:-50px; }
-    .modal-nav-next { right:-50px; }
+    .modal-nav:hover { background:rgba(212,165,74,0.3); border-color:var(--accent); color:#fff; transform:translateY(-50%) scale(1.08); }
+    .modal-nav-prev { left:max(8px, calc(50% - 480px)); }
+    .modal-nav-next { right:max(8px, calc(50% - 480px)); }
     @media(max-width:960px) {
-      .modal-nav-prev { left:4px; }
-      .modal-nav-next { right:4px; }
-      .modal-nav { background:rgba(0,0,0,0.7); width:34px; height:50px; font-size:1.3rem; }
+      .modal-nav { width:42px; height:64px; font-size:1.6rem; }
+      .modal-nav-prev { left:6px; }
+      .modal-nav-next { right:6px; }
     }
     .modal-body { display:flex; gap:0; position:relative; }
     .modal-images {
@@ -428,6 +428,61 @@ let currentPage = 1;
 let allProducts = [];
 let currentModalIdx = -1;
 
+// 일본어 → 한국어 사전 (전역)
+const jaKoDict = {
+  // 가방
+  "ショルダーバッグ":"숄더백","トートバッグ":"토트백","ハンドバッグ":"핸드백","ボストンバッグ":"보스턴백",
+  "クラッチバッグ":"클러치백","ウエストバッグ":"웨이스트백","ボディバッグ":"바디백","バックパック":"백팩",
+  "リュック":"백팩","ポーチ":"파우치","ブリーフケース":"서류가방","セカンドバッグ":"세컨드백",
+  "メッセンジャーバッグ":"메신저백","バニティバッグ":"베니티백","ミニバッグ":"미니백","バッグ":"가방",
+  // 의류
+  "Gジャン":"데님자켓","ジップパーカー":"집업후드","パーカー":"후드","スウェット":"스웨트",
+  "ブルゾン":"블루종","ダウンジャケット":"다운자켓","ジャケット":"자켓","コート":"코트",
+  "トレンチコート":"트렌치코트","長袖シャツ":"긴팔셔츠","半袖シャツ":"반팔셔츠","シャツ":"셔츠",
+  "長袖Tシャツ":"긴팔티","Tシャツ":"T셔츠","ポロシャツ":"폴로셔츠","ブラウス":"블라우스",
+  "ニット":"니트","セーター":"스웨터","カーディガン":"가디건","ベスト":"베스트",
+  "パンツ":"팬츠","スラックス":"슬랙스","ショートパンツ":"반바지","スカート":"스커트",
+  "ワンピース":"원피스","スーツ":"정장","トップス":"상의",
+  // 악세
+  "ネックレス":"목걸이","ブレスレット":"팔찌","リング":"반지","ベルト":"벨트",
+  "マフラー":"머플러","ストール":"스톨","サングラス":"선글라스","帽子":"모자",
+  "財布":"지갑","長財布":"장지갑","キーケース":"키케이스","コインケース":"동전지갑",
+  "カードケース":"카드케이스","名刺入れ":"명함케이스",
+  // 소재
+  "レザー":"가죽","ナイロン":"나일론","キャンバス":"캔버스","デニム":"데님",
+  "スエード":"스웨이드","サテン":"새틴","コットン":"코튼","ウール":"울",
+  "ファー":"퍼","シルク":"실크","カシミヤ":"캐시미어","ポリエステル":"폴리에스터",
+  "エナメル":"에나멜","パテント":"페이턴트","ラム":"램",
+  "モノグラム":"모노그램","ダミエ":"다미에","エピ":"에피","タイガ":"타이가",
+  // 색상
+  "ブラック":"블랙","ホワイト":"화이트","レッド":"레드","ブルー":"블루",
+  "グリーン":"그린","ピンク":"핑크","ベージュ":"베이지","ブラウン":"브라운",
+  "グレー":"그레이","ネイビー":"네이비","オレンジ":"오렌지","イエロー":"옐로",
+  "パープル":"퍼플","ゴールド":"골드","シルバー":"실버","カーキ":"카키",
+  "ボルドー":"보르도","マルチカラー":"멀티컬러","アイボリー":"아이보리",
+  // 패턴
+  "無地":"무지","総柄":"올오버패턴","チェック":"체크","ストライプ":"스트라이프",
+  "花柄":"꽃무늬","プリント":"프린트","グラデーション":"그라데이션",
+  // 사이즈
+  "マチ":"폭","高さ":"높이","幅":"너비","持ち手":"손잡이","その他サイズ":"기타",
+  "肩幅":"어깨폭","身幅":"품","着丈":"총길이","袖丈":"소매길이",
+  "ウエスト":"허리","ヒップ":"엉덩이","股上":"밑위","股下":"밑단",
+  // 기타
+  "ジェロニモス":"제로니모스","キーポル":"키폴","アマゾン":"아마존",
+  "ポルト":"포르트","ドキュマン":"도큐먼트","ヴォワヤージュ":"보야주",
+  "クルセル":"크루셀","リヴィエラ":"리비에라","カシアー":"카시에",
+  "シタダン":"시타단","ノマド":"노마드","ヌメ":"누메",
+  "エベヌ":"에벤","アズール":"아주르",
+  "クロップド":"크롭","ロゴ":"로고","飛行機":"비행기",
+  "中古":"중고","新品":"신품","未使用":"미사용",
+};
+function transJa(text) {
+  if (!text) return "";
+  let r = text;
+  for (const [ja, ko] of Object.entries(jaKoDict)) r = r.replaceAll(ja, ko);
+  return r;
+}
+
 function selectFilter(type, el) {
   filters[type] = el.dataset.val;
   el.parentElement.querySelectorAll(".filter-item").forEach(i => i.classList.remove("active"));
@@ -501,7 +556,7 @@ async function loadShop(page = 1) {
         </div>
         <div class="product-info">
           <div class="product-brand">${p.brand}</div>
-          <div class="product-name">${p.name}</div>
+          <div class="product-name">${transJa(p.name)}</div>
           <div class="product-price">${p.price_krw ? p.price_krw.toLocaleString() + '원' : '&yen;' + p.price_jpy.toLocaleString()}</div>
           ${p.user_level === 'b2b' && p.price_b2c ? `<div style="font-size:0.68rem;color:var(--muted);text-decoration:line-through;">B2C ${p.price_b2c.toLocaleString()}원</div>` : ''}
           <div style="font-size:0.68rem;color:var(--dim);">&yen;${p.price_jpy.toLocaleString()}</div>
@@ -595,7 +650,7 @@ function openModal(idx) {
   document.getElementById("modal-prev").style.display = idx > 0 ? "" : "none";
   document.getElementById("modal-next").style.display = idx < allProducts.length - 1 ? "" : "none";
   document.getElementById("modal-brand").textContent = p.brand;
-  document.getElementById("modal-name").textContent = p.name;
+  document.getElementById("modal-name").textContent = transJa(p.name);
   if (p.price_krw) {
     let priceHtml = `<div style="font-size:1.3rem;font-weight:800;color:var(--green)">${p.price_krw.toLocaleString()}원</div>`;
     if (p.user_level === 'b2b' && p.price_b2c) {
@@ -612,15 +667,6 @@ function openModal(idx) {
   thumbsEl.innerHTML = (p.detail_images || []).map((img, i) =>
     `<img class="modal-thumb ${i===0?'active':''}" src="${img}" onclick="setMainImg(this,'${img.replace('_mn.jpg','.jpg')}')">`
   ).join("");
-  // 일본어 → 한국어 사전
-  const jaKoDict = {"レザー":"가죽","ナイロン":"나일론","キャンバス":"캔버스","デニム":"데님","スエード":"스웨이드","サテン":"새틴","コットン":"코튼","ウール":"울","ファー":"퍼","シルク":"실크","カシミヤ":"캐시미어","ポリエステル":"폴리에스터","エナメル":"에나멜","ブラック":"블랙","ホワイト":"화이트","レッド":"레드","ブルー":"블루","グリーン":"그린","ピンク":"핑크","ベージュ":"베이지","ブラウン":"브라운","グレー":"그레이","ネイビー":"네이비","オレンジ":"오렌지","イエロー":"옐로","パープル":"퍼플","ゴールド":"골드","シルバー":"실버","カーキ":"카키","ボルドー":"보르도","無地":"무지","総柄":"올오버패턴","マチ":"폭","高さ":"높이","幅":"너비","持ち手":"손잡이","その他サイズ":"기타","肩幅":"어깨폭","身幅":"품","着丈":"총길이","袖丈":"소매길이","ゆき":"유키","ウエスト":"허리","ヒップ":"엉덩이","股上":"밑위","股下":"밑단","회색":"회색"};
-  function transJa(text) {
-    if (!text) return "";
-    let r = text;
-    for (const [ja, ko] of Object.entries(jaKoDict)) r = r.replace(new RegExp(ja, 'g'), ko);
-    return r;
-  }
-
   // 등급 라벨
   const gradeLabels = {"NS": "신품/미사용", "S": "중고S (최상)", "A": "중고A (양호)", "B": "중고B (사용감 있음)", "C": "중고C (사용감 많음)", "D": "중고D (난있음)"};
   const gradeText = gradeLabels[p.condition_grade] || p.condition_grade || "";
