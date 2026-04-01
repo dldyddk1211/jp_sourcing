@@ -142,7 +142,8 @@ async def scrape_2ndstreet(
         log("   📄 페이지 미지정 → 첫 페이지에서 총 수량 확인 후 자동 설정")
 
     products = []
-    CHUNK_SIZE = 5  # 5페이지씩 끊어서 수집 + 상세처리
+    total_saved = 0  # 전체 누적 저장 수
+    CHUNK_SIZE = 5   # 5페이지씩 끊어서 수집 + 상세처리
 
     async def _open_browser():
         """브라우저 시작 (재시작 포함)"""
@@ -421,11 +422,17 @@ async def scrape_2ndstreet(
             # ── 5페이지마다 상세 처리 + 브라우저 재시작 ──
             pages_done = page_list.index(page_num) + 1 if page_num in page_list else 0
             if pages_done > 0 and pages_done % CHUNK_SIZE == 0 and len(products) > 0:
-                log(f"\n🔄 [{pages_done}페이지 완료] 상세 스크래핑 시작 ({len(products)}개)...")
+                chunk_count = len(products)
+                log(f"\n{'='*50}")
+                log(f"🔄 [{pages_done}/{len(page_list)}페이지] 상세 스크래핑 시작 ({chunk_count}개)")
+                log(f"   📊 지금까지 누적 저장: {total_saved}개")
+                log(f"{'='*50}")
                 await _process_detail_pages(page, products, log, _random, category)
-                log(f"   ✅ {len(products)}개 처리 완료 — 브라우저 재시작")
+                total_saved += chunk_count
+                log(f"\n   ✅ 이번 청크 {chunk_count}개 완료 — 누적 {total_saved}개 저장")
+                log(f"   📄 진행률: {pages_done}/{len(page_list)}페이지 ({pages_done*100//len(page_list)}%)")
+                log(f"   🔄 브라우저 재시작 중...\n")
                 products.clear()
-                # 브라우저 재시작 (메모리 확보)
                 page = await _open_browser()
                 await asyncio.sleep(batch_rest)
 
@@ -436,15 +443,21 @@ async def scrape_2ndstreet(
 
         # ── 남은 상품 상세 처리 ──
         if products:
-            log(f"\n🔍 마지막 상세 스크래핑 ({len(products)}개)...")
+            chunk_count = len(products)
+            log(f"\n🔍 마지막 청크 상세 스크래핑 ({chunk_count}개)...")
             await _process_detail_pages(page, products, log, _random, category)
+            total_saved += chunk_count
 
     except Exception as e:
         log(f"❌ 크롤링 오류: {e}")
     finally:
         await force_close_browser()
 
-    log(f"🏪 2ndstreet 수집 완료")
+    log(f"\n{'='*50}")
+    log(f"🏪 2ndstreet 수집 완료!")
+    log(f"   📊 총 저장: {total_saved}개")
+    log(f"   📄 처리 페이지: {len(page_list)}페이지")
+    log(f"{'='*50}")
     return products
 
 
