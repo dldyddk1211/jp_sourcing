@@ -3818,6 +3818,27 @@ async function loadMembers() {
   }
 }
 
+function searchPostcode() {
+  if (!window.daum || !window.daum.Postcode) {
+    // 스크립트 동적 로드
+    const script = document.createElement("script");
+    script.src = "//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
+    script.onload = () => _openPostcode();
+    document.head.appendChild(script);
+  } else {
+    _openPostcode();
+  }
+}
+function _openPostcode() {
+  new daum.Postcode({
+    oncomplete: function(data) {
+      document.getElementById("mm-postal").value = data.zonecode;
+      document.getElementById("mm-address").value = data.roadAddress || data.jibunAddress;
+      document.getElementById("mm-address2").focus();
+    }
+  }).open();
+}
+
 async function openMemberDetail(username) {
   const modal = document.getElementById("member-modal");
   const content = document.getElementById("mm-content");
@@ -3842,9 +3863,13 @@ async function openMemberDetail(username) {
 
         <div style="font-size:0.78rem;color:var(--accent);font-weight:700;border-bottom:1px solid var(--border);padding-bottom:6px;margin-top:8px;">배송 정보</div>
         <div style="display:grid;grid-template-columns:100px 1fr;gap:8px;align-items:center;">
-          <label>우편번호</label><input id="mm-postal" value="${u.postal_code||''}" placeholder="12345" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;width:120px;">
-          <label>주소</label><input id="mm-address" value="${u.address||''}" placeholder="시/도 구/군 동/읍" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;">
-          <label>상세주소</label><input id="mm-address2" value="${u.address_detail||''}" placeholder="아파트/건물/호수" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;">
+          <label>우편번호</label>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <input id="mm-postal" value="${u.postal_code||''}" placeholder="12345" readonly style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;width:100px;">
+            <button onclick="searchPostcode()" class="btn b-blue" style="padding:6px 12px;font-size:0.75rem;white-space:nowrap;">주소 검색</button>
+          </div>
+          <label>주소</label><input id="mm-address" value="${u.address||''}" placeholder="주소 검색 버튼을 눌러주세요" readonly style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;">
+          <label>상세주소</label><input id="mm-address2" value="${u.address_detail||''}" placeholder="상세주소 입력 (동/호수)" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;">
         </div>
 
         <div style="font-size:0.78rem;color:var(--accent);font-weight:700;border-bottom:1px solid var(--border);padding-bottom:6px;margin-top:8px;">통관 / 사업자</div>

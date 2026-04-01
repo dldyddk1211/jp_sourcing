@@ -166,6 +166,22 @@ def signup():
             error = "이미 존재하는 아이디입니다"
         else:
             if create_user(username, password, name, phone):
+                # 추가 정보 저장 (배송/통관)
+                try:
+                    from user_db import _conn as user_conn
+                    conn = user_conn()
+                    conn.execute("""UPDATE users SET postal_code=?, address=?, address_detail=?, customs_id=?
+                                   WHERE username=?""", (
+                        request.form.get("postal_code", "").strip(),
+                        request.form.get("address", "").strip(),
+                        request.form.get("address_detail", "").strip(),
+                        request.form.get("customs_id", "").strip(),
+                        username,
+                    ))
+                    conn.commit()
+                    conn.close()
+                except Exception:
+                    pass
                 logger.info(f"회원가입 (승인대기): {username}")
                 return render_template("signup.html", error=None, success=True,
                                        url_prefix=URL_PREFIX, env=APP_ENV)
