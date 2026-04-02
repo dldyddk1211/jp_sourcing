@@ -622,8 +622,8 @@ async function loadShop(page = 1) {
     grid.innerHTML = allProducts.map((p, i) => `
       <div class="product-card" onclick="openModal(${i})">
         <div class="product-img-wrap">
-          <img src="${p.img_url || ''}" alt="" loading="lazy"
-               onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1 1%22><rect fill=%22%23181a22%22 width=%221%22 height=%221%22/></svg>'">
+          <img src="${(p.detail_images && p.detail_images[0]) || p.img_url || ''}" alt="" loading="lazy"
+               onerror="if(this.dataset.retry!=='1'){this.dataset.retry='1';this.src=('${p.img_url||''}');}else{this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1 1%22><rect fill=%22%23181a22%22 width=%221%22 height=%221%22/></svg>';}"">
           ${p.condition_grade ? `<span class="product-grade">${p.condition_grade}</span>` : ""}
         </div>
         <div class="product-info">
@@ -733,17 +733,21 @@ function openModal(idx) {
   } else {
     document.getElementById("modal-price").innerHTML = `&yen;${p.price_jpy.toLocaleString()}`;
   }
-  // 메인 이미지: img_url 썸네일 → 큰 이미지로 변환
-  const mainImg = p.img_url ? p.img_url.replace("_tn.jpg", ".jpg").replace("_mn.jpg", ".jpg") : (p.detail_images && p.detail_images[0]) || "";
-  document.getElementById("modal-main-img").src = mainImg;
+  // 메인 이미지 + 썸네일: detail_images 기반, 없으면 img_url 폴백
+  const detailImgs = (p.detail_images && p.detail_images.length) ? p.detail_images : [];
+  const firstImg = detailImgs.length ? detailImgs[0] : (p.img_url ? p.img_url.replace("_tn.jpg", ".jpg") : "");
+  document.getElementById("modal-main-img").src = firstImg;
   document.getElementById("modal-main-img").onerror = function() {
-    // 큰 이미지 실패 시 썸네일로 폴백
     if (p.img_url && this.src !== p.img_url) this.src = p.img_url;
   };
   const thumbsEl = document.getElementById("modal-thumbs");
-  thumbsEl.innerHTML = (p.detail_images || []).map((img, i) =>
-    `<img class="modal-thumb ${i===0?'active':''}" src="${img}" onclick="setMainImg(this,'${img}')" onerror="this.style.display='none'">`
-  ).join("");
+  if (detailImgs.length) {
+    thumbsEl.innerHTML = detailImgs.map((img, i) =>
+      `<img class="modal-thumb ${i===0?'active':''}" src="${img}" onclick="setMainImg(this,'${img}')" onerror="this.style.display='none'">`
+    ).join("");
+  } else {
+    thumbsEl.innerHTML = "";
+  }
   // 등급 라벨
   const gradeLabels = {"NS": "신품/미사용", "S": "중고S (최상)", "A": "중고A (양호)", "B": "중고B (사용감 있음)", "C": "중고C (사용감 많음)", "D": "중고D (난있음)"};
   const gradeText = gradeLabels[p.condition_grade] || p.condition_grade || "";
