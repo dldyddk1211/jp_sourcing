@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TheOne - 마이페이지</title>
+  <script src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+  <style>
+    :root {
+      --bg:#0f1117; --card:#1a1d27; --border:#2a2d3a;
+      --accent:#d4a54a; --green:#2ecc71; --red:#e74c3c; --yellow:#f39c12; --blue:#4f8ef7;
+      --text:#e0e0e0; --muted:#7a7f9a; --dim:#444860;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { background:var(--bg); color:var(--text); font-family:'Noto Sans KR',sans-serif; }
+    a { text-decoration:none; color:var(--text); }
+    .header { background:var(--card); border-bottom:1px solid var(--border); padding:14px 24px; display:flex; align-items:center; justify-content:space-between; }
+    .header-logo { font-size:1.2rem; font-weight:800; color:var(--accent); }
+    .header-logo span { color:var(--text); font-weight:300; margin-left:6px; font-size:0.9rem; }
+    .header-nav { display:flex; gap:16px; align-items:center; font-size:0.85rem; }
+    .header-nav a { color:var(--muted); transition:color .15s; }
+    .header-nav a:hover { color:var(--accent); }
+    .container { max-width:800px; margin:30px auto; padding:0 16px; }
+    .tabs { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:20px; }
+    .tab { padding:12px 20px; font-size:0.88rem; color:var(--muted); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; transition:all .15s; }
+    .tab:hover { color:var(--text); }
+    .tab.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:700; }
+    .tab-content { display:none; }
+    .tab-content.active { display:block; }
+    .panel { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:24px; margin-bottom:16px; }
+    .section-title { font-size:0.85rem; color:var(--accent); font-weight:700; margin-bottom:14px; border-bottom:1px solid var(--border); padding-bottom:8px; }
+    .form-grid { display:grid; grid-template-columns:110px 1fr; gap:10px; align-items:center; }
+    .form-grid label { font-size:0.82rem; color:var(--muted); }
+    .form-grid input { background:var(--bg); border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:6px; font-size:0.85rem; }
+    .form-grid input:focus { border-color:var(--accent); outline:none; }
+    .btn { padding:10px 20px; border:none; border-radius:8px; font-size:0.85rem; font-weight:700; cursor:pointer; transition:all .2s; }
+    .btn-accent { background:var(--accent); color:#000; }
+    .btn-accent:hover { opacity:.85; }
+    .btn-red { background:var(--red); color:#fff; }
+    .btn-gray { background:var(--border); color:var(--text); }
+    table { width:100%; border-collapse:collapse; font-size:0.82rem; }
+    th { text-align:left; padding:10px 8px; color:var(--muted); font-weight:600; font-size:0.75rem; border-bottom:1px solid var(--border); }
+    td { padding:10px 8px; border-bottom:1px solid rgba(42,45,58,0.4); }
+    .st-new { color:var(--yellow); } .st-confirmed { color:var(--blue); } .st-processing { color:var(--accent); }
+    .st-shipped { color:#6cf; } .st-completed { color:var(--green); } .st-cancelled { color:var(--red); }
+    .cart-img { width:50px; height:50px; object-fit:cover; border-radius:6px; border:1px solid var(--border); }
+    .msg { padding:10px 14px; border-radius:8px; font-size:0.82rem; margin-bottom:12px; display:none; }
+    .msg.ok { display:block; background:rgba(46,204,113,0.12); color:var(--green); border:1px solid rgba(46,204,113,0.3); }
+    .msg.err { display:block; background:rgba(231,76,60,0.12); color:var(--red); border:1px solid rgba(231,76,60,0.3); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="{{ url_prefix }}/shop" class="header-logo">TheOne<span>Vintage</span></a>
+    <div class="header-nav">
+      <a href="{{ url_prefix }}/shop">쇼핑몰</a>
+      <span style="color:var(--dim)">|</span>
+      <span style="color:var(--accent);font-weight:700;">{{ username }}</span>
+      <a href="{{ url_prefix }}/logout" style="color:var(--red);">로그아웃</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="tabs">
+      <div class="tab active" data-tab="info" onclick="switchTab('info')">회원정보</div>
+      <div class="tab" data-tab="orders" onclick="switchTab('orders')">주문내역</div>
+      <div class="tab" data-tab="cart" onclick="switchTab('cart')">장바구니 <span id="mp-cart-cnt" style="color:var(--accent);font-weight:700;"></span></div>
+      <div class="tab" data-tab="password" onclick="switchTab('password')">비밀번호 변경</div>
+    </div>
+
+    <!-- 회원정보 -->
+    <div class="tab-content active" id="tc-info">
+      <div class="panel">
+        <div class="section-title">기본 정보</div>
+        <div class="form-grid">
+          <label>아이디</label><input id="my-username" value="{{ username }}" disabled style="color:var(--dim);">
+          <label>이름</label><input id="my-name" placeholder="이름">
+          <label>연락처</label><input id="my-phone" placeholder="010-0000-0000">
+        </div>
+      </div>
+      <div class="panel">
+        <div class="section-title">배송 정보</div>
+        <div class="form-grid">
+          <label>우편번호</label>
+          <div style="display:flex;gap:6px;">
+            <input id="my-postal" placeholder="12345" readonly style="width:100px;">
+            <button onclick="mySearchPostcode()" class="btn btn-accent" style="padding:6px 14px;font-size:0.78rem;">주소 검색</button>
+          </div>
+          <label>주소</label><input id="my-address" placeholder="주소 검색 버튼을 눌러주세요" readonly>
+          <label>상세주소</label><input id="my-address2" placeholder="상세주소 (동/호수)">
+        </div>
+      </div>
+      <div class="panel">
+        <div class="section-title">통관 / 사업자</div>
+        <div class="form-grid">
+          <label>통관고유번호</label><input id="my-customs" placeholder="P000-0000-000000">
+          <label>사업자번호</label><input id="my-biznum" placeholder="000-00-00000">
+        </div>
+      </div>
+      <div id="info-msg" class="msg"></div>
+      <button onclick="saveMyInfo()" class="btn btn-accent" style="width:100%;">저장</button>
+    </div>
+
+    <!-- 주문내역 -->
+    <div class="tab-content" id="tc-orders">
+      <div class="panel">
+        <div class="section-title">주문/문의 내역</div>
+        <table>
+          <thead><tr><th>#</th><th>일시</th><th>유형</th><th>상품</th><th>가격</th><th>상태</th></tr></thead>
+          <tbody id="my-orders-body"><tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 장바구니 -->
+    <div class="tab-content" id="tc-cart">
+      <div class="panel">
+        <div class="section-title">장바구니</div>
+        <table>
+          <thead><tr><th></th><th>상품</th><th>브랜드</th><th>고유번호</th><th>가격</th><th></th></tr></thead>
+          <tbody id="my-cart-body"><tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 비밀번호 변경 -->
+    <div class="tab-content" id="tc-password">
+      <div class="panel">
+        <div class="section-title">비밀번호 변경</div>
+        <div class="form-grid">
+          <label>현재 비밀번호</label><input type="password" id="pw-current" placeholder="현재 비밀번호">
+          <label>새 비밀번호</label><input type="password" id="pw-new" placeholder="4자 이상">
+          <label>비밀번호 확인</label><input type="password" id="pw-confirm" placeholder="새 비밀번호 확인">
+        </div>
+        <div id="pw-msg" class="msg" style="margin-top:12px;"></div>
+        <button onclick="changePassword()" class="btn btn-accent" style="width:100%;margin-top:14px;">비밀번호 변경</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+const PREFIX = "{{ url_prefix }}";
+const statusMap = {"new":["신규","st-new"],"confirmed":["확인","st-confirmed"],"processing":["처리중","st-processing"],"shipped":["배송중","st-shipped"],"completed":["완료","st-completed"],"cancelled":["취소","st-cancelled"]};
+
+function switchTab(tab) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
+  document.querySelectorAll(".tab-content").forEach(t => t.classList.toggle("active", t.id === "tc-" + tab));
+  if (tab === "orders") loadMyOrders();
+  if (tab === "cart") loadMyCart();
+}
+
+// URL hash로 탭 자동 선택
+const hash = location.hash.replace("#","");
+if (hash) switchTab(hash);
+
+// 회원정보 로드
+async function loadMyInfo() {
+  try {
+    const res = await fetch(PREFIX + "/shop/api/myinfo");
+    const d = await res.json();
+    if (!d.ok) return;
+    const u = d.user;
+    document.getElementById("my-name").value = u.name || "";
+    document.getElementById("my-phone").value = u.phone || "";
+    document.getElementById("my-postal").value = u.postal_code || "";
+    document.getElementById("my-address").value = u.address || "";
+    document.getElementById("my-address2").value = u.address_detail || "";
+    document.getElementById("my-customs").value = u.customs_id || "";
+    document.getElementById("my-biznum").value = u.business_number || "";
+  } catch(e) {}
+}
+loadMyInfo();
+
+async function saveMyInfo() {
+  const msg = document.getElementById("info-msg");
+  try {
+    const res = await fetch(PREFIX + "/shop/api/myinfo", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        name: document.getElementById("my-name").value,
+        phone: document.getElementById("my-phone").value,
+        postal_code: document.getElementById("my-postal").value,
+        address: document.getElementById("my-address").value,
+        address_detail: document.getElementById("my-address2").value,
+        customs_id: document.getElementById("my-customs").value,
+        business_number: document.getElementById("my-biznum").value,
+      })
+    });
+    const d = await res.json();
+    msg.className = "msg " + (d.ok ? "ok" : "err");
+    msg.textContent = d.message || (d.ok ? "저장 완료" : "저장 실패");
+  } catch(e) { msg.className = "msg err"; msg.textContent = "오류: " + e; }
+}
+
+function mySearchPostcode() {
+  new daum.Postcode({
+    oncomplete: function(data) {
+      document.getElementById("my-postal").value = data.zonecode;
+      document.getElementById("my-address").value = data.roadAddress || data.jibunAddress;
+      document.getElementById("my-address2").focus();
+    }
+  }).open();
+}
+
+// 주문내역
+async function loadMyOrders() {
+  const tbody = document.getElementById("my-orders-body");
+  try {
+    const res = await fetch(PREFIX + "/shop/api/my-orders");
+    const d = await res.json();
+    if (!d.orders || !d.orders.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">내역이 없습니다</td></tr>';
+      return;
+    }
+    tbody.innerHTML = d.orders.map((o, i) => {
+      const [sl, sc] = statusMap[o.status] || [o.status, ""];
+      return `<tr>
+        <td style="color:var(--dim)">${i+1}</td>
+        <td style="font-size:0.78rem;">${o.created_at||''}</td>
+        <td>${o.type==='order'?'🛒 주문':'💬 문의'}</td>
+        <td>${o.brand} ${o.product_name||''}</td>
+        <td style="font-weight:700;color:var(--accent);">${o.price||''}</td>
+        <td class="${sc}" style="font-weight:600;">${sl}</td>
+      </tr>`;
+    }).join("");
+  } catch(e) { tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red);text-align:center;">로드 실패</td></tr>`; }
+}
+
+// 장바구니
+async function loadMyCart() {
+  const tbody = document.getElementById("my-cart-body");
+  try {
+    const res = await fetch(PREFIX + "/shop/api/cart");
+    const d = await res.json();
+    document.getElementById("mp-cart-cnt").textContent = d.count > 0 ? `(${d.count})` : "";
+    if (!d.items || !d.items.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">장바구니가 비었습니다</td></tr>';
+      return;
+    }
+    tbody.innerHTML = d.items.map(c => `<tr>
+      <td><img class="cart-img" src="${c.img_url||''}" onerror="this.style.display='none'"></td>
+      <td>${c.product_name||''}</td>
+      <td style="font-weight:600;">${c.brand||''}</td>
+      <td style="font-family:monospace;font-size:0.75rem;">${c.product_code||''}</td>
+      <td style="font-weight:700;color:var(--accent);">${c.price||''}</td>
+      <td><button onclick="removeCart(${c.id})" class="btn btn-red" style="padding:4px 10px;font-size:0.72rem;">삭제</button></td>
+    </tr>`).join("");
+  } catch(e) { tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red);text-align:center;">로드 실패</td></tr>`; }
+}
+
+async function removeCart(id) {
+  await fetch(PREFIX + "/shop/api/cart/" + id, {method: "DELETE"});
+  loadMyCart();
+}
+
+// 비밀번호 변경
+async function changePassword() {
+  const msg = document.getElementById("pw-msg");
+  const current = document.getElementById("pw-current").value;
+  const newPw = document.getElementById("pw-new").value;
+  const confirm = document.getElementById("pw-confirm").value;
+  if (newPw !== confirm) { msg.className = "msg err"; msg.textContent = "새 비밀번호가 일치하지 않습니다"; return; }
+  try {
+    const res = await fetch(PREFIX + "/shop/api/change-password", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({current, new_password: newPw})
+    });
+    const d = await res.json();
+    msg.className = "msg " + (d.ok ? "ok" : "err");
+    msg.textContent = d.message;
+    if (d.ok) { document.getElementById("pw-current").value = ""; document.getElementById("pw-new").value = ""; document.getElementById("pw-confirm").value = ""; }
+  } catch(e) { msg.className = "msg err"; msg.textContent = "오류: " + e; }
+}
+
+// 초기 로드
+loadMyCart();
+</script>
+</body>
+</html>

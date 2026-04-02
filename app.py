@@ -28,6 +28,7 @@ from xebio_search import scrape_nike_sale, load_latest_products, set_app_status,
 from cafe_uploader import upload_products, naver_manual_login, has_saved_cookies, delete_cookies, request_upload_stop, is_upload_stop_requested
 from exchange import get_jpy_to_krw_rate, get_cached_rate, calc_buying_price, set_margin_rate, get_margin_rate, set_price_config, get_price_config
 from user_db import init_db as init_user_db, get_user as get_customer, create_user, check_password as check_customer_pw, username_exists
+from werkzeug.security import generate_password_hash, check_password_hash
 from post_generator import get_ai_config, set_ai_config, verify_ai_key
 from site_config import get_sites_for_ui
 from scrape_history import get_history as get_scrape_history
@@ -204,14 +205,20 @@ def shop():
                            user_level=user_level)
 
 
-@app.route(f"{URL_PREFIX}/shop/my-orders")
+@app.route(f"{URL_PREFIX}/shop/mypage")
 @login_required
-def shop_my_orders():
-    """고객용 나의 주문리스트 페이지"""
-    return render_template("my_orders.html",
+def shop_mypage():
+    """고객용 마이페이지"""
+    return render_template("mypage.html",
                            url_prefix=URL_PREFIX, env=APP_ENV,
                            username=session.get("username"),
                            is_admin=session.get("role", "admin") == "admin")
+
+
+@app.route(f"{URL_PREFIX}/shop/my-orders")
+@login_required
+def shop_my_orders():
+    return redirect(f"{URL_PREFIX}/shop/mypage#orders")
 
 
 @app.route(f"{URL_PREFIX}/shop/api/my-orders")
@@ -229,6 +236,145 @@ def shop_my_orders_api():
         ).fetchall()
         orders = [{c: r[c] for c in r.keys()} for r in rows]
         return jsonify({"ok": True, "orders": orders})
+    finally:
+        conn.close()
+
+
+# ── 장바구니 API ──────────────────────────
+def _init_cart_db():
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS cart (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            product_code TEXT NOT NULL,
+            brand TEXT DEFAULT '',
+            product_name TEXT DEFAULT '',
+            price TEXT DEFAULT '',
+            price_jpy INTEGER DEFAULT 0,
+            img_url TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(username, product_code)
+        )""")
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/shop/api/cart", methods=["GET"])
+@login_required
+def get_cart():
+    _init_cart_db()
+    username = session.get("username", "")
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        rows = conn.execute("SELECT * FROM cart WHERE username=? ORDER BY created_at DESC", (username,)).fetchall()
+        items = [{c: r[c] for c in r.keys()} for r in rows]
+        return jsonify({"ok": True, "items": items, "count": len(items)})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/shop/api/cart", methods=["POST"])
+@login_required
+def add_to_cart():
+    _init_cart_db()
+    data = request.json or {}
+    username = session.get("username", "")
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        conn.execute("""INSERT OR IGNORE INTO cart (username, product_code, brand, product_name, price, price_jpy, img_url)
+                        VALUES (?,?,?,?,?,?,?)""",
+                     (username, data.get("code",""), data.get("brand",""), data.get("name",""),
+                      data.get("price",""), data.get("price_jpy",0), data.get("img_url","")))
+        conn.commit()
+        count = conn.execute("SELECT count(*) FROM cart WHERE username=?", (username,)).fetchone()[0]
+        return jsonify({"ok": True, "count": count})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/shop/api/cart/<int:item_id>", methods=["DELETE"])
+@login_required
+def remove_from_cart(item_id):
+    _init_cart_db()
+    username = session.get("username", "")
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        conn.execute("DELETE FROM cart WHERE id=? AND username=?", (item_id, username))
+        conn.commit()
+        count = conn.execute("SELECT count(*) FROM cart WHERE username=?", (username,)).fetchone()[0]
+        return jsonify({"ok": True, "count": count})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/shop/api/myinfo", methods=["GET"])
+@login_required
+def get_myinfo():
+    """본인 회원정보 조회"""
+    username = session.get("username", "")
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        row = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+        if not row:
+            return jsonify({"ok": False})
+        return jsonify({"ok": True, "user": {c: (row[c] or "") for c in row.keys() if c != "password_hash"}})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/shop/api/myinfo", methods=["POST"])
+@login_required
+def update_myinfo():
+    """본인 회원정보 수정"""
+    data = request.json or {}
+    username = session.get("username", "")
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        fields = {k: data[k].strip() for k in
+                  ["name","phone","postal_code","address","address_detail","customs_id","business_number"]
+                  if k in data and data[k] is not None}
+        if not fields:
+            return jsonify({"ok": False, "message": "변경할 정보 없음"})
+        sets = ", ".join(f"{k}=?" for k in fields)
+        conn.execute(f"UPDATE users SET {sets} WHERE username=?", list(fields.values()) + [username])
+        conn.commit()
+        return jsonify({"ok": True, "message": "저장 완료"})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/shop/api/change-password", methods=["POST"])
+@login_required
+def change_password():
+    """비밀번호 변경"""
+    data = request.json or {}
+    current = data.get("current", "")
+    new_pw = data.get("new_password", "")
+    if not current or not new_pw:
+        return jsonify({"ok": False, "message": "현재 비밀번호와 새 비밀번호를 입력하세요"})
+    if len(new_pw) < 4:
+        return jsonify({"ok": False, "message": "새 비밀번호는 4자 이상이어야 합니다"})
+    username = session.get("username", "")
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        row = conn.execute("SELECT password_hash FROM users WHERE username=?", (username,)).fetchone()
+        if not row or not check_password_hash(row["password_hash"], current):
+            return jsonify({"ok": False, "message": "현재 비밀번호가 틀립니다"})
+        conn.execute("UPDATE users SET password_hash=? WHERE username=?",
+                     (generate_password_hash(new_pw), username))
+        conn.commit()
+        return jsonify({"ok": True, "message": "비밀번호가 변경되었습니다"})
     finally:
         conn.close()
 

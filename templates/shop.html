@@ -35,6 +35,17 @@
       cursor:pointer; transition:all .2s;
     }
     .topbar-btn:hover { border-color:var(--accent); color:var(--accent); }
+    .user-dropdown {
+      display:none; position:absolute; top:100%; right:0; margin-top:6px;
+      background:var(--card); border:1px solid var(--border); border-radius:10px;
+      min-width:160px; box-shadow:0 8px 24px rgba(0,0,0,0.5); z-index:100; overflow:hidden;
+    }
+    .user-dropdown.show { display:block; }
+    .user-dropdown a {
+      display:block; padding:10px 16px; font-size:0.82rem; color:var(--text);
+      text-decoration:none; transition:background .15s;
+    }
+    .user-dropdown a:hover { background:rgba(212,165,74,0.08); color:var(--accent); }
 
     /* ── Layout ── */
     .layout { display:flex; margin-top:56px; min-height:calc(100vh - 56px); }
@@ -301,9 +312,22 @@
 <div class="topbar">
   <div class="topbar-logo">TheOne<span>Vintage</span></div>
   <div class="topbar-right">
-    <a href="{{ url_prefix }}/shop/my-orders" class="topbar-btn" style="background:rgba(212,165,74,0.15);color:var(--accent);font-weight:700;">나의 주문</a>
-    <span class="topbar-user">{{ username }}</span>
-    <a href="{{ url_prefix }}/logout" class="topbar-btn">로그아웃</a>
+    <a href="{{ url_prefix }}/shop/mypage#cart" class="topbar-btn" style="position:relative;">
+      &#x1f6d2; 장바구니 <span id="cart-badge" style="display:none;position:absolute;top:-6px;right:-8px;background:var(--red);color:#fff;font-size:0.6rem;padding:1px 5px;border-radius:10px;font-weight:700;">0</span>
+    </a>
+    <div style="position:relative;display:inline-block;">
+      <button onclick="document.getElementById('user-dropdown').classList.toggle('show')" class="topbar-btn" style="background:rgba(212,165,74,0.12);color:var(--accent);font-weight:700;border:1px solid rgba(212,165,74,0.3);">
+        &#x1f464; {{ username }}
+      </button>
+      <div id="user-dropdown" class="user-dropdown">
+        <a href="{{ url_prefix }}/shop/mypage">회원정보</a>
+        <a href="{{ url_prefix }}/shop/mypage#orders">주문내역</a>
+        <a href="{{ url_prefix }}/shop/mypage#cart">장바구니</a>
+        <a href="{{ url_prefix }}/shop/mypage#password">비밀번호 변경</a>
+        <div style="border-top:1px solid var(--border);margin:4px 0;"></div>
+        <a href="{{ url_prefix }}/logout" style="color:var(--red);">로그아웃</a>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -426,7 +450,8 @@
         <div class="modal-desc" id="modal-desc"></div>
         <div style="display:flex;gap:8px;margin-top:14px;">
           <button class="modal-order-btn" onclick="orderProduct()" style="flex:1;">주문하기</button>
-          <button class="modal-order-btn" onclick="inquiryProduct()" style="flex:1;background:linear-gradient(135deg,#FAE100,#3C1E1E);color:#3C1E1E;">카카오 문의</button>
+          <button class="modal-order-btn" onclick="addToCart()" style="flex:1;background:linear-gradient(135deg,#555,#333);color:#fff;">&#x1f6d2; 장바구니</button>
+          <button class="modal-order-btn" onclick="inquiryProduct()" style="flex:0.8;background:linear-gradient(135deg,#FAE100,#3C1E1E);color:#3C1E1E;font-size:0.82rem;">카카오 문의</button>
         </div>
         {% if is_admin %}<a class="modal-link" id="modal-link" href="#" target="_blank">상품 상세보기</a>{% endif %}
       </div>
@@ -782,6 +807,44 @@ function closeModal() {
 }
 
 const KAKAO_CHAT_URL = "http://pf.kakao.com/_geJHxj/chat";
+
+// 드롭다운 외부 클릭 시 닫기
+document.addEventListener("click", e => {
+  const dd = document.getElementById("user-dropdown");
+  if (dd && !e.target.closest(".topbar-right [style*='relative']")) dd.classList.remove("show");
+});
+
+// 장바구니 뱃지 초기 로드
+async function updateCartBadge() {
+  try {
+    const res = await fetch(PREFIX + "/shop/api/cart");
+    const d = await res.json();
+    const badge = document.getElementById("cart-badge");
+    if (badge) {
+      badge.textContent = d.count || 0;
+      badge.style.display = d.count > 0 ? "" : "none";
+    }
+  } catch(e) {}
+}
+updateCartBadge();
+
+async function addToCart() {
+  const p = allProducts[currentModalIdx];
+  if (!p) return;
+  const name = transJa(p.name);
+  const price = p.price_krw ? p.price_krw.toLocaleString() + '원' : '¥' + p.price_jpy.toLocaleString();
+  try {
+    const res = await fetch(PREFIX + "/shop/api/cart", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({code: p.product_code, brand: p.brand, name: name, price: price, price_jpy: p.price_jpy, img_url: p.img_url})
+    });
+    const d = await res.json();
+    if (d.ok) {
+      alert("장바구니에 추가되었습니다!");
+      updateCartBadge();
+    }
+  } catch(e) { alert("장바구니 추가 실패"); }
+}
 
 async function orderProduct() {
   const p = allProducts[currentModalIdx];
