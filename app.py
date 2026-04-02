@@ -184,6 +184,18 @@ def signup():
                 except Exception:
                     pass
                 logger.info(f"회원가입 (승인대기): {username}")
+                # 텔레그램 알림
+                try:
+                    from notifier import send_telegram
+                    send_telegram(
+                        f"👤 <b>새 회원가입 알림</b>\n"
+                        f"🆔 아이디: {username}\n"
+                        f"📛 이름: {name or '-'}\n"
+                        f"📞 연락처: {phone or '-'}\n"
+                        f"⏳ 승인 대기 중"
+                    )
+                except Exception:
+                    pass
                 return render_template("signup.html", error=None, success=True,
                                        url_prefix=URL_PREFIX, env=APP_ENV)
             else:
