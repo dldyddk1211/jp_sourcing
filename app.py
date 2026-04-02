@@ -517,20 +517,23 @@ def get_orders():
         orders = []
         # 상품 링크 조회를 위해 product_db 연결
         product_links = {}
+        product_extras = {}
         try:
             from product_db import _conn as prod_conn
             pconn = prod_conn()
             for r in rows:
                 code = r["product_code"] or ""
-                if code and code not in product_links:
-                    pr = pconn.execute("SELECT link FROM products WHERE internal_code=? LIMIT 1", (code,)).fetchone()
-                    product_links[code] = pr["link"] if pr else ""
+                if code and code not in product_extras:
+                    pr = pconn.execute("SELECT link, img_url FROM products WHERE internal_code=? LIMIT 1", (code,)).fetchone()
+                    product_extras[code] = {"link": pr["link"] if pr else "", "img": pr["img_url"] if pr else ""}
             pconn.close()
         except Exception:
             pass
         for r in rows:
             o = {c: r[c] for c in r.keys()}
-            o["product_link"] = product_links.get(r["product_code"], "")
+            extras = product_extras.get(r["product_code"], {})
+            o["product_link"] = extras.get("link", "")
+            o["product_img"] = extras.get("img", "")
             orders.append(o)
         return jsonify({"ok": True, "orders": orders})
     finally:

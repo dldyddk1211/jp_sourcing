@@ -765,6 +765,7 @@
                 <th>유형</th>
                 <th>고객</th>
                 <th>이름</th>
+                <th style="width:40px"></th>
                 <th>브랜드</th>
                 <th>상품명</th>
                 <th>고유번호</th>
@@ -4027,7 +4028,7 @@ async function loadOrders() {
     const res = await fetch(PREFIX + "/orders?" + params);
     const d = await res.json();
     if (!d.orders || !d.orders.length) {
-      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:30px;">주문/문의 내역이 없습니다</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:30px;">주문/문의 내역이 없습니다</td></tr>';
       updateOrderBadge(0);
       return;
     }
@@ -4043,6 +4044,7 @@ async function loadOrders() {
         <td style="padding:6px;text-align:center;">${typeIcons[o.type]||'📋'} ${o.type==='order'?'주문':'문의'}</td>
         <td style="padding:6px;font-weight:600;">${o.username||''}</td>
         <td style="padding:6px;"><a href="#" onclick="showCustomerPopup(event,'${o.username||''}')" style="color:var(--accent);text-decoration:underline;cursor:pointer;">${o.customer_name||'-'}</a></td>
+        <td style="padding:4px;"><img src="${o.product_img||''}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;border:1px solid var(--border);" onerror="this.style.display='none'"></td>
         <td style="padding:6px;">${o.brand||''}</td>
         <td style="padding:6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.product_name||''}</td>
         <td style="padding:6px;font-family:monospace;font-size:0.72rem;"><a href="${o.product_link || ('{{ url_prefix }}/shop?code='+encodeURIComponent(o.product_code||''))}" target="_blank" style="color:var(--accent);text-decoration:underline;cursor:pointer;" title="${o.product_link?'원본 상품 페이지':'쇼핑몰에서 보기'}">${o.product_code||''}</a></td>
