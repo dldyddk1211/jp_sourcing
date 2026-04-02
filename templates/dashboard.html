@@ -3003,13 +3003,18 @@ function startTaskLog() {
   taskLogSource.onmessage = function(e) {
     const logEl = document.getElementById("task-log");
     if (!logEl) return;
-    const msg = e.data;
-    if (!msg) return;
+    let msg = "";
+    try {
+      const d = JSON.parse(e.data);
+      msg = d.msg || "";
+    } catch { msg = e.data || ""; }
+    if (!msg || msg === ".") return;  // heartbeat 무시
     let color = "var(--muted)";
     if (msg.includes("✅") || msg.includes("완료")) color = "var(--green)";
     else if (msg.includes("❌") || msg.includes("오류")) color = "var(--red)";
     else if (msg.includes("🔄") || msg.includes("📄") || msg.includes("수집중")) color = "var(--accent)";
     else if (msg.includes("⏭️") || msg.includes("스킵")) color = "var(--yellow)";
+    else if (msg.includes("🏪") || msg.includes("📊")) color = "var(--green)";
     logEl.innerHTML += `<div style="color:${color}">${msg}</div>`;
     logEl.scrollTop = logEl.scrollHeight;
   };
