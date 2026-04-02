@@ -2091,6 +2091,54 @@ def manual_scrape():
     return jsonify({"ok": True, "message": f"스크래핑 시작됨 ({desc})"})
 
 
+@app.route(f"{URL_PREFIX}/scrape", methods=["POST"])
+@admin_required
+def api_scrape_sync():
+    """작업리스트용 수집 API (완료까지 대기 후 결과 반환)"""
+    site_id = request.args.get("site", "2ndstreet")
+    category_id = request.args.get("category", "")
+    brand_code = request.args.get("brand", "")
+    pages = request.args.get("pages", "")
+
+    if status["scraping"]:
+        return jsonify({"ok": False, "message": "이미 수집 진행 중", "count": 0})
+
+    push_log(f"📋 작업리스트 수집 시작: {site_id} / {category_id} / {brand_code}")
+    status["scraping"] = True
+    count = 0
+    try:
+        import asyncio
+        from secondst_crawler import scrape_2ndstreet, set_app_status as set_2nd_status
+        set_2nd_status(status)
+        products = asyncio.run(scrape_2ndstreet(
+            status_callback=push_log,
+            category=category_id,
+            pages=pages,
+            brand_code=brand_code,
+        ))
+        count = len(products) if products else 0
+        status["product_count"] = count
+        # 이력 저장
+        try:
+            from scrape_history import add_history
+            from site_config import get_brands as get_site_brands
+            brand_name = ""
+            if brand_code:
+                brands_map = get_site_brands(site_id)
+                brand_name = brands_map.get(brand_code, brand_code)
+            add_history(site_id=site_id, category_id=category_id or "전체",
+                       product_count=count, brand=brand_name)
+        except Exception:
+            pass
+    except Exception as e:
+        push_log(f"❌ 수집 오류: {e}")
+        return jsonify({"ok": False, "message": str(e), "count": 0})
+    finally:
+        status["scraping"] = False
+
+    return jsonify({"ok": True, "count": count, "message": f"수집 완료: {count}개"})
+
+
 # ── 사이트/카테고리 API ────────────────────────
 
 @app.route(f"{URL_PREFIX}/sites", methods=["GET"])

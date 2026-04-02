@@ -1335,31 +1335,80 @@
 
     <!-- ═══ 수집 작업리스트 ═══ -->
     <div class="page-section" id="page-scrape-tasks">
+      <!-- 작업 추가 -->
+      <div class="panel">
+        <div class="panel-title"><span>&#x2795; 수집 작업 추가</span></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+          <div>
+            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">사이트</label>
+            <select id="task-site" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:0.82rem;">
+              <option value="2ndstreet">세컨드스트리트</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">카테고리</label>
+            <select id="task-cat" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:0.82rem;">
+              <option value="">전체</option>
+              <option value="950001">가방</option>
+              <option value="950002">의류</option>
+              <option value="950003">신발</option>
+              <option value="950004">시계</option>
+              <option value="950005">악세서리</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">브랜드</label>
+            <select id="task-brand" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:0.82rem;min-width:140px;">
+              <option value="">전체</option>
+              <option value="001235">PRADA</option>
+              <option value="000931">LOUIS VUITTON</option>
+              <option value="001169">GUCCI</option>
+              <option value="001225">CHANEL</option>
+              <option value="001339">HERMES</option>
+              <option value="001287">CELINE</option>
+              <option value="001114">COACH</option>
+              <option value="001389">BALENCIAGA</option>
+              <option value="001129">BURBERRY</option>
+              <option value="001218">FENDI</option>
+              <option value="001171">BOTTEGA VENETA</option>
+              <option value="001336">LOEWE</option>
+              <option value="001253">SAINT LAURENT</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">페이지</label>
+            <input type="text" id="task-pages" placeholder="공란=전체" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:0.82rem;width:80px;">
+          </div>
+          <button class="btn b-green" onclick="addScrapeTask()" style="padding:7px 16px;font-size:0.82rem;">+ 리스트 추가</button>
+        </div>
+      </div>
+
+      <!-- 작업 리스트 -->
       <div class="panel">
         <div class="panel-title">
-          <span>&#x1f4cb; 수집 작업리스트</span>
+          <span>&#x1f4cb; 수집 작업 리스트</span>
           <div style="display:flex;gap:8px;">
+            <button class="btn b-blue" onclick="runAllTasks()" id="btn-run-all" style="padding:5px 12px;font-size:0.78rem">&#x25b6; 전체 순차 실행</button>
             <button class="btn b-gray" onclick="loadScrapeTasks()" style="padding:5px 12px;font-size:0.78rem">&#x1f504; 새로고침</button>
             <button class="btn b-red" onclick="clearScrapeTasks()" style="padding:5px 12px;font-size:0.78rem">&#x1f5d1; 전체 삭제</button>
           </div>
         </div>
-        <div style="font-size:0.75rem;color:var(--muted);margin-bottom:12px;">수집 완료된 작업 이력입니다. 대량 수집 시 진행 상황을 확인할 수 있습니다.</div>
         <div style="overflow-x:auto;">
-          <table class="tbl" style="width:100%;font-size:0.78rem;" id="scrape-task-table">
+          <table class="tbl" style="width:100%;font-size:0.78rem;">
             <thead>
               <tr>
-                <th style="width:40px">#</th>
-                <th>일시</th>
+                <th style="width:35px">#</th>
                 <th>사이트</th>
                 <th>카테고리</th>
                 <th>브랜드</th>
-                <th>키워드</th>
+                <th>페이지</th>
                 <th>수집 수</th>
                 <th>상태</th>
+                <th style="width:140px">실행</th>
               </tr>
             </thead>
             <tbody id="scrape-task-body">
-              <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr>
+              <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">작업을 추가해주세요</td></tr>
             </tbody>
           </table>
         </div>
@@ -2837,42 +2886,114 @@ async function runTranslate() {
 }
 
 // ── 수집 작업리스트 ─────────────────────────
-async function loadScrapeTasks() {
-  const tbody = document.getElementById("scrape-task-body");
-  if (!tbody) return;
-  try {
-    const res = await fetch(PREFIX + "/scrape-history?limit=100");
-    const tasks = await res.json();
-    if (!tasks.length) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">수집 이력이 없습니다</td></tr>';
-      return;
-    }
-    const statusColors = {"수집완료":"var(--green)","수집중":"var(--accent)","업로드완료":"#6cf","오류":"var(--red)"};
-    tbody.innerHTML = tasks.map((t, i) => {
-      const sc = statusColors[t.status] || "var(--muted)";
-      return `<tr style="border-bottom:1px solid var(--border)22;">
-        <td style="padding:6px;color:var(--dim)">${i+1}</td>
-        <td style="padding:6px;white-space:nowrap;">${t.date || ''}</td>
-        <td style="padding:6px;">${t.site_name || t.site_id || ''}</td>
-        <td style="padding:6px;">${t.category_name || t.category_id || ''}</td>
-        <td style="padding:6px;font-weight:600;">${t.brand || '전체'}</td>
-        <td style="padding:6px;color:var(--muted)">${t.keyword || '-'}</td>
-        <td style="padding:6px;text-align:center;font-weight:700;color:var(--accent)">${t.product_count || 0}</td>
-        <td style="padding:6px;color:${sc};font-weight:600;">${t.status || ''}</td>
-      </tr>`;
-    }).join("");
-  } catch(e) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--red);padding:20px;">로드 실패: ${e}</td></tr>`;
-  }
+let scrapeTaskList = JSON.parse(localStorage.getItem("scrapeTaskList") || "[]");
+const catNames = {"":"전체","950001":"가방","950002":"의류","950003":"신발","950004":"시계","950005":"악세서리"};
+const brandNames = {"":"전체","001235":"PRADA","000931":"LOUIS VUITTON","001169":"GUCCI","001225":"CHANEL","001339":"HERMES","001287":"CELINE","001114":"COACH","001389":"BALENCIAGA","001129":"BURBERRY","001218":"FENDI","001171":"BOTTEGA VENETA","001336":"LOEWE","001253":"SAINT LAURENT"};
+
+function saveTaskList() { localStorage.setItem("scrapeTaskList", JSON.stringify(scrapeTaskList)); }
+
+function addScrapeTask() {
+  const site = document.getElementById("task-site").value;
+  const cat = document.getElementById("task-cat").value;
+  const brand = document.getElementById("task-brand").value;
+  const pages = document.getElementById("task-pages").value.trim();
+  scrapeTaskList.push({
+    id: Date.now(),
+    site, cat, brand, pages,
+    siteName: "세컨드스트리트",
+    catName: catNames[cat] || cat,
+    brandName: brandNames[brand] || brand || "전체",
+    status: "대기",
+    count: 0,
+  });
+  saveTaskList();
+  renderTaskList();
+  addLog(`\u2705 수집 작업 추가: ${catNames[cat]||'전체'} / ${brandNames[brand]||'전체'}`, "ok");
 }
 
-async function clearScrapeTasks() {
-  if (!confirm("수집 이력을 모두 삭제하시겠습니까?")) return;
+function renderTaskList() {
+  const tbody = document.getElementById("scrape-task-body");
+  if (!tbody) return;
+  if (!scrapeTaskList.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">작업을 추가해주세요</td></tr>';
+    return;
+  }
+  const statusStyle = {"대기":"color:var(--muted)","수집중":"color:var(--accent);font-weight:700","완료":"color:var(--green);font-weight:700","오류":"color:var(--red);font-weight:700"};
+  tbody.innerHTML = scrapeTaskList.map((t, i) => {
+    const ss = statusStyle[t.status] || "";
+    const isRunning = t.status === "수집중";
+    const isDone = t.status === "완료";
+    let btnHtml = "";
+    if (isDone) {
+      btnHtml = `<span style="color:var(--green);font-weight:700;font-size:0.82rem;">&#x2705; 완료 (${t.count}개)</span>`;
+    } else if (isRunning) {
+      btnHtml = `<span style="color:var(--accent);font-size:0.78rem;">&#x23F3; 수집중...</span>`;
+    } else {
+      btnHtml = `<button onclick="runSingleTask(${i})" class="btn b-blue" style="padding:4px 12px;font-size:0.75rem;">&#x25b6; 수집</button>
+                 <button onclick="removeTask(${i})" class="btn b-red" style="padding:4px 8px;font-size:0.72rem;">&#x2716;</button>`;
+    }
+    return `<tr style="border-bottom:1px solid var(--border)22;">
+      <td style="padding:6px;color:var(--dim)">${i+1}</td>
+      <td style="padding:6px;">${t.siteName}</td>
+      <td style="padding:6px;">${t.catName}</td>
+      <td style="padding:6px;font-weight:600;">${t.brandName}</td>
+      <td style="padding:6px;color:var(--muted)">${t.pages || '전체'}</td>
+      <td style="padding:6px;text-align:center;font-weight:700;color:var(--accent)">${t.count || '-'}</td>
+      <td style="padding:6px;${ss}">${t.status}</td>
+      <td style="padding:6px;display:flex;gap:4px;align-items:center;">${btnHtml}</td>
+    </tr>`;
+  }).join("");
+}
+
+function removeTask(idx) {
+  scrapeTaskList.splice(idx, 1);
+  saveTaskList();
+  renderTaskList();
+}
+
+function loadScrapeTasks() { renderTaskList(); }
+
+async function runSingleTask(idx) {
+  const task = scrapeTaskList[idx];
+  if (!task || task.status === "수집중" || task.status === "완료") return;
+  task.status = "수집중";
+  task.count = 0;
+  saveTaskList();
+  renderTaskList();
   try {
-    await fetch(PREFIX + "/scrape-history", {method: "DELETE"});
-    loadScrapeTasks();
-    addLog("\u2705 수집 이력 삭제 완료", "ok");
-  } catch(e) { addLog("\u274C 이력 삭제 실패", "err"); }
+    const params = new URLSearchParams({
+      site: task.site, category: task.cat, brand: task.brand, pages: task.pages || ""
+    });
+    const res = await fetch(PREFIX + "/scrape?" + params, {method: "POST"});
+    const d = await res.json();
+    task.status = "완료";
+    task.count = d.count || 0;
+  } catch(e) {
+    task.status = "오류";
+    addLog("\u274C 수집 실패: " + e, "err");
+  }
+  saveTaskList();
+  renderTaskList();
+}
+
+async function runAllTasks() {
+  const pending = scrapeTaskList.filter(t => t.status === "대기");
+  if (!pending.length) { addLog("\u26a0\ufe0f 대기 중인 작업이 없습니다", "info"); return; }
+  addLog(`\u25b6 전체 순차 실행 시작 (${pending.length}개)`, "info");
+  for (let i = 0; i < scrapeTaskList.length; i++) {
+    if (scrapeTaskList[i].status === "대기") {
+      await runSingleTask(i);
+    }
+  }
+  addLog("\u2705 전체 순차 실행 완료!", "ok");
+}
+
+function clearScrapeTasks() {
+  if (!confirm("작업 리스트를 모두 삭제하시겠습니까?")) return;
+  scrapeTaskList = [];
+  saveTaskList();
+  renderTaskList();
+  addLog("\u2705 작업 리스트 삭제 완료", "ok");
 }
 
 async function runRescrapeVt() {
