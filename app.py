@@ -130,6 +130,7 @@ def login():
                 session["username"] = username
                 session["role"] = "customer"
                 session["level"] = customer["level"] if "level" in customer.keys() else "b2c"
+                session["name"] = customer["name"] if "name" in customer.keys() else ""
                 logger.info(f"고객 로그인: {username} (level={session['level']})")
                 return redirect(f"{URL_PREFIX}/shop")
         elif customer:
@@ -420,6 +421,14 @@ def shop_notify():
     price_jpy = data.get("price_jpy", 0)
     username = session.get("username", "비회원")
     customer_name = session.get("name", "")
+    # 세션에 이름 없으면 DB에서 조회
+    if not customer_name and username != "비회원":
+        try:
+            user_row = get_customer(username)
+            if user_row and "name" in user_row.keys():
+                customer_name = user_row["name"] or ""
+        except Exception:
+            pass
 
     icon = "🛒" if ntype == "order" else "💬"
     label = "주문" if ntype == "order" else "문의"
@@ -506,8 +515,23 @@ def get_orders():
         sql += " ORDER BY created_at DESC LIMIT 200"
         rows = conn.execute(sql, params).fetchall()
         orders = []
+        # 상품 링크 조회를 위해 product_db 연결
+        product_links = {}
+        try:
+            from product_db import _conn as prod_conn
+            pconn = prod_conn()
+            for r in rows:
+                code = r["product_code"] or ""
+                if code and code not in product_links:
+                    pr = pconn.execute("SELECT link FROM products WHERE internal_code=? LIMIT 1", (code,)).fetchone()
+                    product_links[code] = pr["link"] if pr else ""
+            pconn.close()
+        except Exception:
+            pass
         for r in rows:
-            orders.append({c: r[c] for c in r.keys()})
+            o = {c: r[c] for c in r.keys()}
+            o["product_link"] = product_links.get(r["product_code"], "")
+            orders.append(o)
         return jsonify({"ok": True, "orders": orders})
     finally:
         conn.close()

@@ -4045,7 +4045,7 @@ async function loadOrders() {
         <td style="padding:6px;"><a href="#" onclick="showCustomerPopup(event,'${o.username||''}')" style="color:var(--accent);text-decoration:underline;cursor:pointer;">${o.customer_name||'-'}</a></td>
         <td style="padding:6px;">${o.brand||''}</td>
         <td style="padding:6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.product_name||''}</td>
-        <td style="padding:6px;font-family:monospace;font-size:0.72rem;"><a href="{{ url_prefix }}/shop?code=${encodeURIComponent(o.product_code||'')}" target="_blank" style="color:var(--accent);text-decoration:underline;cursor:pointer;">${o.product_code||''}</a></td>
+        <td style="padding:6px;font-family:monospace;font-size:0.72rem;"><a href="${o.product_link || ('{{ url_prefix }}/shop?code='+encodeURIComponent(o.product_code||''))}" target="_blank" style="color:var(--accent);text-decoration:underline;cursor:pointer;" title="${o.product_link?'원본 상품 페이지':'쇼핑몰에서 보기'}">${o.product_code||''}</a></td>
         <td style="padding:6px;font-weight:700;color:var(--accent);">${o.price||''}</td>
         <td style="padding:6px;">
           <select onchange="updateOrderStatus(${o.id},this.value)" style="background:#0d0d0a;border:1px solid var(--border);color:${sc};padding:3px 6px;border-radius:4px;font-size:0.72rem;font-weight:600;">
