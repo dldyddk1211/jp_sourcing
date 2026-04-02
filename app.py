@@ -2357,29 +2357,54 @@ def clear_scrape_tasks():
 @app.route(f"{URL_PREFIX}/scrape/check-count")
 @admin_required
 def scrape_check_count():
-    """2ndstreet 검색 결과 상품 수량 확인 (수집 없이)"""
+    """2ndstreet 검색 결과 상품 수량 확인 (Playwright 사용)"""
     category = request.args.get("category", "")
     brand = request.args.get("brand", "")
     try:
-        import requests as _req
-        params = []
-        if category:
-            params.append(f"category={category}")
-        if brand:
-            params.append(f"brand%5B%5D={brand}")
-        params.append("sortBy=recommend&page=1")
-        url = "https://www.2ndstreet.jp/search?" + "&".join(params)
-        resp = _req.get(url, timeout=10, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept-Language": "ja",
-        })
-        import re
-        match = re.search(r'検索結果[：:]\s*([\d,]+)\s*点', resp.text)
-        if match:
-            total_items = int(match.group(1).replace(",", ""))
+        import asyncio
+        from playwright.async_api import async_playwright
+
+        async def _check():
+            pw = await async_playwright().start()
+            browser = await pw.chromium.launch(headless=False, args=["--disable-translate", "--lang=ja"])
+            ctx = await browser.new_context(locale="ja-JP", extra_http_headers={"Accept-Language": "ja"})
+            page = await ctx.new_page()
+            params = []
+            if category:
+                params.append(f"category={category}")
+            if brand:
+                params.append(f"brand%5B%5D={brand}")
+            params.append("sortBy=recommend&page=1")
+            url = "https://www.2ndstreet.jp/search?" + "&".join(params)
+            await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            await asyncio.sleep(5)
+            # 팝업 제거
+            await page.evaluate("""() => {
+                document.body.classList.remove('zigzag-worldshopping-style-body-lock');
+                document.body.style.overflow = 'auto';
+                const btn = document.querySelector('#onetrust-accept-btn-handler');
+                if (btn) btn.click();
+            }""")
+            await asyncio.sleep(2)
+            result = await page.evaluate(r"""() => {
+                const els = document.querySelectorAll('*');
+                for (const el of els) {
+                    const t = el.innerText || '';
+                    const m = t.match(/検索結果[：:]\s*([\d,]+)\s*点/);
+                    if (m) return m[1];
+                }
+                return '';
+            }""")
+            await browser.close()
+            await pw.stop()
+            return result
+
+        total_text = asyncio.run(_check())
+        if total_text:
+            total_items = int(total_text.replace(",", ""))
             total_pages = (total_items + 29) // 30
             return jsonify({"ok": True, "total_items": total_items, "total_pages": total_pages})
-        return jsonify({"ok": False, "total_items": 0, "total_pages": 0})
+        return jsonify({"ok": False, "total_items": 0, "total_pages": 0, "message": "수량 파싱 실패"})
     except Exception as e:
         return jsonify({"ok": False, "message": str(e), "total_items": 0, "total_pages": 0})
 
