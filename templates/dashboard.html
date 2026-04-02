@@ -2887,49 +2887,44 @@ async function runTranslate() {
   finally { if (btn) { btn.disabled = false; btn.textContent = "\uD83C\uDF10 \uD55C\uAD6D\uC5B4 \uBC88\uC5ED"; } }
 }
 
-// ── 수집 작업리스트 ─────────────────────────
-let scrapeTaskList = JSON.parse(localStorage.getItem("scrapeTaskList") || "[]");
+// ── 수집 작업리스트 (서버 DB) ─────────────────
+let scrapeTaskList = [];
 const catNames = {"":"전체","950001":"가방","950002":"의류","950003":"신발","950004":"시계","950005":"악세서리"};
 const brandNames = {"":"전체","001235":"PRADA","000931":"LOUIS VUITTON","001169":"GUCCI","001225":"CHANEL","001339":"HERMES","001287":"CELINE","001114":"COACH","001389":"BALENCIAGA","001129":"BURBERRY","001218":"FENDI","001171":"BOTTEGA VENETA","001336":"LOEWE","001253":"SAINT LAURENT"};
 
-function saveTaskList() { localStorage.setItem("scrapeTaskList", JSON.stringify(scrapeTaskList)); }
+async function loadScrapeTasks() {
+  try {
+    const res = await fetch(PREFIX + "/scrape/tasks");
+    const d = await res.json();
+    scrapeTaskList = d.tasks || [];
+    renderTaskList();
+  } catch(e) {}
+}
 
-function addScrapeTask() {
+async function addScrapeTask() {
   const site = document.getElementById("task-site").value;
   const cat = document.getElementById("task-cat").value;
   const brand = document.getElementById("task-brand").value;
   const pages = document.getElementById("task-pages").value.trim();
-  scrapeTaskList.push({
-    id: Date.now(),
-    site, cat, brand, pages,
-    siteName: "세컨드스트리트",
-    catName: catNames[cat] || cat,
-    brandName: brandNames[brand] || brand || "전체",
-    status: "대기",
-    count: 0,
-    totalItems: "...",
-  });
-  saveTaskList();
-  renderTaskList();
-  // 상품 수량 조회
-  checkTaskItemCount(scrapeTaskList.length - 1);
-  addLog(`\u2705 수집 작업 추가: ${catNames[cat]||'전체'} / ${brandNames[brand]||'전체'}`, "ok");
-}
-
-async function checkTaskItemCount(idx) {
-  const task = scrapeTaskList[idx];
-  if (!task) return;
+  const catName = catNames[cat] || cat || "전체";
+  const brandName = brandNames[brand] || brand || "전체";
+  // 상품 수량 먼저 조회
+  let totalItems = 0, totalPages = 0;
   try {
-    const params = new URLSearchParams({site: task.site, category: task.cat, brand: task.brand});
+    const params = new URLSearchParams({site, category: cat, brand});
     const res = await fetch(PREFIX + "/scrape/check-count?" + params);
     const d = await res.json();
-    if (d.ok) {
-      task.totalItems = d.total_items || 0;
-      task.totalPages = d.total_pages || 0;
-      saveTaskList();
-      renderTaskList();
-    }
-  } catch(e) { task.totalItems = "?"; }
+    if (d.ok) { totalItems = d.total_items; totalPages = d.total_pages; }
+  } catch(e) {}
+  // 서버에 저장
+  try {
+    await fetch(PREFIX + "/scrape/tasks", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({site, siteName:"세컨드스트리트", cat, catName, brand, brandName, pages, totalItems, totalPages})
+    });
+    addLog(`\u2705 수집 작업 추가: ${catName} / ${brandName} (${totalItems.toLocaleString()}개)`, "ok");
+    loadScrapeTasks();
+  } catch(e) { addLog("\u274C 작업 추가 실패", "err"); }
 }
 
 function renderTaskList() {
@@ -2942,25 +2937,24 @@ function renderTaskList() {
   const statusStyle = {"대기":"color:var(--muted)","수집중":"color:var(--accent);font-weight:700","완료":"color:var(--green);font-weight:700","오류":"color:var(--red);font-weight:700"};
   tbody.innerHTML = scrapeTaskList.map((t, i) => {
     const ss = statusStyle[t.status] || "";
-    const isRunning = t.status === "수집중";
     const isDone = t.status === "완료";
+    const isRunning = t.status === "수집중";
     let btnHtml = "";
     if (isDone) {
       btnHtml = `<span style="color:var(--green);font-weight:700;font-size:0.82rem;">&#x2705; 완료 (${t.count}개)</span>`;
     } else if (isRunning) {
       btnHtml = `<span style="color:var(--accent);font-size:0.78rem;">&#x23F3; 수집중...</span>`;
     } else {
-      btnHtml = `<button onclick="runSingleTask(${i})" class="btn b-blue" style="padding:4px 12px;font-size:0.75rem;">&#x25b6; 수집</button>`;
+      btnHtml = `<button onclick="runSingleTask(${t.id})" class="btn b-blue" style="padding:4px 12px;font-size:0.75rem;">&#x25b6; 수집</button>`;
     }
-    const totalDisp = t.totalItems === "..." ? '<span style="color:var(--muted)">조회중...</span>' :
-                      t.totalItems === "?" ? '-' :
-                      `<span style="font-weight:700;">${Number(t.totalItems).toLocaleString()}</span><span style="color:var(--dim);font-size:0.68rem;"> (${t.totalPages||'?'}p)</span>`;
+    const ti = t.total_items || 0;
+    const totalDisp = ti > 0 ? `<b>${ti.toLocaleString()}</b><span style="color:var(--dim);font-size:0.68rem;"> (${t.total_pages||'?'}p)</span>` : '-';
     return `<tr style="border-bottom:1px solid var(--border)22;">
-      <td style="padding:6px;text-align:center;"><input type="checkbox" class="task-chk" data-idx="${i}"></td>
+      <td style="padding:6px;text-align:center;"><input type="checkbox" class="task-chk" data-id="${t.id}"></td>
       <td style="padding:6px;color:var(--dim)">${i+1}</td>
-      <td style="padding:6px;">${t.siteName}</td>
-      <td style="padding:6px;">${t.catName}</td>
-      <td style="padding:6px;font-weight:600;">${t.brandName}</td>
+      <td style="padding:6px;">${t.site_name||t.siteName||''}</td>
+      <td style="padding:6px;">${t.cat_name||t.catName||''}</td>
+      <td style="padding:6px;font-weight:600;">${t.brand_name||t.brandName||''}</td>
       <td style="padding:6px;color:var(--muted)">${t.pages || '전체'}</td>
       <td style="padding:6px;text-align:center;">${totalDisp}</td>
       <td style="padding:6px;text-align:center;font-weight:700;color:var(--accent)">${t.count || '-'}</td>
@@ -2974,67 +2968,53 @@ function toggleAllTaskChk(checked) {
   document.querySelectorAll(".task-chk").forEach(c => c.checked = checked);
 }
 
-function deleteCheckedTasks() {
-  const indices = [];
-  document.querySelectorAll(".task-chk:checked").forEach(c => indices.push(parseInt(c.dataset.idx)));
-  if (!indices.length) { alert("삭제할 항목을 선택해주세요"); return; }
-  if (!confirm(`${indices.length}개 작업을 삭제하시겠습니까?`)) return;
-  // 인덱스 역순으로 삭제 (앞에서 지우면 뒤 인덱스 밀림)
-  indices.sort((a,b) => b - a).forEach(i => scrapeTaskList.splice(i, 1));
-  saveTaskList();
-  renderTaskList();
-  addLog(`\u2705 ${indices.length}개 작업 삭제`, "ok");
+async function deleteCheckedTasks() {
+  const ids = [];
+  document.querySelectorAll(".task-chk:checked").forEach(c => ids.push(parseInt(c.dataset.id)));
+  if (!ids.length) { alert("삭제할 항목을 선택해주세요"); return; }
+  if (!confirm(`${ids.length}개 작업을 삭제하시겠습니까?`)) return;
+  for (const id of ids) {
+    await fetch(PREFIX + "/scrape/tasks/" + id, {method: "DELETE"}).catch(()=>{});
+  }
+  addLog(`\u2705 ${ids.length}개 작업 삭제`, "ok");
+  loadScrapeTasks();
 }
 
-function removeTask(idx) {
-  scrapeTaskList.splice(idx, 1);
-  saveTaskList();
-  renderTaskList();
-}
-
-function loadScrapeTasks() { renderTaskList(); }
-
-async function runSingleTask(idx) {
-  const task = scrapeTaskList[idx];
+async function runSingleTask(taskId) {
+  const task = scrapeTaskList.find(t => t.id === taskId);
   if (!task || task.status === "수집중" || task.status === "완료") return;
-  task.status = "수집중";
-  task.count = 0;
-  saveTaskList();
-  renderTaskList();
+  // 상태 → 수집중
+  await fetch(PREFIX + "/scrape/tasks/" + taskId, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({status:"수집중"})});
+  loadScrapeTasks();
   try {
     const params = new URLSearchParams({
       site: task.site, category: task.cat, brand: task.brand, pages: task.pages || ""
     });
     const res = await fetch(PREFIX + "/scrape?" + params, {method: "POST"});
     const d = await res.json();
-    task.status = "완료";
-    task.count = d.count || 0;
+    await fetch(PREFIX + "/scrape/tasks/" + taskId, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({status:"완료", count: d.count||0})});
   } catch(e) {
-    task.status = "오류";
+    await fetch(PREFIX + "/scrape/tasks/" + taskId, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({status:"오류"})});
     addLog("\u274C 수집 실패: " + e, "err");
   }
-  saveTaskList();
-  renderTaskList();
+  loadScrapeTasks();
 }
 
 async function runAllTasks() {
   const pending = scrapeTaskList.filter(t => t.status === "대기");
   if (!pending.length) { addLog("\u26a0\ufe0f 대기 중인 작업이 없습니다", "info"); return; }
   addLog(`\u25b6 전체 순차 실행 시작 (${pending.length}개)`, "info");
-  for (let i = 0; i < scrapeTaskList.length; i++) {
-    if (scrapeTaskList[i].status === "대기") {
-      await runSingleTask(i);
-    }
+  for (const task of pending) {
+    await runSingleTask(task.id);
   }
   addLog("\u2705 전체 순차 실행 완료!", "ok");
 }
 
-function clearScrapeTasks() {
+async function clearScrapeTasks() {
   if (!confirm("작업 리스트를 모두 삭제하시겠습니까?")) return;
-  scrapeTaskList = [];
-  saveTaskList();
-  renderTaskList();
+  await fetch(PREFIX + "/scrape/tasks/clear", {method: "DELETE"});
   addLog("\u2705 작업 리스트 삭제 완료", "ok");
+  loadScrapeTasks();
 }
 
 async function runRescrapeVt() {

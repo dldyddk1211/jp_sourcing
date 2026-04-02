@@ -2091,6 +2091,112 @@ def manual_scrape():
     return jsonify({"ok": True, "message": f"스크래핑 시작됨 ({desc})"})
 
 
+# ── 수집 작업리스트 DB ──────────────────────────
+def _init_scrape_tasks_db():
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS scrape_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            site TEXT DEFAULT '2ndstreet',
+            site_name TEXT DEFAULT '',
+            cat TEXT DEFAULT '',
+            cat_name TEXT DEFAULT '',
+            brand TEXT DEFAULT '',
+            brand_name TEXT DEFAULT '',
+            pages TEXT DEFAULT '',
+            total_items INTEGER DEFAULT 0,
+            total_pages INTEGER DEFAULT 0,
+            count INTEGER DEFAULT 0,
+            status TEXT DEFAULT '대기',
+            created_at TEXT DEFAULT (datetime('now','localtime'))
+        )""")
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/scrape/tasks", methods=["GET"])
+@admin_required
+def get_scrape_tasks():
+    _init_scrape_tasks_db()
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        rows = conn.execute("SELECT * FROM scrape_tasks ORDER BY id ASC").fetchall()
+        return jsonify({"ok": True, "tasks": [{c: r[c] for c in r.keys()} for r in rows]})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/scrape/tasks", methods=["POST"])
+@admin_required
+def add_scrape_task():
+    _init_scrape_tasks_db()
+    data = request.json or {}
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        conn.execute("""INSERT INTO scrape_tasks (site, site_name, cat, cat_name, brand, brand_name, pages, total_items, total_pages)
+                        VALUES (?,?,?,?,?,?,?,?,?)""",
+                     (data.get("site","2ndstreet"), data.get("siteName",""), data.get("cat",""),
+                      data.get("catName",""), data.get("brand",""), data.get("brandName",""),
+                      data.get("pages",""), data.get("totalItems",0), data.get("totalPages",0)))
+        conn.commit()
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/scrape/tasks/<int:task_id>", methods=["PATCH"])
+@admin_required
+def update_scrape_task(task_id):
+    data = request.json or {}
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        updates, params = [], []
+        for k in ["status", "count"]:
+            if k in data:
+                updates.append(f"{k}=?")
+                params.append(data[k])
+        if updates:
+            params.append(task_id)
+            conn.execute(f"UPDATE scrape_tasks SET {','.join(updates)} WHERE id=?", params)
+            conn.commit()
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/scrape/tasks/<int:task_id>", methods=["DELETE"])
+@admin_required
+def delete_scrape_task(task_id):
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        conn.execute("DELETE FROM scrape_tasks WHERE id=?", (task_id,))
+        conn.commit()
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/scrape/tasks/clear", methods=["DELETE"])
+@admin_required
+def clear_scrape_tasks():
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        conn.execute("DELETE FROM scrape_tasks")
+        conn.commit()
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
+
+
 @app.route(f"{URL_PREFIX}/scrape/check-count")
 @admin_required
 def scrape_check_count():
