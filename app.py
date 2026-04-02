@@ -81,7 +81,7 @@ def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not session.get("logged_in"):
-            if "/api/" in request.path or request.is_json:
+            if "/api/" in request.path or "/scrape/" in request.path or "/orders" in request.path or request.is_json or request.headers.get("Accept","").startswith("application/json"):
                 return jsonify({"ok": False, "error": "로그인이 필요합니다"}), 401
             return redirect(f"{URL_PREFIX}/login")
         # 기존 세션(role 없음)은 admin으로 간주

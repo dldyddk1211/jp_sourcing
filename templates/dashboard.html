@@ -3046,13 +3046,16 @@ async function addScrapeTaskAuto() {
   let totalItems = 0, totalPages = 0;
   try {
     const params = new URLSearchParams({site, category: cat, brand});
+    addLog(`🔍 ${catName} / ${brandName} 상품 수량 조회 중...`, "info");
     const res = await fetch(PREFIX + "/scrape/check-count?" + params);
+    if (res.status === 401) { alert("로그인이 필요합니다"); btn.disabled = false; btn.textContent = "+ 자동 분할 추가"; return; }
     const d = await res.json();
     if (d.ok) { totalItems = d.total_items; totalPages = d.total_pages; }
-  } catch(e) {}
+    else { addLog(`⚠️ 조회 응답: ${d.message || JSON.stringify(d)}`, "err"); }
+  } catch(e) { addLog(`❌ 수량 조회 오류: ${e}`, "err"); }
 
   if (totalPages <= 0) {
-    addLog("\u274C 상품이 없거나 조회 실패", "err");
+    addLog("\u274C 상품이 없거나 조회 실패 — 카테고리/브랜드를 확인해주세요", "err");
     btn.disabled = false; btn.textContent = "+ 자동 분할 추가";
     return;
   }
