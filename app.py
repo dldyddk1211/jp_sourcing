@@ -2485,6 +2485,9 @@ def api_scrape_sync():
     if status["scraping"]:
         return jsonify({"ok": False, "message": "이미 수집 진행 중", "count": 0})
 
+    # 이전 중지 요청 리셋
+    status["stop_requested"] = False
+    status["paused"] = False
     push_log(f"📋 작업리스트 수집 시작: {site_id} / {category_id} / {brand_code}")
     status["scraping"] = True
     count = 0
