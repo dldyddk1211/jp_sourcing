@@ -367,10 +367,6 @@
         <span class="nav-icon">&#x1f4ca;</span>
         <span>&#xb300;&#xc2dc;&#xbcf4;&#xb4dc;</span>
       </div>
-      <div class="nav-item" data-page="members" onclick="showPage('members')">
-        <span class="nav-icon">&#x1f465;</span>
-        <span>회원관리</span>
-      </div>
       <div class="nav-item" data-page="products" onclick="showPage('products')">
         <span class="nav-icon">&#x1f4e6;</span>
         <span>&#xc0c1;&#xd488; &#xbaa9;&#xb85d;</span>
@@ -403,11 +399,15 @@
       <span class="cat-icon">&#x1f3ba;</span>
       <span class="cat-label">Vintage</span>
     </div>
-    <div class="nav-sub collapsed" id="sub-vintage">
+    <div class="nav-sub" id="sub-vintage">
       <div class="nav-item" onclick="window.open('{{ url_prefix }}/shop','_blank')" style="cursor:pointer;">
         <span class="nav-icon">&#x1f6cd;</span>
         <span>대행사이트</span>
         <span style="font-size:0.6rem;color:var(--accent);margin-left:auto;">&#x2197;</span>
+      </div>
+      <div class="nav-item" data-page="members" onclick="showPage('members');loadMembers()">
+        <span class="nav-icon">&#x1f465;</span>
+        <span>회원관리</span>
       </div>
       <div class="nav-item" data-page="orders" onclick="showPage('orders');loadOrders()">
         <span class="nav-icon">&#x1f4e6;</span>
