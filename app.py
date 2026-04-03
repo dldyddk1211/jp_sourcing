@@ -790,8 +790,11 @@ def shop_api_products():
                 sql += " AND (" + " OR ".join(["name LIKE ?"] * len(ja_keys)) + ")"
                 params.extend([f"%{k}%" for k in ja_keys])
         if keyword:
-            sql += " AND (name LIKE ? OR brand LIKE ?)"
-            params.extend([f"%{keyword}%", f"%{keyword}%"])
+            # 여러 키워드 지원 (공백 구분 → AND 조건)
+            words = keyword.split()
+            for word in words:
+                sql += " AND (name LIKE ? OR name_ko LIKE ? OR brand LIKE ? OR brand_ko LIKE ? OR description LIKE ? OR description_ko LIKE ? OR internal_code LIKE ? OR color LIKE ? OR material LIKE ?)"
+                params.extend([f"%{word}%"] * 9)
 
         # 가격대 필터 (한국 원화 → 엔화 역산, 레벨별 마진 적용)
         if price_min > 0 or price_max > 0:
