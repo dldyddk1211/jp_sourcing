@@ -520,19 +520,25 @@ def delete_post(post_id):
 
 
 def _calc_vintage_price(jpy: int, margin_type="b2c") -> int:
-    """빈티지 상품 한국 판매가 계산 (b2c 또는 b2b)"""
+    """빈티지 상품 한국 판매가 계산
+    B2C: 일본가 기반 정상 계산
+    B2B: B2C 가격에서 5% 할인
+    """
     if not jpy or jpy <= 0:
         return 0
     cfg = _vintage_price_config
     fee = cfg["jp_fee_pct"] / 100
     markup = cfg["buy_markup_pct"] / 100
-    margin = cfg.get(f"margin_{margin_type}_pct", 15.0) / 100
+    margin = cfg.get("margin_b2c_pct", 15.0) / 100  # 항상 B2C 마진 기준
     jp_ship = cfg.get("jp_domestic_shipping", 800)
     intl_ship = cfg["intl_shipping_krw"]
     rate = get_cached_rate() or 9.23
     jpy_total = (jpy + jp_ship) * (1 + fee)
     raw = jpy_total * rate * (1 + markup) * (1 + margin) + intl_ship
-    return int(math.ceil(raw / 100) * 100)
+    b2c_price = int(math.ceil(raw / 100) * 100)
+    if margin_type == "b2b":
+        return int(math.ceil(b2c_price * 0.95 / 100) * 100)  # B2C의 5% 할인
+    return b2c_price
 
 
 @app.route(f"{URL_PREFIX}/shop/api/notify", methods=["POST"])
