@@ -21,9 +21,10 @@
 
     /* ── 사이드바 ───────────────────────── */
     .sidebar {
-      width:var(--sidebar-w); min-height:100vh; background:var(--card);
+      width:var(--sidebar-w); height:100vh; background:var(--card);
       border-right:1px solid var(--border);
       display:flex; flex-direction:column; position:fixed; top:0; left:0; z-index:100;
+      overflow:hidden;
     }
     .sidebar-banner {
       padding:24px 20px 18px; text-align:center;
@@ -36,7 +37,7 @@
     }
     .sidebar-banner .sub { font-size:0.72rem; color:var(--muted); margin-top:4px; }
 
-    .sidebar-nav { flex:1; padding:8px 0; overflow-y:auto; }
+    .sidebar-nav { flex:1; padding:8px 0; overflow-y:auto; min-height:0; }
 
     /* ── 카테고리 헤더 ──────────────────── */
     .nav-category {
