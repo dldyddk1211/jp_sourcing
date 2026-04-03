@@ -356,23 +356,23 @@
     <!-- 컨디션 -->
     <div class="sidebar-section">
       <div class="sidebar-title">컨디션</div>
-      <ul class="filter-list" id="condition-list">
-        <li class="filter-item active" data-val="" onclick="selectFilter('condition',this)"><span>전체</span></li>
-        <li class="filter-item" data-val="NS" onclick="selectFilter('condition',this)"><span>신품/미사용</span></li>
-        <li class="filter-item" data-val="S" onclick="selectFilter('condition',this)"><span>중고 S</span></li>
-        <li class="filter-item" data-val="A" onclick="selectFilter('condition',this)"><span>중고 A</span></li>
-        <li class="filter-item" data-val="B" onclick="selectFilter('condition',this)"><span>중고 B</span></li>
-        <li class="filter-item" data-val="C" onclick="selectFilter('condition',this)"><span>중고 C</span></li>
-        <li class="filter-item" data-val="D" onclick="selectFilter('condition',this)"><span>중고 D</span></li>
-      </ul>
+      <select id="condition-select" onchange="filters.condition=this.value;loadShop(1)" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:0.82rem;">
+        <option value="">전체</option>
+        <option value="NS">신품/미사용</option>
+        <option value="S">중고 S</option>
+        <option value="A">중고 A</option>
+        <option value="B">중고 B</option>
+        <option value="C">중고 C</option>
+        <option value="D">중고 D</option>
+      </select>
     </div>
 
     <!-- 가방 종류 -->
     <div class="sidebar-section">
       <div class="sidebar-title">종류</div>
-      <ul class="filter-list" id="bagtype-list">
-        <li class="filter-item active" data-val="" onclick="selectFilter('bag_type',this)"><span>전체</span></li>
-      </ul>
+      <select id="bagtype-select" onchange="filters.bag_type=this.value;loadShop(1)" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:0.82rem;">
+        <option value="">전체</option>
+      </select>
     </div>
 
     <!-- 가격대 -->
@@ -571,6 +571,8 @@ function resetFilters() {
   document.getElementById("price-min").value = "";
   document.getElementById("price-max").value = "";
   document.getElementById("sort-select").value = "newest";
+  const cs = document.getElementById("condition-select"); if (cs) cs.value = "";
+  const bs = document.getElementById("bagtype-select"); if (bs) bs.value = "";
   document.querySelectorAll(".filter-list").forEach(list => {
     list.querySelectorAll(".filter-item").forEach((item, i) => {
       item.classList.toggle("active", i === 0);
@@ -676,12 +678,11 @@ function renderBrandList(brands) {
 }
 
 function renderBagTypeList(types) {
-  const el = document.getElementById("bagtype-list");
-  let html = `<li class="filter-item ${!filters.bag_type?'active':''}" data-val="" onclick="selectFilter('bag_type',this)"><span>전체</span></li>`;
+  const el = document.getElementById("bagtype-select");
+  if (!el) return;
+  let html = `<option value="">전체</option>`;
   types.forEach(t => {
-    html += `<li class="filter-item ${filters.bag_type===t.name?'active':''}" data-val="${t.name}" onclick="selectFilter('bag_type',this)">
-      <span>${t.name}</span><span class="filter-count">${t.count}</span>
-    </li>`;
+    html += `<option value="${t.name}" ${filters.bag_type===t.name?'selected':''}>${t.name} (${t.count})</option>`;
   });
   el.innerHTML = html;
 }
@@ -702,11 +703,13 @@ function renderActiveTags() {
 function clearFilter(type) {
   filters[type] = "";
   if (type === "keyword") document.getElementById("keyword-input").value = "";
+  if (type === "condition") { const s = document.getElementById("condition-select"); if (s) s.value = ""; }
+  if (type === "bag_type") { const s = document.getElementById("bagtype-select"); if (s) s.value = ""; }
   // 사이드바 UI 리셋
-  const listId = { site: "site-list", brand: "brand-list", condition: "condition-list", bag_type: "bagtype-list" }[type];
+  const listId = { site: "site-list", brand: "brand-list" }[type];
   if (listId) {
     const list = document.getElementById(listId);
-    list.querySelectorAll(".filter-item").forEach((item, i) => item.classList.toggle("active", i === 0));
+    if (list) list.querySelectorAll(".filter-item").forEach((item, i) => item.classList.toggle("active", i === 0));
   }
   loadShop(1);
 }
