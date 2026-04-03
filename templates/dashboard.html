@@ -1450,6 +1450,23 @@
             <button class="btn b-gray" onclick="clearScrapeTasks()" style="padding:5px 12px;font-size:0.78rem">전체 삭제</button>
           </div>
         </div>
+        <!-- 필터 -->
+        <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
+          <select id="task-filter-cat" onchange="taskPage=1;renderTaskList()" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.75rem;">
+            <option value="">전체 카테고리</option>
+          </select>
+          <select id="task-filter-brand" onchange="taskPage=1;renderTaskList()" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.75rem;">
+            <option value="">전체 브랜드</option>
+          </select>
+          <select id="task-filter-status" onchange="taskPage=1;renderTaskList()" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.75rem;">
+            <option value="">전체 상태</option>
+            <option value="대기">대기</option>
+            <option value="수집중">수집중</option>
+            <option value="완료">완료</option>
+            <option value="오류">오류</option>
+          </select>
+          <span style="font-size:0.72rem;color:var(--muted);" id="task-filter-info"></span>
+        </div>
         <div style="overflow-x:auto;">
           <table class="tbl" style="width:100%;font-size:0.78rem;">
             <thead>
@@ -3148,15 +3165,42 @@ const TASK_PER_PAGE = 20;
 function renderTaskList() {
   const tbody = document.getElementById("scrape-task-body");
   if (!tbody) return;
-  if (!scrapeTaskList.length) {
+
+  // 필터 옵션 업데이트
+  const cats = [...new Set(scrapeTaskList.map(t => t.cat_name||t.catName||''))].filter(Boolean);
+  const brands = [...new Set(scrapeTaskList.map(t => t.brand_name||t.brandName||''))].filter(Boolean);
+  const catSel = document.getElementById("task-filter-cat");
+  const brandSel = document.getElementById("task-filter-brand");
+  if (catSel) {
+    const cv = catSel.value;
+    catSel.innerHTML = '<option value="">전체 카테고리</option>' + cats.map(c => `<option value="${c}" ${c===cv?'selected':''}>${c}</option>`).join('');
+  }
+  if (brandSel) {
+    const bv = brandSel.value;
+    brandSel.innerHTML = '<option value="">전체 브랜드</option>' + brands.map(b => `<option value="${b}" ${b===bv?'selected':''}>${b}</option>`).join('');
+  }
+
+  // 필터 적용
+  const fCat = catSel?.value || "";
+  const fBrand = brandSel?.value || "";
+  const fStatus = document.getElementById("task-filter-status")?.value || "";
+  let filtered = scrapeTaskList;
+  if (fCat) filtered = filtered.filter(t => (t.cat_name||t.catName) === fCat);
+  if (fBrand) filtered = filtered.filter(t => (t.brand_name||t.brandName) === fBrand);
+  if (fStatus) filtered = filtered.filter(t => t.status === fStatus);
+
+  const infoEl = document.getElementById("task-filter-info");
+  if (infoEl) infoEl.textContent = filtered.length < scrapeTaskList.length ? `${filtered.length}/${scrapeTaskList.length}건` : `총 ${scrapeTaskList.length}건`;
+
+  if (!filtered.length) {
     tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:30px;">작업을 추가해주세요</td></tr>';
     document.getElementById("task-pager").innerHTML = "";
     return;
   }
-  const totalPages = Math.ceil(scrapeTaskList.length / TASK_PER_PAGE);
+  const totalPages = Math.ceil(filtered.length / TASK_PER_PAGE);
   if (taskPage > totalPages) taskPage = totalPages;
   const start = (taskPage - 1) * TASK_PER_PAGE;
-  const pageItems = scrapeTaskList.slice(start, start + TASK_PER_PAGE);
+  const pageItems = filtered.slice(start, start + TASK_PER_PAGE);
 
   const statusStyle = {"대기":"color:var(--muted)","수집중":"color:var(--accent);font-weight:700","완료":"color:var(--green);font-weight:700","오류":"color:var(--red);font-weight:700"};
   tbody.innerHTML = pageItems.map((t, idx) => {
@@ -3212,7 +3256,7 @@ function renderTaskList() {
   }
   ph += `<button onclick="taskPage++;renderTaskList()" style="padding:4px 8px;background:var(--bg);border:1px solid var(--border);color:var(--muted);border-radius:4px;cursor:pointer;font-size:0.72rem;" ${taskPage>=totalPages?'disabled':''}>›</button>`;
   ph += `<button onclick="taskPage=${totalPages};renderTaskList()" style="padding:4px 8px;background:var(--bg);border:1px solid var(--border);color:var(--muted);border-radius:4px;cursor:pointer;font-size:0.72rem;" ${taskPage>=totalPages?'disabled':''}>»</button>`;
-  ph += `<span style="font-size:0.72rem;color:var(--muted);margin-left:8px;align-self:center;">${taskPage}/${totalPages} (총 ${scrapeTaskList.length}개)</span>`;
+  ph += `<span style="font-size:0.72rem;color:var(--muted);margin-left:8px;align-self:center;">${taskPage}/${totalPages} (${filtered.length}건)</span>`;
   ph += `</div>`;
   pager.innerHTML = ph;
 }
