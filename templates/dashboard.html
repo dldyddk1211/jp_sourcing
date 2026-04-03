@@ -3186,7 +3186,14 @@ function renderTaskList() {
       <td style="padding:6px;color:var(--muted)">${t.pages || '전체'}</td>
       <td style="padding:6px;text-align:center;">${totalDisp}</td>
       <td style="padding:6px;text-align:center;font-weight:700;color:var(--accent)">${t.count || '-'}</td>
-      <td style="padding:6px;${ss}">${t.status}</td>
+      <td style="padding:6px;">
+        <select onchange="changeTaskStatus(${t.id},this.value)" style="background:#0d0d0a;border:1px solid var(--border);padding:2px 6px;border-radius:4px;font-size:0.7rem;font-weight:600;${ss}">
+          <option value="대기" ${t.status==='대기'?'selected':''}>대기</option>
+          <option value="수집중" ${t.status==='수집중'?'selected':''}>수집중</option>
+          <option value="완료" ${t.status==='완료'?'selected':''}>완료</option>
+          <option value="오류" ${t.status==='오류'?'selected':''}>오류</option>
+        </select>
+      </td>
       <td style="padding:6px;">${btnHtml}</td>
     </tr>`;
   }).join("");
@@ -3222,6 +3229,11 @@ async function deleteCheckedTasks() {
     await fetch(PREFIX + "/scrape/tasks/" + id, {method: "DELETE"}).catch(()=>{});
   }
   addLog(`\u2705 ${ids.length}개 작업 삭제`, "ok");
+  loadScrapeTasks();
+}
+
+async function changeTaskStatus(taskId, status) {
+  await fetch(PREFIX + "/scrape/tasks/" + taskId, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({status})});
   loadScrapeTasks();
 }
 
