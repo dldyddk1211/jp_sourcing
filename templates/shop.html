@@ -189,13 +189,12 @@
       box-shadow:0 16px 48px rgba(0,0,0,0.5);
     }
     .modal-close {
-      position:sticky; bottom:0; left:0; width:100%; margin-top:12px;
-      background:rgba(30,30,30,0.95); border:1px solid var(--border); border-radius:8px;
-      color:var(--text); font-size:0.88rem; font-weight:600;
-      padding:14px; cursor:pointer; z-index:10; text-align:center;
-      transition:all .2s;
+      flex:1; padding:10px 4px; border-radius:8px; border:1px solid var(--border);
+      background:var(--bg); color:var(--text); font-weight:700;
+      font-size:0.75rem; text-align:center; cursor:pointer; transition:all .2s;
+      white-space:nowrap;
     }
-    .modal-close:hover { background:var(--accent); color:#000; }
+    .modal-close:hover { border-color:var(--accent); color:var(--accent); }
     .modal-nav {
       position:fixed; top:50%; transform:translateY(-50%);
       background:rgba(30,30,30,0.85); border:2px solid rgba(212,165,74,0.4); color:var(--accent);
@@ -260,15 +259,19 @@
       padding:10px 0;
     }
 
-    .modal-actions {
-      display:flex; gap:8px; padding:14px 20px;
+    .modal-bottom {
       background:var(--card); border-top:1px solid var(--border);
-      position:sticky; bottom:40px; z-index:5;
+      position:sticky; bottom:0; z-index:5; padding:10px 16px;
+      display:flex; flex-direction:column; gap:6px;
+    }
+    .modal-btn-row {
+      display:flex; gap:6px;
     }
     .modal-order-btn {
-      flex:1; padding:12px 8px; border-radius:8px; border:1px solid var(--border);
+      flex:1; padding:10px 4px; border-radius:8px; border:1px solid var(--border);
       background:var(--bg); color:var(--text); font-weight:700;
-      font-size:0.82rem; text-align:center; cursor:pointer; transition:all .2s;
+      font-size:0.75rem; text-align:center; cursor:pointer; transition:all .2s;
+      white-space:nowrap;
     }
     .modal-order-btn:hover { border-color:var(--accent); color:var(--accent); }
     .modal-order-btn.primary { background:var(--accent); color:#000; border-color:var(--accent); }
@@ -476,17 +479,22 @@
         {% if is_admin %}<a class="modal-link" id="modal-link" href="#" target="_blank">상품 상세보기</a>{% endif %}
       </div>
     </div>
-    <div class="modal-actions">
-      {% if logged_in %}
-      <button class="modal-order-btn primary" onclick="orderProduct()">주문하기</button>
-      <button class="modal-order-btn" onclick="addToCart()">&#x1f6d2; 장바구니</button>
-      {% else %}
-      <a href="{{ url_prefix }}/login" class="modal-order-btn primary" style="text-align:center;">로그인 후 주문</a>
-      {% endif %}
-      <button class="modal-order-btn" onclick="inquiryProduct()">카카오 문의</button>
-      <button class="modal-order-btn" onclick="shareProduct()" style="flex:0.5;">공유</button>
+    <div class="modal-bottom">
+      <div class="modal-btn-row">
+        {% if logged_in %}
+        <button class="modal-order-btn primary" onclick="orderProduct()">주문하기</button>
+        <button class="modal-order-btn" onclick="addToCart()">장바구니</button>
+        {% else %}
+        <a href="{{ url_prefix }}/login" class="modal-order-btn primary" style="text-align:center;">로그인 후 주문</a>
+        {% endif %}
+        <button class="modal-order-btn" onclick="inquiryProduct()">카카오 문의</button>
+        <button class="modal-order-btn" onclick="shareProduct()">공유</button>
+      </div>
+      <div class="modal-btn-row">
+        <button class="modal-close" onclick="closeModal()">&#x2190; 목록화면</button>
+        <button class="modal-order-btn" onclick="aiAnalyze()" id="btn-ai-analyze">AI 상품분석</button>
+      </div>
     </div>
-    <button class="modal-close" onclick="closeModal()">&#x2190; 목록화면</button>
   </div>
 </div>
 
@@ -993,6 +1001,32 @@ function inquiryProduct() {
     body: JSON.stringify({type:"inquiry", brand:p.brand, name:name, code:code, price:price, price_jpy:p.price_jpy})
   }).catch(()=>{});
   window.open(KAKAO_CHAT_URL, "_blank");
+}
+
+async function aiAnalyze() {
+  const p = allProducts[currentModalIdx];
+  if (!p) return;
+  const btn = document.getElementById("btn-ai-analyze");
+  btn.disabled = true; btn.textContent = "분석중...";
+  const name = transJa(p.name);
+  const desc = p.description || "";
+  try {
+    const res = await fetch(PREFIX + "/shop/api/ai-analyze", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({brand: p.brand, name: name, description: desc, condition: p.condition_grade, price_jpy: p.price_jpy})
+    });
+    const d = await res.json();
+    if (d.ok && d.analysis) {
+      const descEl = document.getElementById("modal-desc");
+      descEl.innerHTML = `<div style="margin-top:8px;padding:14px;background:rgba(79,142,247,0.06);border:1px solid rgba(79,142,247,0.2);border-radius:8px;font-size:0.8rem;line-height:1.8;color:var(--text);">
+        <div style="font-weight:700;color:#4f8ef7;margin-bottom:8px;">AI 상품 분석</div>
+        ${d.analysis.replace(/\n/g,'<br>')}
+      </div>` + descEl.innerHTML;
+    } else {
+      alert(d.message || "분석 실패");
+    }
+  } catch(e) { alert("분석 오류: " + e); }
+  btn.disabled = false; btn.textContent = "AI 상품분석";
 }
 
 function shareProduct() {

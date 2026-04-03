@@ -700,6 +700,53 @@ def update_order(order_id):
         conn.close()
 
 
+@app.route(f"{URL_PREFIX}/shop/api/ai-analyze", methods=["POST"])
+def shop_ai_analyze():
+    """AI 상품 분석"""
+    data = request.json or {}
+    brand = data.get("brand", "")
+    name = data.get("name", "")
+    desc = data.get("description", "")
+    condition = data.get("condition", "")
+    price_jpy = data.get("price_jpy", 0)
+    try:
+        from post_generator import get_ai_config, _call_gemini, _call_claude, _call_openai
+        config = get_ai_config()
+        provider = config.get("provider", "none")
+        if provider == "none":
+            return jsonify({"ok": False, "message": "AI가 설정되지 않았습니다"})
+
+        grade_labels = {"NS":"신품/미사용","S":"최상급","A":"양호","B":"사용감 있음","C":"사용감 많음","D":"난있음"}
+        prompt = f"""다음 중고 명품 상품을 분석해주세요.
+
+브랜드: {brand}
+상품명: {name}
+상태: {grade_labels.get(condition, condition)}
+일본 판매가: ¥{price_jpy:,}
+상품 설명: {desc[:500] if desc else '없음'}
+
+다음 항목을 간결하게 분석해주세요:
+1. 상품 가치 평가 (시세 대비 가격 적정성)
+2. 컨디션 분석 (등급 기준 설명)
+3. 추천 포인트 (이 상품의 장점)
+4. 주의 사항 (구매 시 확인할 점)
+
+각 항목 2~3줄로 간결하게 작성하세요."""
+
+        if provider == "gemini" and config.get("gemini_key"):
+            result = _call_gemini(prompt)
+        elif provider == "claude" and config.get("claude_key"):
+            result = _call_claude(prompt)
+        elif provider == "openai" and config.get("openai_key"):
+            result = _call_openai(prompt)
+        else:
+            return jsonify({"ok": False, "message": "AI API 키가 설정되지 않았습니다"})
+
+        return jsonify({"ok": True, "analysis": result})
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)})
+
+
 @app.route(f"{URL_PREFIX}/shop/api/products")
 def shop_api_products():
     """고객용 빈티지 상품 API"""
