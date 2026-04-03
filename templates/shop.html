@@ -327,6 +327,7 @@
 <div class="topbar">
   <div class="topbar-logo">TheOne<span>Vintage</span></div>
   <div class="topbar-right">
+    {% if logged_in %}
     <a href="{{ url_prefix }}/shop/mypage#cart" class="topbar-btn" style="position:relative;">
       &#x1f6d2; 장바구니 <span id="cart-badge" style="display:none;position:absolute;top:-6px;right:-8px;background:var(--red);color:#fff;font-size:0.6rem;padding:1px 5px;border-radius:10px;font-weight:700;">0</span>
     </a>
@@ -344,6 +345,10 @@
         <a href="{{ url_prefix }}/logout" style="color:var(--red);">로그아웃</a>
       </div>
     </div>
+    {% else %}
+    <a href="{{ url_prefix }}/login" class="topbar-btn" style="background:rgba(212,165,74,0.12);color:var(--accent);font-weight:700;">로그인</a>
+    <a href="{{ url_prefix }}/signup" class="topbar-btn">회원가입</a>
+    {% endif %}
   </div>
 </div>
 
@@ -472,8 +477,12 @@
       </div>
     </div>
     <div class="modal-actions">
+      {% if logged_in %}
       <button class="modal-order-btn primary" onclick="orderProduct()">주문하기</button>
       <button class="modal-order-btn" onclick="addToCart()">&#x1f6d2; 장바구니</button>
+      {% else %}
+      <a href="{{ url_prefix }}/login" class="modal-order-btn primary" style="text-align:center;">로그인 후 주문</a>
+      {% endif %}
       <button class="modal-order-btn" onclick="inquiryProduct()">카카오 문의</button>
       <button class="modal-order-btn" onclick="shareProduct()" style="flex:0.5;">공유</button>
     </div>
@@ -873,6 +882,7 @@ function toggleDropFilter(type, el) {
 const KAKAO_CHAT_URL = "http://pf.kakao.com/_geJHxj/chat";
 const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
 const USER_LEVEL = "{{ user_level }}";
+const LOGGED_IN = {{ 'true' if logged_in else 'false' }};
 
 function renderCardPrice(p) {
   let html = '';
@@ -935,7 +945,7 @@ async function updateCartBadge() {
     }
   } catch(e) {}
 }
-updateCartBadge();
+if (LOGGED_IN) updateCartBadge();
 
 async function addToCart() {
   const p = allProducts[currentModalIdx];
@@ -950,7 +960,7 @@ async function addToCart() {
     const d = await res.json();
     if (d.ok) {
       alert("장바구니에 추가되었습니다!");
-      updateCartBadge();
+      if (LOGGED_IN) updateCartBadge();
     }
   } catch(e) { alert("장바구니 추가 실패"); }
 }

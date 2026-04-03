@@ -216,15 +216,16 @@ def signup():
 
 
 @app.route(f"{URL_PREFIX}/shop")
-@login_required
 def shop():
-    """고객용 빈티지 상품 카탈로그"""
-    user_level = session.get("level", "b2c")
+    """고객용 빈티지 상품 카탈로그 (비회원도 접근 가능)"""
+    logged_in = session.get("logged_in", False)
+    user_level = session.get("level", "b2c") if logged_in else "guest"
     return render_template("shop.html",
                            url_prefix=URL_PREFIX, env=APP_ENV,
-                           username=session.get("username"),
-                           is_admin=session.get("role", "admin") == "admin",
-                           user_level=user_level)
+                           username=session.get("username", ""),
+                           is_admin=session.get("role", "") == "admin",
+                           user_level=user_level,
+                           logged_in=logged_in)
 
 
 @app.route(f"{URL_PREFIX}/shop/mypage")
@@ -700,7 +701,6 @@ def update_order(order_id):
 
 
 @app.route(f"{URL_PREFIX}/shop/api/products")
-@login_required
 def shop_api_products():
     """고객용 빈티지 상품 API"""
     brand = request.args.get("brand", "").strip()
