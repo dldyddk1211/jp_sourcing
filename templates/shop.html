@@ -189,16 +189,13 @@
       box-shadow:0 16px 48px rgba(0,0,0,0.5);
     }
     .modal-close {
-      position:absolute; top:10px; right:12px;
-      background:rgba(0,0,0,0.6); border:2px solid rgba(255,255,255,0.3); color:#fff;
-      font-size:1.6rem; width:40px; height:40px; border-radius:50%;
-      cursor:pointer; z-index:10; display:flex; align-items:center; justify-content:center;
+      position:sticky; bottom:0; left:0; width:100%; margin-top:12px;
+      background:rgba(30,30,30,0.95); border:1px solid var(--border); border-radius:8px;
+      color:var(--text); font-size:0.88rem; font-weight:600;
+      padding:14px; cursor:pointer; z-index:10; text-align:center;
       transition:all .2s;
     }
-    .modal-close:hover { background:var(--red); border-color:var(--red); }
-    @media(max-width:768px) {
-      .modal-close { width:48px; height:48px; font-size:2rem; top:8px; right:8px; background:rgba(0,0,0,0.8); border-color:rgba(255,255,255,0.5); }
-    }
+    .modal-close:hover { background:var(--accent); color:#000; }
     .modal-nav {
       position:fixed; top:50%; transform:translateY(-50%);
       background:rgba(30,30,30,0.85); border:2px solid rgba(212,165,74,0.4); color:var(--accent);
@@ -451,7 +448,6 @@
 <!-- Product Detail Modal -->
 <div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
   <div class="modal">
-    <button class="modal-close" onclick="closeModal()">&times;</button>
     <button class="modal-nav modal-nav-prev" id="modal-prev" onclick="navModal(-1)">&#x276E;</button>
     <button class="modal-nav modal-nav-next" id="modal-next" onclick="navModal(1)">&#x276F;</button>
     <div class="modal-body">
@@ -475,6 +471,7 @@
         {% if is_admin %}<a class="modal-link" id="modal-link" href="#" target="_blank">상품 상세보기</a>{% endif %}
       </div>
     </div>
+    <button class="modal-close" onclick="closeModal()">&#x2190; 목록화면</button>
   </div>
 </div>
 
