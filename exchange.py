@@ -20,9 +20,8 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-# 캐시 (2시간마다 갱신)
-_cache = {"rate": None, "time": None}
-CACHE_MINUTES = 120
+# 캐시 (하루 1회 자정 기준 갱신)
+_cache = {"rate": None, "date": None}  # date: "2026-04-04" 형식
 
 # ── 가격 설정 파일 경로 ──────────────
 from data_manager import get_path
@@ -97,18 +96,8 @@ def get_margin_rate() -> float:
     return 1 + _margin_pct
 
 
-def get_jpy_to_krw_rate() -> float:
-    """
-    구글 검색에서 실시간 엔→원 환율 가져오기 (2시간 캐시)
-    """
-    now = datetime.now()
-
-    # 캐시 유효하면 바로 반환
-    if _cache["rate"] and _cache["time"]:
-        diff = (now - _cache["time"]).total_seconds() / 60
-        if diff < CACHE_MINUTES:
-            return _cache["rate"]
-
+def _fetch_rate() -> float:
+    """구글/백업 API에서 환율 가져오기"""
     try:
         headers = {
             "User-Agent": (
@@ -121,7 +110,6 @@ def get_jpy_to_krw_rate() -> float:
         url = "https://www.google.com/search?q=JPY+to+KRW&hl=ko"
         res = requests.get(url, headers=headers, timeout=10)
         html = res.text
-
         patterns = [
             r'class="DFlfde[^"]*"[^>]*>([\d.]+)</span>',
             r'"converted-amount"[^>]*>([\d.]+)',
@@ -129,42 +117,109 @@ def get_jpy_to_krw_rate() -> float:
             r'([\d]{1,2}\.[\d]{1,4})\s*대한민국\s*원',
             r'([\d]{1,2}\.[\d]{1,4})\s*KRW',
         ]
-        rate = None
         for pattern in patterns:
             match = re.search(pattern, html)
             if match:
                 val = float(match.group(1))
                 if 6.0 < val < 15.0:
-                    rate = val
-                    break
-
-        if rate:
-            _cache["rate"] = rate
-            _cache["time"] = now
-            logger.info(f"✅ 구글 환율 조회 성공: 1엔 = {rate}원")
-            return rate
-        else:
-            raise ValueError("파싱 실패")
-
+                    logger.info(f"✅ 구글 환율 조회 성공: 1엔 = {val}원")
+                    return val
+        raise ValueError("파싱 실패")
     except Exception as e:
         logger.warning(f"⚠️ 구글 환율 조회 실패: {e} → 백업 API 시도")
         try:
             r = requests.get("https://api.exchangerate-api.com/v4/latest/JPY", timeout=5)
             rate = r.json()["rates"]["KRW"]
-            _cache["rate"] = rate
-            _cache["time"] = now
             logger.info(f"✅ 백업 API 환율: 1엔 = {rate}원")
             return rate
         except Exception as e2:
-            logger.warning(f"⚠️ 백업 API 실패: {e2} → 기본값 사용")
-            return _cache["rate"] or 9.0
+            logger.warning(f"⚠️ 백업 API 실패: {e2}")
+            return 0
+
+
+# 환율 저장 파일
+_RATE_FILE = os.path.join(get_path("db"), "daily_rate.json")
+
+
+def _load_daily_rate():
+    """저장된 일일 환율 로드"""
+    if os.path.exists(_RATE_FILE):
+        try:
+            with open(_RATE_FILE, "r") as f:
+                data = json.load(f)
+                _cache["rate"] = data.get("rate")
+                _cache["date"] = data.get("date")
+        except Exception:
+            pass
+
+
+def _save_daily_rate(rate, date_str):
+    """일일 환율 저장"""
+    os.makedirs(os.path.dirname(_RATE_FILE), exist_ok=True)
+    with open(_RATE_FILE, "w") as f:
+        json.dump({"rate": rate, "date": date_str}, f)
+
+
+# 서버 시작 시 저장된 환율 로드
+_load_daily_rate()
+
+
+def get_jpy_to_krw_rate() -> float:
+    """
+    하루 1회 자정 기준 환율 조회.
+    같은 날이면 캐시 반환, 날짜 바뀌면 새로 조회.
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # 오늘 이미 조회했으면 캐시 반환
+    if _cache["rate"] and _cache["date"] == today:
+        return _cache["rate"]
+
+    # 새 날짜 → 환율 조회
+    rate = _fetch_rate()
+    if rate > 0:
+        prev_rate = _cache.get("rate")
+        _cache["rate"] = rate
+        _cache["date"] = today
+        _save_daily_rate(rate, today)
+        logger.info(f"📅 일일 환율 갱신: 1엔 = {rate}원 ({today})")
+        # 변동 알림 (이전 환율 대비 ±3% 이상)
+        if prev_rate and abs(rate - prev_rate) / prev_rate > 0.03:
+            try:
+                from notifier import send_telegram
+                change = ((rate - prev_rate) / prev_rate) * 100
+                arrow = "📈" if change > 0 else "📉"
+                send_telegram(
+                    f"{arrow} <b>환율 변동 알림</b>\n"
+                    f"💱 1엔 = {prev_rate:.2f}원 → {rate:.2f}원\n"
+                    f"📊 변동: {change:+.2f}%\n"
+                    f"📅 {today} 기준"
+                )
+            except Exception:
+                pass
+        return rate
+
+    # 조회 실패 → 기존 캐시 유지
+    return _cache["rate"] or 9.0
 
 
 def get_cached_rate() -> float:
-    """캐시된 환율 반환 (없으면 조회) - status API 전용"""
+    """캐시된 환율 반환 (없으면 조회)"""
     if _cache["rate"]:
+        # 날짜 확인
+        today = datetime.now().strftime("%Y-%m-%d")
+        if _cache["date"] != today:
+            return get_jpy_to_krw_rate()
         return _cache["rate"]
     return get_jpy_to_krw_rate()
+
+
+def refresh_daily_rate():
+    """자정 스케줄러용 — 강제 환율 갱신"""
+    _cache["date"] = None  # 캐시 무효화
+    rate = get_jpy_to_krw_rate()
+    logger.info(f"🔄 자정 환율 갱신 완료: 1엔 = {rate}원")
+    return rate
 
 
 def calc_buying_price(price_jpy: int, rate: float = None, margin: float = None) -> dict:

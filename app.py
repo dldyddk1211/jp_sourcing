@@ -1806,6 +1806,15 @@ def _register_task_schedule_jobs():
 _scheduler_started = False
 
 
+def _refresh_daily_rate_job():
+    """자정 환율 갱신"""
+    try:
+        from exchange import refresh_daily_rate
+        refresh_daily_rate()
+    except Exception as e:
+        logger.warning(f"환율 갱신 실패: {e}")
+
+
 def _check_ai_api_job():
     """AI API 상태 확인 → 문제 시 텔레그램 알림"""
     try:
@@ -1833,6 +1842,17 @@ def _start_scheduler_once():
         replace_existing=True,
     )
     logger.info("📡 AI API 모니터링 등록 (5분 간격)")
+    # 환율 자정 갱신
+    scheduler.add_job(
+        func=_refresh_daily_rate_job,
+        trigger="cron",
+        hour=0,
+        minute=1,
+        id="daily_rate_refresh",
+        name="일일 환율 갱신 (00:01)",
+        replace_existing=True,
+    )
+    logger.info("💱 일일 환율 갱신 등록 (매일 00:01)")
     scheduler.start()
     _scheduler_started = True
     logger.info("📅 스케줄러 시작됨 (PID: %d)", os.getpid())
