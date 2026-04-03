@@ -111,6 +111,7 @@
       position:sticky; top:0; z-index:50;
     }
     .topbar-title { font-size:1rem; font-weight:600; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
     .topbar-right { margin-left:auto; display:flex; align-items:center; gap:14px; }
     .rate-badge { background:#1a1710; border:1px solid var(--border); border-radius:8px; padding:6px 14px; font-size:0.85rem; }
     .rate-badge span { color:var(--yellow); font-weight:700; }
@@ -489,6 +490,9 @@
   <!-- 상단바 -->
   <div class="topbar">
     <div class="topbar-title" id="topbar-title">&#x1f4ca; &#xb300;&#xc2dc;&#xbcf4;&#xb4dc;</div>
+    <div id="scrape-status-banner" style="display:none;background:rgba(212,165,74,0.12);border:1px solid rgba(212,165,74,0.3);border-radius:8px;padding:6px 14px;font-size:0.78rem;color:var(--accent);font-weight:600;animation:pulse 2s infinite;">
+      &#x23F3; 수집 진행중...
+    </div>
     <div class="topbar-right">
       <div class="rate-badge">&#x1f4b1; &#xd658;&#xc728; <span id="rate">-</span> / 1&#xc5d4;</div>
       <div style="font-size:0.8rem;color:var(--muted)">{{ session.get('username','') }}</div>
@@ -3664,6 +3668,10 @@ async function refreshStatus() {
     document.getElementById("s-last-scrape").textContent = d.last_scrape || "-";
     document.getElementById("s-last-upload").textContent = d.last_upload || "-";
     document.getElementById("s-schedule").textContent    = d.schedule_time || "-";
+
+    // 수집 상태 배너 (우측 상단)
+    const banner = document.getElementById("scrape-status-banner");
+    if (banner) banner.style.display = d.scraping ? "" : "none";
 
     const scEl = document.getElementById("s-scraping");
     const pauseBtn = document.getElementById("btn-pause");
