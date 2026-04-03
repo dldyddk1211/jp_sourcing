@@ -4077,6 +4077,27 @@ def unlock_status():
     return jsonify({"ok": True, "message": msg})
 
 
+@app.route(f"{URL_PREFIX}/run/force-stop", methods=["POST"])
+@admin_required
+def force_stop_scrape():
+    """스크래핑 강제 중지 (상태 리셋 + 브라우저 종료)"""
+    import asyncio
+    status["scraping"] = False
+    status["stop_requested"] = True
+    status["paused"] = False
+    try:
+        asyncio.run(force_close_browser())
+    except Exception:
+        pass
+    try:
+        from secondst_crawler import force_close_browser as fc2
+        asyncio.run(fc2())
+    except Exception:
+        pass
+    push_log("⛔ 스크래핑 강제 중지 완료")
+    return jsonify({"ok": True, "message": "강제 중지 완료"})
+
+
 @app.route(f"{URL_PREFIX}/run/reset", methods=["POST"])
 @admin_required
 def reset_all():

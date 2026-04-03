@@ -3135,11 +3135,15 @@ function renderTaskList() {
     const ss = statusStyle[t.status] || "";
     const isDone = t.status === "완료";
     const isRunning = t.status === "수집중";
+    const isError = t.status === "오류";
     let btnHtml = "";
     if (isDone) {
       btnHtml = `<span style="color:var(--green);font-weight:700;font-size:0.82rem;">&#x2705; 완료 (${t.count}개)</span>`;
     } else if (isRunning) {
-      btnHtml = `<span style="color:var(--accent);font-size:0.78rem;">&#x23F3; 수집중...</span>`;
+      btnHtml = `<span style="color:var(--accent);font-size:0.72rem;">&#x23F3; 수집중</span>
+        <button onclick="retryTask(${t.id})" class="btn b-yellow" style="padding:3px 8px;font-size:0.68rem;margin-left:4px;" title="멈춘 경우 재시도">&#x1f504; 재시도</button>`;
+    } else if (isError) {
+      btnHtml = `<button onclick="retryTask(${t.id})" class="btn b-yellow" style="padding:4px 12px;font-size:0.75rem;">&#x1f504; 재시도</button>`;
     } else {
       btnHtml = `<button onclick="runSingleTask(${t.id})" class="btn b-blue" style="padding:4px 12px;font-size:0.75rem;">&#x25b6; 수집</button>`;
     }
@@ -3191,6 +3195,19 @@ async function deleteCheckedTasks() {
   }
   addLog(`\u2705 ${ids.length}개 작업 삭제`, "ok");
   loadScrapeTasks();
+}
+
+async function retryTask(taskId) {
+  if (!confirm("이 작업을 재시도하시겠습니까?\n(멈춘 수집을 강제 리셋 후 다시 실행합니다)")) return;
+  // 서버 스크래핑 강제 중지
+  try {
+    await fetch(PREFIX + "/run/force-stop", {method: "POST"});
+  } catch(e) {}
+  await new Promise(r => setTimeout(r, 2000));
+  // 상태 → 대기로 변경 후 실행
+  await fetch(PREFIX + "/scrape/tasks/" + taskId, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({status:"대기", count:0})});
+  loadScrapeTasks();
+  await runSingleTask(taskId);
 }
 
 async function runSingleTask(taskId) {
