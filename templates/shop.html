@@ -630,9 +630,7 @@ async function loadShop(page = 1) {
         <div class="product-info">
           <div class="product-brand">${p.brand}</div>
           <div class="product-name">${transJa(p.name)}</div>
-          <div class="product-price">${p.price_krw ? p.price_krw.toLocaleString() + '원' : '&yen;' + p.price_jpy.toLocaleString()}</div>
-          ${p.user_level === 'b2b' && p.price_b2c ? `<div style="font-size:0.68rem;color:var(--muted);text-decoration:line-through;">B2C ${p.price_b2c.toLocaleString()}원</div>` : ''}
-          <div style="font-size:0.68rem;color:var(--dim);">&yen;${p.price_jpy.toLocaleString()}</div>
+          ${renderCardPrice(p)}
         </div>
       </div>
     `).join("");
@@ -735,19 +733,7 @@ function openModal(idx) {
   document.getElementById("modal-next").style.display = idx < allProducts.length - 1 ? "" : "none";
   document.getElementById("modal-brand").textContent = p.brand;
   document.getElementById("modal-name").textContent = transJa(p.name);
-  if (p.price_krw) {
-    let priceHtml = `<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
-      <span style="font-size:1.3rem;font-weight:800;color:var(--green)">${p.price_krw.toLocaleString()}원</span>
-      <span style="font-size:0.72rem;color:var(--yellow);font-weight:600;">(관부가세,해외배송비 미포함)</span>
-    </div>`;
-    if (p.user_level === 'b2b' && p.price_b2c) {
-      priceHtml += `<div style="font-size:0.82rem;color:var(--muted);margin-top:4px;text-decoration:line-through;">B2C ${p.price_b2c.toLocaleString()}원</div>`;
-    }
-    priceHtml += `<div style="font-size:0.78rem;color:var(--muted);margin-top:4px">&yen;${p.price_jpy.toLocaleString()}</div>`;
-    document.getElementById("modal-price").innerHTML = priceHtml;
-  } else {
-    document.getElementById("modal-price").innerHTML = `&yen;${p.price_jpy.toLocaleString()}`;
-  }
+  document.getElementById("modal-price").innerHTML = renderModalPrice(p);
   // 메인 이미지 + 썸네일: detail_images 기반, 없으면 img_url 폴백
   const detailImgs = (p.detail_images && p.detail_images.length) ? p.detail_images : [];
   const firstImg = detailImgs.length ? detailImgs[0] : (p.img_url ? p.img_url.replace("_tn.jpg", ".jpg") : "");
@@ -826,6 +812,49 @@ function closeModal() {
 }
 
 const KAKAO_CHAT_URL = "http://pf.kakao.com/_geJHxj/chat";
+const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
+const USER_LEVEL = "{{ user_level }}";
+
+function renderCardPrice(p) {
+  let html = '';
+  if (USER_LEVEL === 'b2b') {
+    // B2B: B2C 가격 사선 + B2B 가격 강조
+    html += `<div style="font-size:0.68rem;color:var(--dim);text-decoration:line-through;">B2C ${(p.price_b2c||p.price_krw||0).toLocaleString()}원</div>`;
+    html += `<div class="product-price" style="color:#4f8ef7;font-size:1.05rem;">${p.price_krw ? p.price_krw.toLocaleString() + '원' : ''}</div>`;
+  } else {
+    // B2C: 일반 가격
+    html += `<div class="product-price">${p.price_krw ? p.price_krw.toLocaleString() + '원' : ''}</div>`;
+    html += `<div style="font-size:0.65rem;color:var(--accent);">사업자 회원 추가 5% 할인</div>`;
+  }
+  if (IS_ADMIN) {
+    html += `<div style="font-size:0.68rem;color:var(--dim);">&yen;${p.price_jpy.toLocaleString()}</div>`;
+  }
+  return html;
+}
+
+function renderModalPrice(p) {
+  if (!p.price_krw) return IS_ADMIN ? `&yen;${p.price_jpy.toLocaleString()}` : '';
+  let html = '';
+  if (USER_LEVEL === 'b2b') {
+    // B2B: B2C 사선 + B2B 크게
+    html += `<div style="font-size:0.88rem;color:var(--dim);text-decoration:line-through;">B2C ${(p.price_b2c||p.price_krw).toLocaleString()}원</div>`;
+    html += `<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
+      <span style="font-size:1.4rem;font-weight:800;color:#4f8ef7;">B2B ${p.price_krw.toLocaleString()}원</span>
+      <span style="font-size:0.72rem;color:var(--yellow);font-weight:600;">(관부가세,해외배송비 미포함)</span>
+    </div>`;
+  } else {
+    // B2C: 일반 가격 + 사업자 할인 안내
+    html += `<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
+      <span style="font-size:1.3rem;font-weight:800;color:var(--green)">${p.price_krw.toLocaleString()}원</span>
+      <span style="font-size:0.72rem;color:var(--yellow);font-weight:600;">(관부가세,해외배송비 미포함)</span>
+    </div>`;
+    html += `<div style="font-size:0.78rem;color:var(--accent);margin-top:4px;">&#x1f4b0; 사업자 회원은 추가 5% 할인!</div>`;
+  }
+  if (IS_ADMIN) {
+    html += `<div style="font-size:0.78rem;color:var(--dim);margin-top:4px">&yen;${p.price_jpy.toLocaleString()}</div>`;
+  }
+  return html;
+}
 
 // 드롭다운 외부 클릭 시 닫기
 document.addEventListener("click", e => {
