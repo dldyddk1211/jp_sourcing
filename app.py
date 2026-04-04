@@ -1889,6 +1889,44 @@ def _refresh_daily_rate_job():
         logger.warning(f"환율 갱신 실패: {e}")
 
 
+def _retry_failed_tasks_job():
+    """매일 23시 — 오류 상태 작업을 큐에 자동 추가"""
+    try:
+        import sqlite3
+        db_path = os.path.join(get_path("db"), "users.db")
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        failed = conn.execute("SELECT * FROM scrape_tasks WHERE status='오류' ORDER BY id").fetchall()
+        conn.close()
+
+        if not failed:
+            logger.info("🔄 23시 자동 재시도: 오류 작업 없음")
+            return
+
+        _start_queue_worker()
+
+        count = 0
+        for r in failed:
+            conn = sqlite3.connect(db_path)
+            conn.execute("UPDATE scrape_tasks SET status='예약', count=0 WHERE id=?", (r["id"],))
+            conn.commit()
+            conn.close()
+            _scrape_queue.put(r["id"])
+            count += 1
+
+        msg = f"🔄 23시 자동 재시도: {count}개 오류 작업 큐에 예약"
+        logger.info(msg)
+        push_log(msg)
+        try:
+            from notifier import send_telegram
+            task_names = "\n".join(f"  {r['brand_name'] or '전체'} / {r['cat_name'] or '전체'} (p.{r['pages'] or '전체'})" for r in failed)
+            send_telegram(f"🔄 <b>오류 작업 자동 재시도</b>\n{count}개 작업 큐에 예약됨\n\n{task_names}")
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning(f"오류 재시도 실패: {e}")
+
+
 def _check_ai_api_job():
     """AI API 상태 확인 → 문제 시 텔레그램 알림"""
     try:
@@ -1927,6 +1965,17 @@ def _start_scheduler_once():
         replace_existing=True,
     )
     logger.info("💱 일일 환율 갱신 등록 (매일 00:01)")
+    # 오류 작업 자동 재시도 (매일 23:00)
+    scheduler.add_job(
+        func=_retry_failed_tasks_job,
+        trigger="cron",
+        hour=23,
+        minute=0,
+        id="retry_failed_tasks",
+        name="오류 작업 자동 재시도 (23:00)",
+        replace_existing=True,
+    )
+    logger.info("🔄 오류 작업 자동 재시도 등록 (매일 23:00)")
     scheduler.start()
     _scheduler_started = True
     logger.info("📅 스케줄러 시작됨 (PID: %d)", os.getpid())
