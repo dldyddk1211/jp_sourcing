@@ -221,8 +221,12 @@ def _process_ai_chat(message: dict, log_callback=None):
         _send_task_list()
         return
     if cmd == "run_task":
-        arg = parts[1] if len(parts) > 1 else ""
-        _run_task_by_number(arg, log_callback)
+        # "/수집 9", "/수집 9번", "/수집 9번 실행" 모두 처리
+        import re as _re_cmd
+        arg_text = text[len(parts[0]):].strip()
+        nums_match = _re_cmd.findall(r'\d+', arg_text)
+        arg = "-".join(nums_match[:2]) if len(nums_match) == 2 else (nums_match[0] if nums_match else "")
+        _run_task_by_number(arg, log_callback, force="강제" in arg_text or "재실행" in arg_text or "force" in arg_text.lower())
         return
     if cmd == "stop_task":
         _stop_scraping()
@@ -332,10 +336,10 @@ def _send_task_list():
         send_telegram(f"❌ 리스트 조회 실패: {e}")
 
 
-def _run_task_by_number(arg: str, log_callback=None):
-    """번호로 수집 작업 실행"""
+def _run_task_by_number(arg: str, log_callback=None, force=False):
+    """번호로 수집 작업 실행 (force=True면 완료/오류도 재실행)"""
     if not arg:
-        send_telegram("⚠️ 번호를 입력해주세요.\n예: <code>/수집 3</code> 또는 <code>/수집 3-5</code>")
+        send_telegram("⚠️ 번호를 입력해주세요.\n예: <code>/수집 3</code> 또는 <code>/수집 3-5</code>\n강제: <code>/수집 3 강제</code>")
         return
 
     try:
@@ -349,8 +353,8 @@ def _run_task_by_number(arg: str, log_callback=None):
 
         # 범위 파싱 (3 또는 3-5)
         if "-" in arg:
-            start, end = arg.split("-", 1)
-            nums = list(range(int(start), int(end) + 1))
+            start_s, end_s = arg.split("-", 1)
+            nums = list(range(int(start_s), int(end_s) + 1))
         else:
             nums = [int(arg)]
 
@@ -358,13 +362,21 @@ def _run_task_by_number(arg: str, log_callback=None):
         for n in nums:
             if 1 <= n <= len(rows):
                 r = rows[n - 1]
-                if r["status"] == "대기":
+                if r["status"] == "대기" or force:
+                    # 강제 실행 시 상태 리셋
+                    if force and r["status"] != "대기":
+                        c = sqlite3.connect(db_path)
+                        c.execute("UPDATE scrape_tasks SET status='대기', count=0 WHERE id=?", (r["id"],))
+                        c.commit()
+                        c.close()
                     tasks.append(r)
                 else:
-                    send_telegram(f"⚠️ {n}번 작업은 '{r['status']}' 상태입니다.")
+                    send_telegram(f"⚠️ {n}번은 '{r['status']}' 상태입니다.\n강제 실행: <code>/수집 {n} 강제</code>")
+            else:
+                send_telegram(f"⚠️ {n}번은 범위 밖입니다 (1~{len(rows)})")
 
         if not tasks:
-            send_telegram("⚠️ 실행할 대기 상태 작업이 없습니다.")
+            send_telegram("⚠️ 실행할 작업이 없습니다.")
             return
 
         task_names = "\n".join(f"  {r['brand_name'] or '전체'} / {r['cat_name'] or '전체'} (p.{r['pages'] or '전체'})" for r in tasks)
