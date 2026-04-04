@@ -232,14 +232,27 @@ def _process_ai_chat(message: dict, log_callback=None):
 
 간결하게 답변하세요. HTML 태그 사용 가능 (<b>, <i>, <code>)."""
 
+        # 우선 provider 시도 → 실패 시 다른 provider 폴백
+        result = None
+        providers = []
         if provider == "gemini" and config.get("gemini_key"):
-            result = _call_gemini(prompt)
-        elif provider == "claude" and config.get("claude_key"):
-            result = _call_claude(prompt)
+            providers = [("gemini", _call_gemini), ("openai", _call_openai), ("claude", _call_claude)]
         elif provider == "openai" and config.get("openai_key"):
-            result = _call_openai(prompt)
-        else:
-            send_telegram("⚠️ AI API 키가 설정되지 않았습니다.")
+            providers = [("openai", _call_openai), ("gemini", _call_gemini), ("claude", _call_claude)]
+        elif provider == "claude" and config.get("claude_key"):
+            providers = [("claude", _call_claude), ("openai", _call_openai), ("gemini", _call_gemini)]
+
+        for pname, pfunc in providers:
+            try:
+                result = pfunc(prompt)
+                if result:
+                    break
+            except Exception as pe:
+                logger.warning(f"AI {pname} 실패: {pe}")
+                continue
+
+        if not result:
+            send_telegram("⚠️ 모든 AI API가 응답하지 않습니다.")
             return
 
         if result:
