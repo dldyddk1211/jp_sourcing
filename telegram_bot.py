@@ -396,14 +396,10 @@ def _run_task_by_number(arg: str, log_callback=None, force=False):
                     c.close()
 
                     from secondst_crawler import scrape_2ndstreet, set_app_status
-                    # stop_requested 리셋
-                    try:
-                        import app as _app
-                        _app.status["stop_requested"] = False
-                        _app.status["scraping"] = True
-                        set_app_status(_app.status)
-                    except Exception:
-                        pass
+
+                    # stop_requested 리셋 — 직접 상태 딕셔너리 조작
+                    _status = {"scraping": True, "stop_requested": False, "paused": False}
+                    set_app_status(_status)
 
                     result = asyncio.run(scrape_2ndstreet(
                         status_callback=log_callback,
@@ -418,10 +414,7 @@ def _run_task_by_number(arg: str, log_callback=None, force=False):
                     c.commit()
                     c.close()
 
-                    try:
-                        _app.status["scraping"] = False
-                    except Exception:
-                        pass
+                    _status["scraping"] = False
 
                     send_telegram(f"✅ 수집 완료: {r['brand_name'] or '전체'} / {r['cat_name'] or '전체'} — {count}개")
                 except Exception as e:
@@ -429,10 +422,7 @@ def _run_task_by_number(arg: str, log_callback=None, force=False):
                     c.execute("UPDATE scrape_tasks SET status='오류' WHERE id=?", (task_id,))
                     c.commit()
                     c.close()
-                    try:
-                        _app.status["scraping"] = False
-                    except Exception:
-                        pass
+                    _status["scraping"] = False
                     send_telegram(f"❌ 수집 오류: {r['brand_name'] or '전체'} — {str(e)[:100]}")
 
             send_telegram(f"🏪 전체 {len(tasks)}개 작업 완료!")
