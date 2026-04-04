@@ -169,6 +169,124 @@ def _process_reply(message: dict, log_callback=None) -> bool:
     return success
 
 
+# ── AI 채팅 (텔레그램 → AI → 텔레그램) ──────────
+
+_AI_COMMANDS = {
+    "/상태": "server_status",
+    "/status": "server_status",
+    "/help": "help",
+    "/도움": "help",
+}
+
+def _process_ai_chat(message: dict, log_callback=None):
+    """텔레그램 일반 메시지 → AI 응답"""
+    chat_id = str(message.get("chat", {}).get("id", ""))
+    text = message.get("text", "").strip()
+
+    # 우리 chat_id만 응답 (보안)
+    if chat_id != _tg_config.get("chat_id", ""):
+        return
+
+    if not text:
+        return
+
+    logger.info(f"💬 텔레그램 메시지 수신: {text[:50]}")
+
+    # 특수 명령어 처리
+    cmd = _AI_COMMANDS.get(text.lower().split()[0] if text.startswith("/") else "")
+    if cmd == "server_status":
+        _send_server_status()
+        return
+    if cmd == "help":
+        send_telegram(
+            "🤖 <b>AI 어시스턴트 명령어</b>\n\n"
+            "/상태 — 서버 상태 확인\n"
+            "/도움 — 도움말\n\n"
+            "그 외 자유롭게 질문하면 AI가 답변합니다.\n"
+            "예: 오늘 수집 현황 알려줘\n"
+            "예: PRADA 가방 시세 분석해줘"
+        )
+        return
+
+    # AI에게 전달
+    try:
+        from post_generator import get_ai_config, _call_gemini, _call_claude, _call_openai
+        config = get_ai_config()
+        provider = config.get("provider", "none")
+
+        if provider == "none":
+            send_telegram("⚠️ AI가 설정되지 않았습니다. 대시보드에서 AI 설정을 확인해주세요.")
+            return
+
+        # 서버 상태 컨텍스트 추가
+        context = _get_server_context()
+
+        prompt = f"""당신은 일본 구매대행 쇼핑몰 'TheOne Vintage' 관리 AI 어시스턴트입니다.
+관리자의 질문에 간결하고 정확하게 답변하세요.
+
+[현재 서버 상태]
+{context}
+
+[관리자 질문]
+{text}
+
+간결하게 답변하세요. HTML 태그 사용 가능 (<b>, <i>, <code>)."""
+
+        if provider == "gemini" and config.get("gemini_key"):
+            result = _call_gemini(prompt)
+        elif provider == "claude" and config.get("claude_key"):
+            result = _call_claude(prompt)
+        elif provider == "openai" and config.get("openai_key"):
+            result = _call_openai(prompt)
+        else:
+            send_telegram("⚠️ AI API 키가 설정되지 않았습니다.")
+            return
+
+        if result:
+            # 텔레그램 메시지 길이 제한 (4096자)
+            if len(result) > 4000:
+                result = result[:4000] + "\n\n... (길이 제한으로 잘림)"
+            send_telegram(f"🤖 <b>AI 응답</b>\n\n{result}")
+        else:
+            send_telegram("⚠️ AI 응답이 비어있습니다.")
+
+    except Exception as e:
+        logger.warning(f"AI 채팅 오류: {e}")
+        send_telegram(f"❌ AI 응답 오류: {str(e)[:200]}")
+
+
+def _get_server_context() -> str:
+    """현재 서버 상태 요약"""
+    try:
+        import sqlite3
+        from data_manager import get_path
+        db_path = os.path.join(get_path("db"), "products.db")
+        conn = sqlite3.connect(db_path)
+        total = conn.execute("SELECT count(*) FROM products WHERE site_id='2ndstreet'").fetchone()[0]
+        brands = conn.execute("SELECT brand, count(*) c FROM products WHERE site_id='2ndstreet' GROUP BY brand ORDER BY c DESC LIMIT 5").fetchall()
+        conn.close()
+        brand_info = ", ".join(f"{b[0]}({b[1]})" for b in brands)
+        return f"총 상품: {total}개\n브랜드: {brand_info}"
+    except Exception:
+        return "상태 조회 불가"
+
+
+def _send_server_status():
+    """서버 상태를 텔레그램으로 전송"""
+    try:
+        context = _get_server_context()
+        from exchange import get_cached_rate
+        rate = get_cached_rate() or 0
+        send_telegram(
+            f"📊 <b>서버 상태</b>\n\n"
+            f"{context}\n"
+            f"💱 환율: 1엔 = {rate:.2f}원\n"
+            f"🟢 서버 정상 운영 중"
+        )
+    except Exception as e:
+        send_telegram(f"❌ 상태 조회 실패: {e}")
+
+
 def _bot_loop(log_callback=None):
     """텔레그램 봇 폴링 루프"""
     global _running, _last_update_id
@@ -188,6 +306,9 @@ def _bot_loop(log_callback=None):
                 message = update.get("message", {})
                 if message.get("reply_to_message"):
                     _process_reply(message, log_callback)
+                elif message.get("text"):
+                    # 일반 메시지 → AI 처리
+                    _process_ai_chat(message, log_callback)
 
         except Exception as e:
             logger.debug(f"봇 폴링 오류: {e}")
