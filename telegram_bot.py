@@ -362,16 +362,13 @@ def _run_task_by_number(arg: str, log_callback=None, force=False):
         for n in nums:
             if 1 <= n <= len(rows):
                 r = rows[n - 1]
-                if r["status"] == "수집중":
-                    send_telegram(f"⚠️ {n}번은 현재 수집 진행 중입니다.")
-                else:
-                    # 대기/완료/오류/예약 → 모두 실행 가능
-                    if r["status"] != "대기":
-                        c = sqlite3.connect(db_path)
-                        c.execute("UPDATE scrape_tasks SET status='대기', count=0 WHERE id=?", (r["id"],))
-                        c.commit()
-                        c.close()
-                    tasks.append(r)
+                # 모든 상태에서 실행 가능 (수집중 포함 → 큐에 예약)
+                if r["status"] != "대기":
+                    c = sqlite3.connect(db_path)
+                    c.execute("UPDATE scrape_tasks SET status='대기', count=0 WHERE id=?", (r["id"],))
+                    c.commit()
+                    c.close()
+                tasks.append(r)
             else:
                 send_telegram(f"⚠️ {n}번은 범위 밖입니다 (1~{len(rows)})")
 
@@ -380,54 +377,25 @@ def _run_task_by_number(arg: str, log_callback=None, force=False):
             return
 
         task_names = "\n".join(f"  {r['brand_name'] or '전체'} / {r['cat_name'] or '전체'} (p.{r['pages'] or '전체'})" for r in tasks)
-        send_telegram(f"🚀 <b>{len(tasks)}개 작업 수집 시작</b>\n{task_names}")
 
-        # 백그라운드에서 실행
-        import threading
-        def _run():
-            import asyncio
+        # 큐 방식으로 예약 (현재 수집 중이면 대기 후 자동 실행)
+        try:
+            import app as _app
+            _app._start_queue_worker()
             for r in tasks:
-                task_id = r["id"]
-                try:
-                    # 상태 → 수집중
-                    c = sqlite3.connect(db_path)
-                    c.execute("UPDATE scrape_tasks SET status='수집중' WHERE id=?", (task_id,))
-                    c.commit()
-                    c.close()
+                c = sqlite3.connect(db_path)
+                c.execute("UPDATE scrape_tasks SET status='예약' WHERE id=?", (r["id"],))
+                c.commit()
+                c.close()
+                _app._scrape_queue.put(r["id"])
 
-                    from secondst_crawler import scrape_2ndstreet, set_app_status
-
-                    # stop_requested 리셋 — 직접 상태 딕셔너리 조작
-                    _status = {"scraping": True, "stop_requested": False, "paused": False}
-                    set_app_status(_status)
-
-                    result = asyncio.run(scrape_2ndstreet(
-                        status_callback=log_callback,
-                        category=r["cat"],
-                        pages=r["pages"] or "",
-                        brand_code=r["brand"],
-                    ))
-                    count = result.get("total_saved", 0) if isinstance(result, dict) else len(result) if result else 0
-
-                    c = sqlite3.connect(db_path)
-                    c.execute("UPDATE scrape_tasks SET status='완료', count=? WHERE id=?", (count, task_id))
-                    c.commit()
-                    c.close()
-
-                    _status["scraping"] = False
-
-                    send_telegram(f"✅ 수집 완료: {r['brand_name'] or '전체'} / {r['cat_name'] or '전체'} — {count}개")
-                except Exception as e:
-                    c = sqlite3.connect(db_path)
-                    c.execute("UPDATE scrape_tasks SET status='오류' WHERE id=?", (task_id,))
-                    c.commit()
-                    c.close()
-                    _status["scraping"] = False
-                    send_telegram(f"❌ 수집 오류: {r['brand_name'] or '전체'} — {str(e)[:100]}")
-
-            send_telegram(f"🏪 전체 {len(tasks)}개 작업 완료!")
-
-        threading.Thread(target=_run, daemon=True).start()
+            queue_size = _app._scrape_queue.qsize()
+            if _app.status.get("scraping"):
+                send_telegram(f"⏰ <b>{len(tasks)}개 작업 큐에 예약</b>\n(현재 수집 완료 후 자동 시작)\n\n{task_names}\n\n큐 대기: {queue_size}개")
+            else:
+                send_telegram(f"🚀 <b>{len(tasks)}개 작업 수집 시작</b>\n{task_names}")
+        except Exception as e:
+            send_telegram(f"❌ 큐 등록 실패: {str(e)[:100]}")
 
     except Exception as e:
         send_telegram(f"❌ 실행 오류: {e}")
