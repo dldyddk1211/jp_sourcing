@@ -1461,6 +1461,7 @@
             <button class="btn b-blue" onclick="runCheckedTasks()" style="padding:5px 12px;font-size:0.78rem">&#x25b6; 선택 실행</button>
             <button class="btn b-purple" onclick="runBrandRoundRobin()" id="btn-run-all" style="padding:5px 12px;font-size:0.78rem">&#x1f504; 브랜드별 순환실행</button>
             <button class="btn b-yellow" onclick="scheduleCheckedTasks()" style="padding:5px 12px;font-size:0.78rem">&#x23F0; 예약 실행</button>
+            <button class="btn b-red" onclick="stopAllTasks()" style="padding:5px 12px;font-size:0.78rem">&#x23F9; 전체 멈춤</button>
             <button class="btn b-red" onclick="deleteCheckedTasks()" style="padding:5px 12px;font-size:0.78rem">&#x1f5d1; 선택 삭제</button>
             <button class="btn b-gray" onclick="clearScrapeTasks()" style="padding:5px 12px;font-size:0.78rem">전체 삭제</button>
           </div>
@@ -3393,6 +3394,15 @@ async function runCheckedTasks() {
   checkedTaskIds.clear();
   addLog("\u2705 선택 실행 완료!", "ok");
   loadScrapeTasks();
+}
+
+async function stopAllTasks() {
+  if (!confirm("진행 중인 수집 + 큐 예약 모두 중지하시겠습니까?")) return;
+  try {
+    await fetch(PREFIX + "/scrape/stop-all", {method: "POST"});
+    addLog("\u23F9 전체 멈춤: 수집 중지 + 큐 비우기 완료", "ok");
+    loadScrapeTasks();
+  } catch(e) { addLog("\u274C 멈춤 실패: " + e, "err"); }
 }
 
 async function runBrandRoundRobin() {

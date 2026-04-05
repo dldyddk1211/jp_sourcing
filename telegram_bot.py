@@ -182,6 +182,7 @@ _AI_COMMANDS = {
     "/list": "task_list",
     "/수집": "run_task",
     "/중지": "stop_task",
+    "/멈춤": "stop_all",
     "/브랜드수집": "run_per_brand",
 }
 
@@ -240,6 +241,9 @@ def _process_ai_chat(message: dict, log_callback=None):
         return
     if cmd == "stop_task":
         _stop_scraping()
+        return
+    if cmd == "stop_all":
+        _stop_all()
         return
     if cmd == "run_per_brand":
         _run_per_brand(log_callback)
@@ -468,6 +472,16 @@ def _run_per_brand(log_callback=None):
 
     except Exception as e:
         send_telegram(f"❌ 브랜드수집 오류: {e}")
+
+
+def _stop_all():
+    """전체 멈춤: 수집 + 큐 + 예약 모두 중지"""
+    try:
+        import requests as _req
+        _req.post("http://127.0.0.1:3002/scrape/stop-all", timeout=10)
+        send_telegram("⏹ <b>전체 멈춤 완료</b>\n수집 중지 + 큐 비우기 + 예약 → 대기")
+    except Exception as e:
+        send_telegram(f"❌ 전체 멈춤 실패: {e}")
 
 
 def _stop_scraping():

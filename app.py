@@ -2664,6 +2664,46 @@ def queue_status():
     return jsonify({"ok": True, "queue_size": _scrape_queue.qsize()})
 
 
+@app.route(f"{URL_PREFIX}/scrape/stop-all", methods=["POST"])
+@admin_required
+def stop_all_tasks():
+    """현재 수집 중지 + 큐 비우기 + 예약 상태 → 대기로"""
+    import sqlite3
+    # 1) 수집 강제 중지
+    status["scraping"] = False
+    status["stop_requested"] = True
+    status["paused"] = False
+    try:
+        import asyncio
+        from secondst_crawler import force_close_browser as fc
+        asyncio.run(fc())
+    except Exception:
+        pass
+
+    # 2) 큐 비우기
+    while not _scrape_queue.empty():
+        try:
+            _scrape_queue.get_nowait()
+            _scrape_queue.task_done()
+        except Exception:
+            break
+
+    # 3) 예약/수집중 상태 → 대기로
+    db_path = os.path.join(get_path("db"), "users.db")
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE scrape_tasks SET status='대기' WHERE status IN ('예약','수집중')")
+    conn.commit()
+    conn.close()
+
+    push_log("⏹ 전체 멈춤: 수집 중지 + 큐 비우기 + 예약 → 대기")
+    try:
+        from notifier import send_telegram
+        send_telegram("⏹ <b>전체 멈춤</b>\n수집 중지 + 큐 비우기 완료")
+    except Exception:
+        pass
+    return jsonify({"ok": True, "message": "전체 멈춤 완료"})
+
+
 @app.route(f"{URL_PREFIX}/scrape/check-count")
 @admin_required
 def scrape_check_count():
