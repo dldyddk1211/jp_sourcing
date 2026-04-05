@@ -1459,7 +1459,7 @@
           <span>&#x1f4cb; 수집 작업 리스트</span>
           <div style="display:flex;gap:8px;">
             <button class="btn b-blue" onclick="runCheckedTasks()" style="padding:5px 12px;font-size:0.78rem">&#x25b6; 선택 실행</button>
-            <button class="btn b-purple" onclick="runAllTasks()" id="btn-run-all" style="padding:5px 12px;font-size:0.78rem">&#x25b6; 전체 순차 실행</button>
+            <button class="btn b-purple" onclick="runBrandRoundRobin()" id="btn-run-all" style="padding:5px 12px;font-size:0.78rem">&#x1f504; 브랜드별 순환실행</button>
             <button class="btn b-yellow" onclick="scheduleCheckedTasks()" style="padding:5px 12px;font-size:0.78rem">&#x23F0; 예약 실행</button>
             <button class="btn b-red" onclick="deleteCheckedTasks()" style="padding:5px 12px;font-size:0.78rem">&#x1f5d1; 선택 삭제</button>
             <button class="btn b-gray" onclick="clearScrapeTasks()" style="padding:5px 12px;font-size:0.78rem">전체 삭제</button>
@@ -3395,15 +3395,52 @@ async function runCheckedTasks() {
   loadScrapeTasks();
 }
 
-async function runAllTasks() {
+async function runBrandRoundRobin() {
   const pending = scrapeTaskList.filter(t => t.status === "대기");
   if (!pending.length) { addLog("\u26a0\ufe0f 대기 중인 작업이 없습니다", "info"); return; }
-  if (!confirm(`대기 중인 ${pending.length}개 작업을 전체 실행하시겠습니까?`)) return;
-  addLog(`\u25b6 전체 순차 실행 시작 (${pending.length}개)`, "info");
-  for (const task of pending) {
-    await runSingleTask(task.id);
+
+  // 브랜드별 그룹핑
+  const brandMap = {};
+  for (const t of pending) {
+    const brand = t.brand_name || t.brandName || "전체";
+    if (!brandMap[brand]) brandMap[brand] = [];
+    brandMap[brand].push(t);
   }
-  addLog("\u2705 전체 순차 실행 완료!", "ok");
+  const brands = Object.keys(brandMap);
+  const totalTasks = pending.length;
+
+  // 라운드로빈 순서 생성
+  const roundRobin = [];
+  let maxLen = Math.max(...Object.values(brandMap).map(arr => arr.length));
+  for (let i = 0; i < maxLen; i++) {
+    for (const brand of brands) {
+      if (i < brandMap[brand].length) {
+        roundRobin.push(brandMap[brand][i]);
+      }
+    }
+  }
+
+  // 확인 팝업
+  let preview = brands.map(b => `  ${b}: ${brandMap[b].length}개`).join("\n");
+  if (!confirm(`브랜드별 순환실행 (${totalTasks}개)\n\n${preview}\n\n순서: ${brands.join(" → ")} → 반복`)) return;
+
+  addLog(`\uD83D\uDD04 브랜드별 순환실행 시작 (${totalTasks}개, ${brands.length}개 브랜드)`, "info");
+
+  // 큐에 예약
+  try {
+    const ids = roundRobin.map(t => t.id);
+    const res = await fetch(PREFIX + "/scrape/queue", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ids})
+    });
+    const d = await res.json();
+    if (d.ok) {
+      addLog(`\u2705 ${d.message}`, "ok");
+      loadScrapeTasks();
+    } else {
+      addLog(`\u274C ${d.message}`, "err");
+    }
+  } catch(e) { addLog("\u274C 순환실행 실패: " + e, "err"); }
 }
 
 async function clearScrapeTasks() {
