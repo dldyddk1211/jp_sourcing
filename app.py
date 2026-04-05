@@ -638,6 +638,32 @@ def payment_fail():
                            url_prefix=URL_PREFIX, message=message)
 
 
+@app.route(f"{URL_PREFIX}/shop/api/cancel-order/<int:order_id>", methods=["POST"])
+@login_required
+def cancel_my_order(order_id):
+    """고객이 직접 주문 취소 (신규/확인 상태만)"""
+    username = session.get("username", "")
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        row = conn.execute("SELECT * FROM orders WHERE id=? AND username=?", (order_id, username)).fetchone()
+        if not row:
+            return jsonify({"ok": False, "message": "주문을 찾을 수 없습니다"})
+        if row["status"] not in ("new", "confirmed"):
+            return jsonify({"ok": False, "message": f"'{row['status']}' 상태에서는 취소할 수 없습니다"})
+        conn.execute("UPDATE orders SET status='cancelled' WHERE id=?", (order_id,))
+        conn.commit()
+        # 텔레그램 알림
+        try:
+            from notifier import send_telegram
+            send_telegram(f"🚫 <b>주문 취소</b>\n👤 {username}\n📦 {row['product_name'] or ''}\n💰 {row['price'] or ''}")
+        except Exception:
+            pass
+        return jsonify({"ok": True, "message": "주문이 취소되었습니다"})
+    finally:
+        conn.close()
+
+
 @app.route(f"{URL_PREFIX}/shop/api/notify", methods=["POST"])
 @login_required
 def shop_notify():

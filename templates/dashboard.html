@@ -792,10 +792,24 @@
             <button class="btn b-gray" onclick="loadOrders()" style="padding:5px 12px;font-size:0.78rem">&#x1f504; 새로고침</button>
           </div>
         </div>
+        <!-- 일괄 작업 -->
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding:8px 12px;background:#0d0d0a;border:1px solid var(--border);border-radius:8px;">
+          <span style="font-size:0.78rem;color:var(--muted);">선택: <b id="order-sel-cnt" style="color:var(--accent)">0</b>건</span>
+          <select id="bulk-order-status" style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:5px;font-size:0.75rem;">
+            <option value="">상태 일괄 변경</option>
+            <option value="confirmed">확인</option>
+            <option value="processing">처리중</option>
+            <option value="shipped">배송중</option>
+            <option value="completed">완료</option>
+            <option value="cancelled">취소</option>
+          </select>
+          <button onclick="bulkChangeOrderStatus()" class="btn b-blue" style="padding:4px 10px;font-size:0.72rem;">적용</button>
+        </div>
         <div style="overflow-x:auto;">
           <table class="tbl" style="width:100%;font-size:0.78rem;">
             <thead>
               <tr>
+                <th style="width:30px"><input type="checkbox" onchange="toggleAllOrderChk(this.checked)"></th>
                 <th style="width:35px">#</th>
                 <th>일시</th>
                 <th>유형</th>
@@ -4478,6 +4492,7 @@ async function loadOrders() {
       const sc = statusColors[o.status] || "var(--muted)";
       const sl = statusOpts[o.status] || o.status;
       return `<tr style="border-bottom:1px solid var(--border)22;">
+        <td style="padding:6px;text-align:center;"><input type="checkbox" class="order-chk" data-id="${o.id}" onchange="updateOrderSelCnt()"></td>
         <td style="padding:6px;color:var(--dim)">${i+1}</td>
         <td style="padding:6px;white-space:nowrap;font-size:0.72rem;">${o.created_at||''}</td>
         <td style="padding:6px;text-align:center;">${typeIcons[o.type]||'📋'} ${o.type==='order'?'주문':'문의'}</td>
@@ -4543,6 +4558,30 @@ async function showCustomerPopup(event, username) {
       });
     }, 100);
   } catch(e) {}
+}
+
+function toggleAllOrderChk(checked) {
+  document.querySelectorAll(".order-chk").forEach(c => c.checked = checked);
+  updateOrderSelCnt();
+}
+function updateOrderSelCnt() {
+  const cnt = document.querySelectorAll(".order-chk:checked").length;
+  document.getElementById("order-sel-cnt").textContent = cnt;
+}
+async function bulkChangeOrderStatus() {
+  const ids = [];
+  document.querySelectorAll(".order-chk:checked").forEach(c => ids.push(parseInt(c.dataset.id)));
+  if (!ids.length) { alert("주문을 선택해주세요"); return; }
+  const st = document.getElementById("bulk-order-status").value;
+  if (!st) { alert("상태를 선택해주세요"); return; }
+  const labels = {"confirmed":"확인","processing":"처리중","shipped":"배송중","completed":"완료","cancelled":"취소"};
+  if (!confirm(`${ids.length}건을 '${labels[st]}'로 변경하시겠습니까?`)) return;
+  for (const id of ids) {
+    await fetch(PREFIX + "/orders/" + id, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({status:st})}).catch(()=>{});
+  }
+  addLog(`\u2705 ${ids.length}건 주문 상태 → ${labels[st]}`, "ok");
+  document.getElementById("bulk-order-status").value = "";
+  loadOrders();
 }
 
 function updateOrderBadge(count) {

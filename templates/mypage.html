@@ -107,7 +107,7 @@
       <div class="panel">
         <div class="section-title">주문/문의 내역</div>
         <table>
-          <thead><tr><th>#</th><th>일시</th><th>유형</th><th>상품</th><th>가격</th><th>상태</th></tr></thead>
+          <thead><tr><th>#</th><th>일시</th><th>유형</th><th>상품</th><th>가격</th><th>상태</th><th></th></tr></thead>
           <tbody id="my-orders-body"><tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr></tbody>
         </table>
       </div>
@@ -234,11 +234,12 @@ async function loadMyOrders() {
     const res = await fetch(PREFIX + "/shop/api/my-orders");
     const d = await res.json();
     if (!d.orders || !d.orders.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">내역이 없습니다</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px;">내역이 없습니다</td></tr>';
       return;
     }
     tbody.innerHTML = d.orders.map((o, i) => {
       const [sl, sc] = statusMap[o.status] || [o.status, ""];
+      const canCancel = o.status === "new" || o.status === "confirmed";
       return `<tr>
         <td style="color:var(--dim)">${i+1}</td>
         <td style="font-size:0.78rem;">${o.created_at||''}</td>
@@ -246,6 +247,7 @@ async function loadMyOrders() {
         <td>${o.brand} ${o.product_name||''}</td>
         <td style="font-weight:700;color:var(--accent);">${o.price||''}</td>
         <td class="${sc}" style="font-weight:600;">${sl}</td>
+        <td>${canCancel ? `<button onclick="cancelMyOrder(${o.id})" class="btn btn-red" style="padding:4px 10px;font-size:0.72rem;background:var(--red);color:#fff;border:none;border-radius:4px;cursor:pointer;">취소</button>` : ''}</td>
       </tr>`;
     }).join("");
   } catch(e) { tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red);text-align:center;">로드 실패</td></tr>`; }
@@ -357,6 +359,16 @@ async function submitPost() {
       loadBoard();
     }
   } catch(e) { msg.className = "msg err"; msg.textContent = "오류: " + e; }
+}
+
+async function cancelMyOrder(id) {
+  if (!confirm("이 주문을 취소하시겠습니까?")) return;
+  try {
+    const res = await fetch(PREFIX + "/shop/api/cancel-order/" + id, {method: "POST"});
+    const d = await res.json();
+    alert(d.message);
+    if (d.ok) loadMyOrders();
+  } catch(e) { alert("취소 실패: " + e); }
 }
 
 // 초기 로드
