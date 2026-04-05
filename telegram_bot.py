@@ -26,6 +26,8 @@ _bot_thread = None
 _running = False
 _poll_interval = 3  # 3초 간격
 _last_update_id = 0
+_bot_pid = None  # 중복 실행 방지용
+_processed_updates = set()  # 처리된 update_id (중복 방지)
 
 
 def _get_updates(offset=0) -> list:
@@ -529,6 +531,12 @@ def _bot_loop(log_callback=None):
                 update_id = update.get("update_id", 0)
                 if update_id > _last_update_id:
                     _last_update_id = update_id
+                # 중복 처리 방지
+                if update_id in _processed_updates:
+                    continue
+                _processed_updates.add(update_id)
+                if len(_processed_updates) > 1000:
+                    _processed_updates.clear()
 
                 message = update.get("message", {})
                 if message.get("reply_to_message"):
@@ -548,10 +556,20 @@ def _bot_loop(log_callback=None):
 
 
 def start_bot(log_callback=None):
-    """텔레그램 봇 시작"""
-    global _bot_thread, _running
-    if _running:
+    """텔레그램 봇 시작 (1회만 — 파일 락)"""
+    global _bot_thread, _running, _bot_pid
+    if _running or (_bot_thread and _bot_thread.is_alive()):
         return False
+    # 파일 락으로 중복 방지
+    lock_path = os.path.join(os.path.dirname(__file__), ".bot_lock")
+    try:
+        import fcntl
+        _lock_fd = open(lock_path, "w")
+        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _lock_fd.write(str(os.getpid()))
+        _lock_fd.flush()
+    except (IOError, OSError):
+        return False  # 이미 다른 프로세스가 실행 중
 
     _running = True
     _bot_thread = threading.Thread(
