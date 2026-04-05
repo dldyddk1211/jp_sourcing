@@ -1038,9 +1038,12 @@ function shareProduct() {
   if (!p) return;
   const url = location.origin + PREFIX + "/shop?code=" + encodeURIComponent(p.product_code);
   if (navigator.clipboard) {
-    navigator.clipboard.writeText(url).then(() => alert("상품 링크가 복사되었습니다!\n\n" + url));
+    navigator.clipboard.writeText(url).then(() => alert("URL이 저장되었습니다."));
   } else {
-    prompt("상품 링크를 복사하세요:", url);
+    // 폴백
+    const ta = document.createElement("textarea");
+    ta.value = url; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+    alert("URL이 저장되었습니다.");
   }
 }
 
