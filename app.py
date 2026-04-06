@@ -1333,6 +1333,16 @@ def shop_api_product_by_code():
         # shop API와 동일한 필드 매핑
         p["size_info"] = p.get("color", "")
         p["color_raw"] = p.get("color", "")
+        # 한국어 번역 우선 사용
+        name_ko = p.get("name_ko", "")
+        if name_ko and name_ko.strip() and name_ko != p.get("name", ""):
+            p["name"] = name_ko
+        desc_ko = p.get("description_ko", "")
+        desc_ja = p.get("description", "")
+        if desc_ko and desc_ko.strip():
+            p["description"] = desc_ko
+        elif desc_ja and desc_ja.strip() and desc_ja == "商品のお問い合わせ":
+            p["description"] = ""
         return jsonify({"ok": True, "product": p})
     finally:
         conn.close()
