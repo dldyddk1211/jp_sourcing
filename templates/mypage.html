@@ -219,7 +219,7 @@
         </div>
         <!-- Desktop table -->
         <table class="order-table-desktop">
-          <thead><tr><th style="width:30px"><input type="checkbox" onchange="toggleAllMyOrderChk(this.checked)"></th><th>#</th><th>일시</th><th>유형</th><th>상품</th><th>가격</th><th>상태</th><th></th></tr></thead>
+          <thead><tr><th style="width:30px"></th><th>#</th><th>일시</th><th>유형</th><th>상품</th><th>가격</th><th>상태</th><th></th></tr></thead>
           <tbody id="my-orders-body"><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr></tbody>
         </table>
         <!-- Mobile cards -->
@@ -585,7 +585,7 @@ async function loadMyOrders() {
         <td style="color:var(--dim)">${i+1}</td>
         <td style="font-size:0.78rem;">${o.created_at||''}</td>
         <td>${o.type==='order'?'🛒 주문':'💬 문의'}</td>
-        <td>${o.brand} ${o.product_name||''}</td>
+        <td>${o.product_code ? `<a href="#" onclick="event.preventDefault();openCartDetail('${o.product_code.replace(/'/g,"\\'")}');" style="color:var(--text);text-decoration:underline;text-underline-offset:3px;">${o.brand} ${o.product_name||''}</a>` : `${o.brand} ${o.product_name||''}`}</td>
         <td style="font-weight:700;color:var(--accent);">${o.price||''}</td>
         <td class="${sc}" style="font-weight:600;">${sl}</td>
         <td>${canCancel ? `<button onclick="cancelMyOrder(${o.id})" style="padding:4px 10px;font-size:0.72rem;background:var(--red);color:#fff;border:none;border-radius:4px;cursor:pointer;">취소</button>` : ''}</td>
@@ -600,7 +600,7 @@ async function loadMyOrders() {
       return `<div class="order-card">
         <div class="order-card-top">
           ${canPay ? `<input type="checkbox" class="my-order-chk" data-id="${o.id}" data-price="${priceNum}" data-name="${(o.brand||'')+' '+(o.product_name||'')}" onchange="updateMyOrderPayInfo()">` : '<div style="width:18px;"></div>'}
-          <div class="order-card-name">${o.brand} ${o.product_name||''}</div>
+          <div class="order-card-name">${o.product_code ? `<a href="#" onclick="event.preventDefault();openCartDetail('${o.product_code.replace(/'/g,"\\'")}');" style="color:var(--text);text-decoration:underline;text-underline-offset:3px;">${o.brand} ${o.product_name||''}</a>` : `${o.brand} ${o.product_name||''}`}</div>
         </div>
         <div class="order-card-meta">
           <span>${o.type==='order'?'🛒 주문':'💬 문의'}</span>
