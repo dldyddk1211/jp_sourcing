@@ -411,17 +411,16 @@
       </div>
       <div style="display:flex;gap:8px;">
         <button class="pay-back-btn" onclick="goPayStep(1)">← 배송지 수정</button>
-        <button class="pay-next-btn" onclick="goPayStep(3)" style="flex:2;">결제하기</button>
+      </div>
+      <div style="margin-top:14px;display:flex;gap:8px;">
+        <button class="pay-next-btn" onclick="payByTransfer()" style="flex:1;background:#3b82f6;margin-top:0;">🏦 계좌이체</button>
+        <button class="pay-next-btn" onclick="payByCard()" style="flex:1;background:var(--dim);margin-top:0;cursor:not-allowed;opacity:0.7;">💳 신용카드 <span style="font-size:0.65rem;">(준비중)</span></button>
       </div>
     </div>
 
-    <!-- Step 3: 결제 진행 (즉시 토스로 이동) -->
+    <!-- Step 3: 결제 진행 -->
     <div class="pay-step-panel" id="pay-step-3" style="display:none;">
-      <div style="text-align:center;padding:40px 0;">
-        <div style="font-size:2rem;margin-bottom:12px;">💳</div>
-        <div style="font-size:0.95rem;font-weight:700;margin-bottom:8px;">결제 페이지로 이동 중...</div>
-        <div style="font-size:0.8rem;color:var(--muted);">잠시만 기다려주세요</div>
-      </div>
+      <div id="pay-step3-content"></div>
     </div>
   </div>
 </div>
@@ -1217,6 +1216,66 @@ function applyCoupon() {
   });
 }
 
+function showStep3(html) {
+  document.getElementById("pay-step3-content").innerHTML = html;
+  [1,2,3].forEach(i => {
+    document.getElementById("pay-step-" + i).style.display = i === 3 ? "" : "none";
+    const ind = document.getElementById("step-ind-" + i);
+    ind.classList.remove("active","done");
+    if (i < 3) ind.classList.add("done");
+    if (i === 3) ind.classList.add("active");
+  });
+}
+
+function payByTransfer() {
+  const final = Math.max(0, paySubtotal - payDiscount);
+  showStep3(`
+    <div style="text-align:center;padding:24px 0;">
+      <div style="font-size:2rem;margin-bottom:12px;">🏦</div>
+      <div style="font-size:1rem;font-weight:700;margin-bottom:16px;">계좌이체 안내</div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px;text-align:left;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <span style="font-size:0.82rem;color:var(--muted);">입금 금액</span>
+          <span style="font-size:1.2rem;font-weight:800;color:var(--green);">${final.toLocaleString()}원</span>
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:12px;">
+          <div style="font-size:0.82rem;color:var(--muted);margin-bottom:6px;">입금 계좌</div>
+          <div style="font-size:1.1rem;font-weight:700;color:var(--text);letter-spacing:0.5px;">하나은행 307-910169-58305</div>
+          <div style="font-size:0.88rem;color:var(--accent);font-weight:600;margin-top:4px;">예금주: 박수현</div>
+        </div>
+      </div>
+      <div style="font-size:0.78rem;color:var(--muted);line-height:1.6;margin-bottom:16px;">
+        입금 시 <b style="color:var(--accent);">주문자명</b>으로 입금해주세요.<br>
+        입금 확인 후 주문 상태가 자동으로 변경됩니다.
+      </div>
+      <button onclick="copyAccount()" style="width:100%;padding:11px;border:none;border-radius:8px;background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.3);color:#3b82f6;font-size:0.88rem;font-weight:700;cursor:pointer;margin-bottom:8px;">📋 계좌번호 복사</button>
+      <button onclick="closePayModal();loadMyOrders();" class="pay-next-btn" style="margin-top:8px;">확인</button>
+    </div>
+  `);
+  // 주문 상태를 '입금대기'로 업데이트
+  payOrderIds.forEach(id => {
+    fetch(PREFIX + "/shop/api/update-order-status", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({id: parseInt(id), status: "confirmed", memo: "계좌이체 입금대기"})
+    }).catch(()=>{});
+  });
+}
+
+function copyAccount() {
+  const text = "하나은행 307-910169-58305 박수현";
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText("307-910169-58305").then(() => alert("계좌번호가 복사되었습니다."));
+  } else {
+    const ta = document.createElement("textarea");
+    ta.value = "307-910169-58305"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+    alert("계좌번호가 복사되었습니다.");
+  }
+}
+
+function payByCard() {
+  alert("준비중입니다.\n곧 카드 결제가 가능합니다.");
+}
+
 function submitPayment() {
   const final = Math.max(0, paySubtotal - payDiscount);
   const params = new URLSearchParams({
@@ -1234,14 +1293,13 @@ function submitPayment() {
     coupon: document.getElementById("pay-coupon").value.trim(),
     discount: payDiscount,
   });
-  // Step 3 표시 후 이동
-  [1,2,3].forEach(i => {
-    document.getElementById("pay-step-" + i).style.display = i === 3 ? "" : "none";
-    const ind = document.getElementById("step-ind-" + i);
-    ind.classList.remove("active","done");
-    if (i < 3) ind.classList.add("done");
-    if (i === 3) ind.classList.add("active");
-  });
+  showStep3(`
+    <div style="text-align:center;padding:40px 0;">
+      <div style="font-size:2rem;margin-bottom:12px;">💳</div>
+      <div style="font-size:0.95rem;font-weight:700;margin-bottom:8px;">결제 페이지로 이동 중...</div>
+      <div style="font-size:0.8rem;color:var(--muted);">잠시만 기다려주세요</div>
+    </div>
+  `);
   setTimeout(() => {
     location.href = PREFIX + "/shop/payment?" + params;
   }, 600);

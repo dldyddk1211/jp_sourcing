@@ -960,6 +960,30 @@ def payment_fail():
                            url_prefix=URL_PREFIX, message=message)
 
 
+@app.route(f"{URL_PREFIX}/shop/api/update-order-status", methods=["POST"])
+@login_required
+def update_my_order_status():
+    """고객 주문 상태/메모 업데이트 (계좌이체 등)"""
+    data = request.json or {}
+    order_id = data.get("id")
+    status = data.get("status", "")
+    memo = data.get("memo", "")
+    username = session.get("username", "")
+    if not order_id:
+        return jsonify({"ok": False})
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        if status:
+            conn.execute("UPDATE orders SET status=? WHERE id=? AND username=?", (status, order_id, username))
+        if memo:
+            conn.execute("UPDATE orders SET memo=? WHERE id=? AND username=?", (memo, order_id, username))
+        conn.commit()
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
+
+
 @app.route(f"{URL_PREFIX}/shop/api/cancel-order/<int:order_id>", methods=["POST"])
 @login_required
 def cancel_my_order(order_id):
