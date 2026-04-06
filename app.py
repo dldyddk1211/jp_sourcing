@@ -264,6 +264,44 @@ def shop_my_orders_api():
         conn.close()
 
 
+@app.route(f"{URL_PREFIX}/shop/api/order-detail/<order_number>")
+@login_required
+def order_detail_api(order_number):
+    """주문번호로 주문 상세 조회"""
+    _init_orders_db()
+    username = session.get("username", "")
+    role = session.get("role", "customer")
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        if role == "admin":
+            row = conn.execute("SELECT * FROM orders WHERE order_number=?", (order_number,)).fetchone()
+        else:
+            row = conn.execute("SELECT * FROM orders WHERE order_number=? AND username=?", (order_number, username)).fetchone()
+        if not row:
+            return jsonify({"ok": False, "message": "주문을 찾을 수 없습니다"})
+        order = {c: row[c] for c in row.keys()}
+        # 상품 상세 정보 조회
+        product = None
+        code = order.get("product_code", "")
+        if code:
+            try:
+                from product_db import _conn as prod_conn
+                pconn = prod_conn()
+                pr = pconn.execute("SELECT * FROM products WHERE internal_code=? AND source_type='vintage' LIMIT 1", (code,)).fetchone()
+                if pr:
+                    import json as _json
+                    product = {c: pr[c] for c in pr.keys()}
+                    product["detail_images"] = _json.loads(product.get("detail_images") or "[]") if isinstance(product.get("detail_images"), str) else product.get("detail_images", [])
+                    product["price_krw"] = _calc_vintage_price(product.get("price_jpy", 0))
+                pconn.close()
+            except Exception:
+                pass
+        return jsonify({"ok": True, "order": order, "product": product})
+    finally:
+        conn.close()
+
+
 # ── 장바구니 API ──────────────────────────
 def _init_cart_db():
     from user_db import _conn as user_conn
@@ -920,10 +958,49 @@ def _init_orders_db():
             created_at TEXT DEFAULT (datetime('now','localtime'))
         )""")
         conn.commit()
+        # 마이그레이션: order_number 컬럼 추가
+        try:
+            conn.execute("ALTER TABLE orders ADD COLUMN order_number TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
+        # 기존 주문에 order_number 부여
+        rows = conn.execute("SELECT id, created_at FROM orders WHERE order_number='' OR order_number IS NULL ORDER BY id").fetchall()
+        for r in rows:
+            on = _generate_order_number(conn, r["created_at"])
+            conn.execute("UPDATE orders SET order_number=? WHERE id=?", (on, r["id"]))
+        if rows:
+            conn.commit()
     except Exception:
         pass
     finally:
         conn.close()
+
+
+def _generate_order_number(conn=None, created_at=None):
+    """주문번호 생성: ORD-YYYYMMDD-XXXX"""
+    from datetime import datetime
+    if created_at:
+        try:
+            dt = datetime.strptime(created_at[:10], "%Y-%m-%d")
+        except Exception:
+            dt = datetime.now()
+    else:
+        dt = datetime.now()
+    date_str = dt.strftime("%Y%m%d")
+    prefix = f"ORD-{date_str}-"
+    if conn:
+        row = conn.execute(
+            "SELECT order_number FROM orders WHERE order_number LIKE ? ORDER BY order_number DESC LIMIT 1",
+            (f"{prefix}%",)
+        ).fetchone()
+        if row and row["order_number"]:
+            try:
+                last_seq = int(row["order_number"].split("-")[-1])
+                return f"{prefix}{last_seq + 1:04d}"
+            except Exception:
+                pass
+    return f"{prefix}0001"
 
 
 def _save_order(ntype, username, customer_name, brand, product_name, product_code, price, price_jpy):
@@ -931,10 +1008,12 @@ def _save_order(ntype, username, customer_name, brand, product_name, product_cod
     from user_db import _conn as user_conn
     conn = user_conn()
     try:
-        conn.execute("""INSERT INTO orders (type, username, customer_name, brand, product_name, product_code, price, price_jpy)
-                        VALUES (?,?,?,?,?,?,?,?)""",
-                     (ntype, username, customer_name, brand, product_name, product_code, price, price_jpy))
+        order_number = _generate_order_number(conn)
+        conn.execute("""INSERT INTO orders (type, username, customer_name, brand, product_name, product_code, price, price_jpy, order_number)
+                        VALUES (?,?,?,?,?,?,?,?,?)""",
+                     (ntype, username, customer_name, brand, product_name, product_code, price, price_jpy, order_number))
         conn.commit()
+        return order_number
     finally:
         conn.close()
 

@@ -219,7 +219,7 @@
         </div>
         <!-- Desktop table -->
         <table class="order-table-desktop">
-          <thead><tr><th style="width:30px"></th><th>#</th><th>일시</th><th>유형</th><th>상품</th><th>가격</th><th>상태</th><th></th></tr></thead>
+          <thead><tr><th style="width:30px"></th><th>주문번호</th><th>일시</th><th>유형</th><th>상품</th><th>가격</th><th>상태</th><th></th></tr></thead>
           <tbody id="my-orders-body"><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr></tbody>
         </table>
         <!-- Mobile cards -->
@@ -620,11 +620,12 @@ async function loadMyOrders() {
       const canCancel = o.status === "new" || o.status === "confirmed";
       const canPay = o.status === "new" && o.type === "order";
       const priceNum = parseInt((o.price||'0').replace(/[^0-9]/g,'')) || 0;
+      const onum = o.order_number || '';
       return `<tr>
         <td style="text-align:center;">${canPay ? `<input type="checkbox" class="my-order-chk" data-id="${o.id}" data-price="${priceNum}" data-name="${(o.brand||'')+' '+(o.product_name||'')}" onchange="updateMyOrderPayInfo()">` : ''}</td>
-        <td style="color:var(--dim)">${i+1}</td>
-        <td style="font-size:0.78rem;">${o.created_at||''}</td>
-        <td>${o.type==='order'?'🛒 주문':'💬 문의'}</td>
+        <td><a href="#" onclick="event.preventDefault();openOrderDetail('${onum}');" style="color:var(--accent);font-family:monospace;font-size:0.72rem;text-decoration:underline;text-underline-offset:3px;">${onum}</a></td>
+        <td style="font-size:0.78rem;">${(o.created_at||'').slice(5,16)}</td>
+        <td>${o.type==='order'?'🛒':'💬'}</td>
         <td>${o.product_code ? `<a href="#" onclick="event.preventDefault();openCartDetail('${o.product_code.replace(/'/g,"\\'")}');" style="color:var(--text);text-decoration:underline;text-underline-offset:3px;">${o.brand} ${o.product_name||''}</a>` : `${o.brand} ${o.product_name||''}`}</td>
         <td style="font-weight:700;color:var(--accent);">${o.price||''}</td>
         <td class="${sc}" style="font-weight:600;">${sl}</td>
@@ -637,14 +638,18 @@ async function loadMyOrders() {
       const canCancel = o.status === "new" || o.status === "confirmed";
       const canPay = o.status === "new" && o.type === "order";
       const priceNum = parseInt((o.price||'0').replace(/[^0-9]/g,'')) || 0;
+      const onum = o.order_number || '';
       return `<div class="order-card">
         <div class="order-card-top">
           ${canPay ? `<input type="checkbox" class="my-order-chk" data-id="${o.id}" data-price="${priceNum}" data-name="${(o.brand||'')+' '+(o.product_name||'')}" onchange="updateMyOrderPayInfo()">` : '<div style="width:18px;"></div>'}
-          <div class="order-card-name">${o.product_code ? `<a href="#" onclick="event.preventDefault();openCartDetail('${o.product_code.replace(/'/g,"\\'")}');" style="color:var(--text);text-decoration:underline;text-underline-offset:3px;">${o.brand} ${o.product_name||''}</a>` : `${o.brand} ${o.product_name||''}`}</div>
+          <div class="order-card-name">
+            <a href="#" onclick="event.preventDefault();openOrderDetail('${onum}');" style="color:var(--accent);font-family:monospace;font-size:0.72rem;text-decoration:underline;">${onum}</a>
+            <div style="margin-top:2px;">${o.product_code ? `<a href="#" onclick="event.preventDefault();openCartDetail('${o.product_code.replace(/'/g,"\\'")}');" style="color:var(--text);text-decoration:underline;text-underline-offset:3px;">${o.brand} ${o.product_name||''}</a>` : `${o.brand} ${o.product_name||''}`}</div>
+          </div>
         </div>
         <div class="order-card-meta">
           <span>${o.type==='order'?'🛒 주문':'💬 문의'}</span>
-          <span>${o.created_at||''}</span>
+          <span>${(o.created_at||'').slice(5,16)}</span>
           <span class="${sc}" style="font-weight:600;">${sl}</span>
         </div>
         <div class="order-card-bottom">
@@ -769,6 +774,74 @@ async function openCartDetail(code) {
 function closeCartDetail() {
   document.getElementById("cart-detail-modal").classList.remove("show");
   document.body.style.overflow = "";
+}
+
+// ── 주문 상세 모달 ──
+async function openOrderDetail(orderNumber) {
+  if (!orderNumber) return;
+  const modal = document.getElementById("cart-detail-modal");
+  const body = document.getElementById("cart-detail-body");
+  body.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</div>';
+  modal.classList.add("show");
+  document.body.style.overflow = "hidden";
+  // 헤더 변경
+  modal.querySelector(".pay-modal-header span").textContent = "주문 상세";
+  try {
+    const res = await fetch(PREFIX + "/shop/api/order-detail/" + encodeURIComponent(orderNumber));
+    const d = await res.json();
+    if (!d.ok || !d.order) {
+      body.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px;">주문 정보를 찾을 수 없습니다</div>';
+      return;
+    }
+    const o = d.order;
+    const p = d.product;
+    const [sl] = statusMap[o.status] || [o.status];
+    const statusColor = {"new":"var(--yellow)","confirmed":"var(--blue)","processing":"var(--accent)","shipped":"#6cf","completed":"var(--green)","cancelled":"var(--red)"}[o.status] || "var(--muted)";
+    const gradeLabels = {"NS":"신품/미사용","S":"중고S","A":"중고A","B":"중고B","C":"중고C","D":"중고D"};
+
+    let productHtml = "";
+    if (p) {
+      const imgs = (p.detail_images && p.detail_images.length) ? p.detail_images : (p.img_url ? [p.img_url] : []);
+      productHtml = `
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+          <div style="font-size:0.82rem;font-weight:700;color:var(--accent);margin-bottom:10px;">상품 정보</div>
+          <div style="display:flex;gap:14px;">
+            <img src="${imgs[0]||''}" style="width:100px;height:100px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.style.display='none'">
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:0.78rem;color:var(--accent);font-weight:600;">${p.brand||''}</div>
+              <div style="font-size:0.88rem;font-weight:600;margin:4px 0;line-height:1.4;">${transJa(p.name||'')}</div>
+              <div style="font-size:0.78rem;color:var(--muted);">
+                ${p.condition_grade ? `상태: ${gradeLabels[p.condition_grade]||p.condition_grade}` : ''}
+                ${p.material ? ` · 소재: ${transJa(p.material)}` : ''}
+              </div>
+              ${p.color_raw ? `<div style="font-size:0.75rem;color:var(--dim);margin-top:2px;">사이즈: ${transJa(p.color_raw)}</div>` : ''}
+            </div>
+          </div>
+          ${imgs.length > 1 ? `<div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;">${imgs.slice(1,6).map(i => `<img src="${i}" style="width:48px;height:48px;object-fit:cover;border-radius:4px;border:1px solid var(--border);" onerror="this.style.display='none'">`).join("")}</div>` : ""}
+        </div>`;
+    }
+
+    body.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div>
+          <div style="font-family:monospace;font-size:0.82rem;color:var(--accent);font-weight:700;">${o.order_number||''}</div>
+          <div style="font-size:0.72rem;color:var(--dim);margin-top:2px;">${o.created_at||''}</div>
+        </div>
+        <span style="padding:4px 12px;border-radius:6px;font-size:0.78rem;font-weight:700;color:${statusColor};background:${statusColor}15;border:1px solid ${statusColor}30;">${sl}</span>
+      </div>
+      <table style="width:100%;font-size:0.82rem;border-collapse:collapse;">
+        <tr><td style="padding:8px 0;color:var(--muted);width:90px;">유형</td><td style="padding:8px 0;">${o.type==='order'?'🛒 주문':'💬 문의'}</td></tr>
+        <tr><td style="padding:8px 0;color:var(--muted);">브랜드</td><td style="padding:8px 0;font-weight:600;">${o.brand||''}</td></tr>
+        <tr><td style="padding:8px 0;color:var(--muted);">상품명</td><td style="padding:8px 0;">${o.product_name||''}</td></tr>
+        <tr><td style="padding:8px 0;color:var(--muted);">상품코드</td><td style="padding:8px 0;font-family:monospace;font-size:0.78rem;">${o.product_code||''}</td></tr>
+        <tr><td style="padding:8px 0;color:var(--muted);">금액</td><td style="padding:8px 0;font-weight:800;color:var(--accent);font-size:1rem;">${o.price||''}</td></tr>
+        ${o.memo ? `<tr><td style="padding:8px 0;color:var(--muted);">메모</td><td style="padding:8px 0;">${o.memo}</td></tr>` : ''}
+      </table>
+      ${productHtml}
+    `;
+  } catch(e) {
+    body.innerHTML = `<div style="color:var(--red);text-align:center;padding:30px;">로드 실패: ${e}</div>`;
+  }
 }
 
 // 비밀번호 변경
