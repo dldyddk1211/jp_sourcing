@@ -501,6 +501,46 @@
 const PREFIX = "{{ url_prefix }}";
 const statusMap = {"new":["신규","st-new"],"confirmed":["확인","st-confirmed"],"processing":["처리중","st-processing"],"shipped":["배송중","st-shipped"],"completed":["완료","st-completed"],"cancelled":["취소","st-cancelled"]};
 
+// 일본어→한국어 번역
+const jaKoDict = {
+  "ショルダーバッグ":"숄더백","トートバッグ":"토트백","ハンドバッグ":"핸드백","ボストンバッグ":"보스턴백",
+  "クラッチバッグ":"클러치백","ウエストバッグ":"웨이스트백","ボディバッグ":"바디백","バックパック":"백팩",
+  "リュック":"백팩","ポーチ":"파우치","ブリーフケース":"서류가방","セカンドバッグ":"세컨드백",
+  "メッセンジャーバッグ":"메신저백","バニティバッグ":"베니티백","ミニバッグ":"미니백","バッグ":"가방",
+  "Gジャン":"데님자켓","ジップパーカー":"집업후드","パーカー":"후드","スウェット":"스웨트",
+  "ブルゾン":"블루종","ダウンジャケット":"다운자켓","ジャケット":"자켓","コート":"코트",
+  "トレンチコート":"트렌치코트","長袖シャツ":"긴팔셔츠","半袖シャツ":"반팔셔츠","シャツ":"셔츠",
+  "長袖Tシャツ":"긴팔티","Tシャツ":"T셔츠","ポロシャツ":"폴로셔츠","ブラウス":"블라우스",
+  "ニット":"니트","セーター":"스웨터","カーディガン":"가디건","ベスト":"베스트",
+  "パンツ":"팬츠","スラックス":"슬랙스","ショートパンツ":"반바지","スカート":"스커트",
+  "ワンピース":"원피스","スーツ":"정장","トップス":"상의",
+  "ネックレス":"목걸이","ブレスレット":"팔찌","リング":"반지","ベルト":"벨트",
+  "マフラー":"머플러","ストール":"스톨","サングラス":"선글라스","帽子":"모자",
+  "財布":"지갑","長財布":"장지갑","キーケース":"키케이스","コインケース":"동전지갑",
+  "カードケース":"카드케이스","名刺入れ":"명함케이스",
+  "レザー":"가죽","ナイロン":"나일론","キャンバス":"캔버스","デニム":"데님",
+  "スエード":"스웨이드","サテン":"새틴","コットン":"코튼","ウール":"울",
+  "ファー":"퍼","シルク":"실크","カシミヤ":"캐시미어","ポリエステル":"폴리에스터",
+  "エナメル":"에나멜","パテント":"페이턴트","ラム":"램",
+  "モノグラム":"모노그램","ダミエ":"다미에","エピ":"에피","タイガ":"타이가",
+  "ブラック":"블랙","ホワイト":"화이트","レッド":"레드","ブルー":"블루",
+  "グリーン":"그린","ピンク":"핑크","ベージュ":"베이지","ブラウン":"브라운",
+  "グレー":"그레이","ネイビー":"네이비","オレンジ":"오렌지","イエロー":"옐로",
+  "パープル":"퍼플","ゴールド":"골드","シルバー":"실버","カーキ":"카키",
+  "ボルドー":"보르도","マルチカラー":"멀티컬러","アイボリー":"아이보리",
+  "無地":"무지","総柄":"올오버패턴","チェック":"체크","ストライプ":"스트라이프",
+  "花柄":"꽃무늬","プリント":"프린트","マチ":"폭","高さ":"높이","幅":"너비",
+  "持ち手":"손잡이","その他サイズ":"기타","肩幅":"어깨폭","身幅":"품",
+  "着丈":"총길이","袖丈":"소매길이","ウエスト":"허리","股上":"밑위","股下":"밑단",
+  "クロップド":"크롭","ロゴ":"로고","中古":"중고","新品":"신품","未使用":"미사용",
+};
+function transJa(text) {
+  if (!text) return "";
+  let r = text;
+  for (const [ja, ko] of Object.entries(jaKoDict)) r = r.replaceAll(ja, ko);
+  return r;
+}
+
 function switchTab(tab) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
   document.querySelectorAll(".tab-content").forEach(t => t.classList.toggle("active", t.id === "tc-" + tab));
@@ -709,15 +749,15 @@ async function openCartDetail(code) {
         </div>
         <div style="flex:1;min-width:200px;">
           <div style="font-size:0.78rem;color:var(--accent);font-weight:600;margin-bottom:4px;">${p.brand}</div>
-          <div style="font-size:1rem;font-weight:600;margin-bottom:10px;line-height:1.5;">${p.name}</div>
+          <div style="font-size:1rem;font-weight:600;margin-bottom:10px;line-height:1.5;">${transJa(p.name)}</div>
           <div style="font-size:1.2rem;font-weight:800;color:var(--green);margin-bottom:12px;">${p.price_krw ? p.price_krw.toLocaleString() + '원' : ''}</div>
           <table style="width:100%;font-size:0.8rem;border-collapse:collapse;">
             ${p.product_code ? `<tr><td style="padding:6px 0;color:var(--muted);width:80px;">고유번호</td><td style="padding:6px 0;">${p.product_code}</td></tr>` : ''}
             ${p.condition_grade ? `<tr><td style="padding:6px 0;color:var(--muted);">상태</td><td style="padding:6px 0;">${gradeLabels[p.condition_grade]||p.condition_grade}</td></tr>` : ''}
-            ${p.color_raw ? `<tr><td style="padding:6px 0;color:var(--muted);">사이즈</td><td style="padding:6px 0;">${p.color_raw}</td></tr>` : ''}
-            ${p.material ? `<tr><td style="padding:6px 0;color:var(--muted);">소재</td><td style="padding:6px 0;">${p.material}</td></tr>` : ''}
+            ${p.color_raw ? `<tr><td style="padding:6px 0;color:var(--muted);">사이즈</td><td style="padding:6px 0;">${transJa(p.color_raw)}</td></tr>` : ''}
+            ${p.material ? `<tr><td style="padding:6px 0;color:var(--muted);">소재</td><td style="padding:6px 0;">${transJa(p.material)}</td></tr>` : ''}
           </table>
-          ${p.description ? `<div style="margin-top:10px;padding:10px;background:rgba(212,165,74,0.06);border:1px solid var(--border);border-radius:6px;font-size:0.78rem;color:var(--muted);line-height:1.6;">${p.description.replace(/\\n/g,'<br>')}</div>` : ''}
+          ${p.description ? `<div style="margin-top:10px;padding:10px;background:rgba(212,165,74,0.06);border:1px solid var(--border);border-radius:6px;font-size:0.78rem;color:var(--muted);line-height:1.6;">${transJa(p.description).replace(/\\n/g,'<br>')}</div>` : ''}
         </div>
       </div>
     `;
