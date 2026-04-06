@@ -845,10 +845,8 @@ TOSS_SECRET_KEY = "test_sk_DpexMgkW36wOYALjW94JVGbR5ozO"
 @login_required
 def payment_page():
     """결제 페이지"""
-    # 일괄결제 시 주문 ID들을 세션에 저장 (결제 성공 시 활용)
-    code = request.args.get("code", "")
-    if code:
-        session["_pay_order_ids"] = code
+    # 세션 정리 (쿠키 크기 초과 방지)
+    session.pop("_pay_order_ids", None)
     return render_template("payment.html",
                            url_prefix=URL_PREFIX,
                            toss_client_key=TOSS_CLIENT_KEY,
@@ -895,9 +893,7 @@ def payment_success():
             payment_memo = f"토스결제 {result.get('method','')} {payment_key[:20]}"
 
             # URL 파라미터에서 원본 주문 ID들 추출
-            original_code = request.args.get("code", "") or ""  # 없으면 successUrl에서 못 받음
-            # successUrl에 code 전달을 위해 세션에서 가져오기
-            pay_order_ids = session.pop("_pay_order_ids", "") or ""
+            pay_order_ids = request.args.get("order_ids", "") or ""
 
             from user_db import _conn as user_conn
             conn = user_conn()

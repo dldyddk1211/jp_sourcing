@@ -64,7 +64,7 @@ async function startPayment() {
       amount: { currency: "KRW", value: amount },
       orderId: orderId,
       orderName: `${brand} ${name}`.substring(0, 100),
-      successUrl: location.origin + PREFIX + "/shop/payment/success",
+      successUrl: location.origin + PREFIX + "/shop/payment/success" + (code ? "?order_ids=" + encodeURIComponent(code) : ""),
       failUrl: location.origin + PREFIX + "/shop/payment/fail",
     });
   } catch(e) {
