@@ -748,6 +748,10 @@ TOSS_SECRET_KEY = "test_sk_DpexMgkW36wOYALjW94JVGbR5ozO"
 @login_required
 def payment_page():
     """결제 페이지"""
+    # 일괄결제 시 주문 ID들을 세션에 저장 (결제 성공 시 활용)
+    code = request.args.get("code", "")
+    if code:
+        session["_pay_order_ids"] = code
     return render_template("payment.html",
                            url_prefix=URL_PREFIX,
                            toss_client_key=TOSS_CLIENT_KEY,
@@ -790,16 +794,41 @@ def payment_success():
                 except Exception:
                     pass
 
-            # orderId에서 상품 정보 추출 (orderId = "ORD-코드-타임스탬프")
             meta = result.get("orderName", "")
+            payment_memo = f"토스결제 {result.get('method','')} {payment_key[:20]}"
+
+            # URL 파라미터에서 원본 주문 ID들 추출
+            original_code = request.args.get("code", "") or ""  # 없으면 successUrl에서 못 받음
+            # successUrl에 code 전달을 위해 세션에서 가져오기
+            pay_order_ids = session.pop("_pay_order_ids", "") or ""
+
             from user_db import _conn as user_conn
             conn = user_conn()
             try:
-                conn.execute("""INSERT INTO orders (type, username, customer_name, brand, product_name, product_code, price, price_jpy, status, memo)
-                                VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                             ("order", username, customer_name, "", meta, "", f"{amount:,}원", 0, "confirmed",
-                              f"토스결제 {result.get('method','')} {payment_key[:20]}"))
-                conn.commit()
+                if pay_order_ids:
+                    # 개별 주문 ID들의 상태를 confirmed로 업데이트 + 결제 메모 추가
+                    ids = [i.strip() for i in pay_order_ids.split(",") if i.strip()]
+                    updated_orders = []
+                    for oid in ids:
+                        try:
+                            row = conn.execute("SELECT * FROM orders WHERE id=? AND username=?", (int(oid), username)).fetchone()
+                            if row:
+                                conn.execute("UPDATE orders SET status='confirmed', memo=? WHERE id=?",
+                                             (payment_memo, int(oid)))
+                                updated_orders.append(f"{row['brand']} {row['product_name'] or ''}")
+                        except Exception:
+                            pass
+                    conn.commit()
+                    detail_text = "\n".join(f"  · {n}" for n in updated_orders) if updated_orders else meta
+                else:
+                    # 개별 ID 없는 경우 (단건 결제 등) 기존 방식
+                    order_number = _generate_order_number(conn)
+                    conn.execute("""INSERT INTO orders (type, username, customer_name, brand, product_name, product_code, price, price_jpy, status, memo, order_number)
+                                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                                 ("order", username, customer_name, "", meta, "", f"{amount:,}원", 0, "confirmed",
+                                  payment_memo, order_number))
+                    conn.commit()
+                    detail_text = meta
             finally:
                 conn.close()
 
@@ -809,7 +838,7 @@ def payment_success():
                 send_telegram(
                     f"💳 <b>결제 완료!</b>\n"
                     f"👤 {username}" + (f" ({customer_name})" if customer_name else "") + f"\n"
-                    f"📦 {meta}\n"
+                    f"📦 {detail_text}\n"
                     f"💰 {amount:,}원 ({result.get('method','')})\n"
                     f"🔖 {order_id}"
                 )

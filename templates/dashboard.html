@@ -810,7 +810,7 @@
             <thead>
               <tr>
                 <th style="width:30px"><input type="checkbox" onchange="toggleAllOrderChk(this.checked)"></th>
-                <th style="width:35px">#</th>
+                <th>주문번호</th>
                 <th>일시</th>
                 <th>유형</th>
                 <th>고객</th>
@@ -818,7 +818,7 @@
                 <th style="width:40px"></th>
                 <th>브랜드</th>
                 <th>상품명</th>
-                <th>고유번호</th>
+                <th>상품코드</th>
                 <th>가격</th>
                 <th>상태</th>
                 <th style="width:80px">메모</th>
@@ -4493,7 +4493,7 @@ async function loadOrders() {
       const sl = statusOpts[o.status] || o.status;
       return `<tr style="border-bottom:1px solid var(--border)22;">
         <td style="padding:6px;text-align:center;"><input type="checkbox" class="order-chk" data-id="${o.id}" onchange="updateOrderSelCnt()"></td>
-        <td style="padding:6px;color:var(--dim)">${i+1}</td>
+        <td style="padding:6px;font-family:monospace;font-size:0.68rem;color:var(--accent);white-space:nowrap;">${o.order_number||''}</td>
         <td style="padding:6px;white-space:nowrap;font-size:0.72rem;">${o.created_at||''}</td>
         <td style="padding:6px;text-align:center;">${typeIcons[o.type]||'📋'} ${o.type==='order'?'주문':'문의'}</td>
         <td style="padding:6px;font-weight:600;">${o.username||''}</td>
