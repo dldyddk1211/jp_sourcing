@@ -47,6 +47,106 @@
     .msg { padding:10px 14px; border-radius:8px; font-size:0.82rem; margin-bottom:12px; display:none; }
     .msg.ok { display:block; background:rgba(46,204,113,0.12); color:var(--green); border:1px solid rgba(46,204,113,0.3); }
     .msg.err { display:block; background:rgba(231,76,60,0.12); color:var(--red); border:1px solid rgba(231,76,60,0.3); }
+
+    /* ── Mobile ── */
+    @media (max-width:640px) {
+      .header { padding:10px 14px; }
+      .header-logo { font-size:1rem; }
+      .header-logo span { font-size:0.78rem; margin-left:4px; }
+      .header-nav { gap:8px; font-size:0.78rem; }
+      .container { margin:16px auto; padding:0 10px; }
+
+      /* 탭: 가로 스크롤 + 한 줄 유지 */
+      .tabs {
+        overflow-x:auto; -webkit-overflow-scrolling:touch;
+        scrollbar-width:none; flex-wrap:nowrap;
+      }
+      .tabs::-webkit-scrollbar { display:none; }
+      .tab {
+        padding:10px 14px; font-size:0.78rem;
+        white-space:nowrap; flex-shrink:0;
+      }
+
+      .panel { padding:16px 12px; border-radius:10px; }
+      .section-title { font-size:0.8rem; }
+
+      /* 폼: 모바일에서 세로 배치 */
+      .form-grid {
+        grid-template-columns:1fr;
+        gap:6px;
+      }
+      .form-grid label {
+        font-size:0.75rem; margin-top:6px;
+      }
+      .form-grid input { font-size:0.82rem; padding:9px 10px; }
+
+      /* 주문 테이블 → 카드형 레이아웃 */
+      .order-table-desktop { display:none; }
+      .order-cards-mobile { display:block !important; }
+
+      /* 장바구니 테이블 → 카드형 */
+      .cart-table-desktop { display:none; }
+      .cart-cards-mobile { display:block !important; }
+
+      /* 결제 모달 */
+      .pay-modal { border-radius:12px; }
+      .pay-modal-header { padding:14px 16px; font-size:0.92rem; }
+      .pay-steps { padding:12px 16px; gap:6px; }
+      .pay-step { font-size:0.68rem; }
+      .pay-step-panel { padding:16px; }
+      .pay-field input { font-size:0.82rem; }
+    }
+
+    /* 주문 카드 (모바일) */
+    .order-cards-mobile { display:none; }
+    .order-card {
+      background:var(--bg); border:1px solid var(--border); border-radius:10px;
+      padding:14px; margin-bottom:10px; position:relative;
+    }
+    .order-card-top {
+      display:flex; align-items:center; gap:10px; margin-bottom:8px;
+    }
+    .order-card-top input[type="checkbox"] {
+      accent-color:var(--accent); width:18px; height:18px; flex-shrink:0;
+    }
+    .order-card-name {
+      font-size:0.84rem; font-weight:600; color:var(--text);
+      line-height:1.4; flex:1;
+    }
+    .order-card-meta {
+      display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+      font-size:0.78rem; color:var(--muted); margin-bottom:8px; padding-left:28px;
+    }
+    .order-card-bottom {
+      display:flex; justify-content:space-between; align-items:center;
+      padding-left:28px;
+    }
+    .order-card-price {
+      font-size:1rem; font-weight:800; color:var(--accent);
+    }
+    .order-card-actions {
+      display:flex; gap:6px; align-items:center;
+    }
+
+    /* 장바구니 카드 (모바일) */
+    .cart-cards-mobile { display:none; }
+    .cart-card {
+      display:flex; gap:12px; align-items:center;
+      background:var(--bg); border:1px solid var(--border); border-radius:10px;
+      padding:12px; margin-bottom:8px;
+    }
+    .cart-card img {
+      width:56px; height:56px; object-fit:cover; border-radius:6px;
+      border:1px solid var(--border); flex-shrink:0;
+    }
+    .cart-card-info { flex:1; min-width:0; }
+    .cart-card-info .brand { font-size:0.72rem; color:var(--accent); font-weight:600; }
+    .cart-card-info .name {
+      font-size:0.8rem; color:var(--text); line-height:1.4;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .cart-card-info .code { font-size:0.68rem; color:var(--dim); font-family:monospace; }
+    .cart-card-info .price { font-size:0.88rem; font-weight:700; color:var(--accent); margin-top:2px; }
   </style>
 </head>
 <body>
@@ -105,17 +205,27 @@
     <!-- 주문내역 -->
     <div class="tab-content" id="tc-orders">
       <div class="panel">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-          <div class="section-title" style="margin-bottom:0;">주문/문의 내역</div>
+        <!-- 상단 바: 전체선택 + 결제 -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--muted);cursor:pointer;">
+              <input type="checkbox" onchange="toggleAllMyOrderChk(this.checked)" style="accent-color:var(--accent);width:16px;height:16px;"> 전체선택
+            </label>
+          </div>
           <div style="display:flex;gap:8px;align-items:center;">
             <span style="font-size:0.78rem;color:var(--muted);">선택: <b id="order-pay-cnt" style="color:var(--accent);">0</b>건 <b id="order-pay-total" style="color:var(--green);margin-left:4px;">0원</b></span>
-            <button onclick="paySelectedOrders()" class="btn btn-accent" style="padding:8px 18px;font-size:0.85rem;">선택 결제</button>
+            <button onclick="paySelectedOrders()" class="btn btn-accent" style="padding:8px 18px;font-size:0.82rem;white-space:nowrap;">선택 결제</button>
           </div>
         </div>
-        <table>
+        <!-- Desktop table -->
+        <table class="order-table-desktop">
           <thead><tr><th style="width:30px"><input type="checkbox" onchange="toggleAllMyOrderChk(this.checked)"></th><th>#</th><th>일시</th><th>유형</th><th>상품</th><th>가격</th><th>상태</th><th></th></tr></thead>
           <tbody id="my-orders-body"><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr></tbody>
         </table>
+        <!-- Mobile cards -->
+        <div class="order-cards-mobile" id="my-orders-mobile">
+          <div style="text-align:center;color:var(--muted);padding:30px;font-size:0.82rem;">로딩 중...</div>
+        </div>
       </div>
     </div>
 
@@ -123,10 +233,15 @@
     <div class="tab-content" id="tc-cart">
       <div class="panel">
         <div class="section-title">장바구니</div>
-        <table>
+        <!-- Desktop table -->
+        <table class="cart-table-desktop">
           <thead><tr><th></th><th>상품</th><th>브랜드</th><th>고유번호</th><th>가격</th><th></th></tr></thead>
           <tbody id="my-cart-body"><tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr></tbody>
         </table>
+        <!-- Mobile cards -->
+        <div class="cart-cards-mobile" id="my-cart-mobile">
+          <div style="text-align:center;color:var(--muted);padding:30px;font-size:0.82rem;">로딩 중...</div>
+        </div>
       </div>
     </div>
 
@@ -428,13 +543,16 @@ function mySearchPostcode() {
 // 주문내역
 async function loadMyOrders() {
   const tbody = document.getElementById("my-orders-body");
+  const mobileEl = document.getElementById("my-orders-mobile");
   try {
     const res = await fetch(PREFIX + "/shop/api/my-orders");
     const d = await res.json();
     if (!d.orders || !d.orders.length) {
       tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">내역이 없습니다</td></tr>';
+      mobileEl.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px;font-size:0.82rem;">내역이 없습니다</div>';
       return;
     }
+    // Desktop table
     tbody.innerHTML = d.orders.map((o, i) => {
       const [sl, sc] = statusMap[o.status] || [o.status, ""];
       const canCancel = o.status === "new" || o.status === "confirmed";
@@ -451,20 +569,50 @@ async function loadMyOrders() {
         <td>${canCancel ? `<button onclick="cancelMyOrder(${o.id})" style="padding:4px 10px;font-size:0.72rem;background:var(--red);color:#fff;border:none;border-radius:4px;cursor:pointer;">취소</button>` : ''}</td>
       </tr>`;
     }).join("");
-  } catch(e) { tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red);text-align:center;">로드 실패</td></tr>`; }
+    // Mobile cards
+    mobileEl.innerHTML = d.orders.map((o) => {
+      const [sl, sc] = statusMap[o.status] || [o.status, ""];
+      const canCancel = o.status === "new" || o.status === "confirmed";
+      const canPay = o.status === "new" && o.type === "order";
+      const priceNum = parseInt((o.price||'0').replace(/[^0-9]/g,'')) || 0;
+      return `<div class="order-card">
+        <div class="order-card-top">
+          ${canPay ? `<input type="checkbox" class="my-order-chk" data-id="${o.id}" data-price="${priceNum}" onchange="updateMyOrderPayInfo()">` : '<div style="width:18px;"></div>'}
+          <div class="order-card-name">${o.brand} ${o.product_name||''}</div>
+        </div>
+        <div class="order-card-meta">
+          <span>${o.type==='order'?'🛒 주문':'💬 문의'}</span>
+          <span>${o.created_at||''}</span>
+          <span class="${sc}" style="font-weight:600;">${sl}</span>
+        </div>
+        <div class="order-card-bottom">
+          <span class="order-card-price">${o.price||''}</span>
+          <div class="order-card-actions">
+            ${canCancel ? `<button onclick="cancelMyOrder(${o.id})" style="padding:5px 12px;font-size:0.74rem;background:var(--red);color:#fff;border:none;border-radius:6px;cursor:pointer;">취소</button>` : ''}
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--red);text-align:center;">로드 실패</td></tr>`;
+    mobileEl.innerHTML = `<div style="color:var(--red);text-align:center;padding:20px;">로드 실패</div>`;
+  }
 }
 
 // 장바구니
 async function loadMyCart() {
   const tbody = document.getElementById("my-cart-body");
+  const mobileEl = document.getElementById("my-cart-mobile");
   try {
     const res = await fetch(PREFIX + "/shop/api/cart");
     const d = await res.json();
     document.getElementById("mp-cart-cnt").textContent = d.count > 0 ? `(${d.count})` : "";
     if (!d.items || !d.items.length) {
       tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">장바구니가 비었습니다</td></tr>';
+      mobileEl.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px;font-size:0.82rem;">장바구니가 비었습니다</div>';
       return;
     }
+    // Desktop table
     tbody.innerHTML = d.items.map(c => `<tr>
       <td><img class="cart-img" src="${c.img_url||''}" onerror="this.style.display='none'"></td>
       <td>${c.product_name||''}</td>
@@ -473,7 +621,21 @@ async function loadMyCart() {
       <td style="font-weight:700;color:var(--accent);">${c.price||''}</td>
       <td><button onclick="removeCart(${c.id})" class="btn btn-red" style="padding:4px 10px;font-size:0.72rem;">삭제</button></td>
     </tr>`).join("");
-  } catch(e) { tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red);text-align:center;">로드 실패</td></tr>`; }
+    // Mobile cards
+    mobileEl.innerHTML = d.items.map(c => `<div class="cart-card">
+      <img src="${c.img_url||''}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1 1%22><rect fill=%22%23181a22%22 width=%221%22 height=%221%22/></svg>'">
+      <div class="cart-card-info">
+        <div class="brand">${c.brand||''}</div>
+        <div class="name">${c.product_name||''}</div>
+        <div class="code">${c.product_code||''}</div>
+        <div class="price">${c.price||''}</div>
+      </div>
+      <button onclick="removeCart(${c.id})" style="padding:6px 12px;font-size:0.72rem;background:var(--red);color:#fff;border:none;border-radius:6px;cursor:pointer;white-space:nowrap;flex-shrink:0;">삭제</button>
+    </div>`).join("");
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red);text-align:center;">로드 실패</td></tr>`;
+    mobileEl.innerHTML = `<div style="color:var(--red);text-align:center;padding:20px;">로드 실패</div>`;
+  }
 }
 
 async function removeCart(id) {
