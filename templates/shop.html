@@ -590,8 +590,11 @@
     <!-- 검색 -->
     <div class="sidebar-section">
       <div class="sidebar-title">검색</div>
-      <input type="text" class="search-box" id="keyword-input" placeholder="브랜드, 상품명, 소재, 색상 검색..."
-             onkeydown="if(event.key==='Enter')loadShop(1)">
+      <div style="display:flex;gap:6px;">
+        <input type="text" class="search-box" id="keyword-input" placeholder="브랜드, 상품명, 코드 검색..."
+               onkeydown="if(event.key==='Enter')loadShop(1)" style="flex:1;">
+        <button onclick="loadShop(1)" style="padding:8px 14px;border-radius:8px;background:var(--accent);border:none;color:#000;font-size:0.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">검색</button>
+      </div>
       <div style="font-size:0.65rem;color:var(--dim);margin-top:4px;">예: 숄더백 가죽, PRADA 블랙, No.S-260402</div>
     </div>
 
