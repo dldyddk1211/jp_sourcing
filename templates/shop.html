@@ -745,7 +745,7 @@
   </div>
 
   <!-- 공지사항 패널 -->
-  <div class="community-panel" id="panel-notices" style="flex:1;padding:28px;overflow-y:auto;">
+  <div class="community-panel" id="panel-notices" style="flex:1;padding:28px;overflow-y:auto;max-width:800px;margin:0 auto;">
     {% if is_admin %}
     <div class="notice-form" id="notice-form">
       <div style="font-size:0.88rem;font-weight:700;color:var(--accent);margin-bottom:12px;">공지 작성</div>
@@ -761,7 +761,7 @@
   </div>
 
   <!-- 후기 패널 -->
-  <div class="community-panel" id="panel-reviews" style="flex:1;padding:28px;overflow-y:auto;">
+  <div class="community-panel" id="panel-reviews" style="flex:1;padding:28px;overflow-y:auto;max-width:800px;margin:0 auto;">
     {% if logged_in %}
     <div class="review-form" id="review-form">
       <div style="font-size:0.88rem;font-weight:700;color:var(--accent);margin-bottom:12px;">후기 작성</div>
