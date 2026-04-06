@@ -341,8 +341,12 @@
           <input id="pay-address2" placeholder="상세주소 (동/호수)">
         </div>
         <div class="pay-field">
-          <label>통관고유번호</label>
+          <label>통관고유번호 <span style="font-size:0.68rem;color:var(--dim);font-weight:400;">둘 중 하나 필수</span></label>
           <input id="pay-customs" placeholder="P000-0000-000000">
+        </div>
+        <div class="pay-field">
+          <label>사업자번호 <span style="font-size:0.68rem;color:var(--dim);font-weight:400;">둘 중 하나 필수</span></label>
+          <input id="pay-biznum" placeholder="000-00-00000">
         </div>
         <div class="pay-field">
           <label>배송 메모</label>
@@ -881,6 +885,7 @@ async function fillPayFromMyInfo() {
     document.getElementById("pay-address").value = u.address || "";
     document.getElementById("pay-address2").value = u.address_detail || "";
     document.getElementById("pay-customs").value = u.customs_id || "";
+    document.getElementById("pay-biznum").value = u.business_number || "";
   } catch(e) {}
 }
 
@@ -902,10 +907,11 @@ function goPayStep(step) {
     const postal = document.getElementById("pay-postal").value.trim();
     const addr = document.getElementById("pay-address").value.trim();
     const customs = document.getElementById("pay-customs").value.trim();
+    const biznum = document.getElementById("pay-biznum").value.trim();
     if (!name) { alert("수령인 이름을 입력해주세요"); return; }
     if (!phone) { alert("연락처를 입력해주세요"); return; }
     if (!postal || !addr) { alert("배송지 주소를 입력해주세요"); return; }
-    if (!customs) { alert("통관고유번호를 입력해주세요.\n해외 구매대행 상품은 통관고유번호가 필수입니다."); return; }
+    if (!customs && !biznum) { alert("통관고유번호 또는 사업자번호 중\n하나는 반드시 입력해주세요."); return; }
     // 주문 요약 렌더링
     renderPaySummary();
   }
@@ -995,6 +1001,7 @@ function submitPayment() {
     postal: document.getElementById("pay-postal").value.trim(),
     address: document.getElementById("pay-address").value.trim() + " " + document.getElementById("pay-address2").value.trim(),
     customs: document.getElementById("pay-customs").value.trim(),
+    biznum: document.getElementById("pay-biznum").value.trim(),
     memo: document.getElementById("pay-memo").value.trim(),
     coupon: document.getElementById("pay-coupon").value.trim(),
     discount: payDiscount,
