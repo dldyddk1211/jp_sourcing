@@ -428,11 +428,11 @@ def _run_per_brand(log_callback=None):
         db_path = os.path.join(get_path("db"), "users.db")
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
-        rows = conn.execute("SELECT * FROM scrape_tasks WHERE status='대기' ORDER BY id").fetchall()
+        rows = conn.execute("SELECT * FROM scrape_tasks WHERE status IN ('대기','예약') ORDER BY id").fetchall()
         conn.close()
 
         if not rows:
-            send_telegram("⚠️ 대기 상태 작업이 없습니다.")
+            send_telegram("⚠️ 대기/예약 상태 작업이 없습니다.")
             return
 
         # 브랜드별 그룹핑

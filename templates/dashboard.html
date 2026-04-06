@@ -3420,8 +3420,8 @@ async function stopAllTasks() {
 }
 
 async function runBrandRoundRobin() {
-  const pending = scrapeTaskList.filter(t => t.status === "대기");
-  if (!pending.length) { addLog("\u26a0\ufe0f 대기 중인 작업이 없습니다", "info"); return; }
+  const pending = scrapeTaskList.filter(t => t.status === "대기" || t.status === "예약");
+  if (!pending.length) { addLog("\u26a0\ufe0f 대기/예약 상태 작업이 없습니다", "info"); return; }
 
   // 브랜드별 그룹핑
   const brandMap = {};
