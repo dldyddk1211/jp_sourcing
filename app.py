@@ -846,6 +846,18 @@ def delete_review(rid):
         conn.close()
 
 
+def _calc_vintage_cost(jpy: int) -> int:
+    """원가 계산 (일본 상품가 + 수수료 + 택배비) × 환율"""
+    if not jpy or jpy <= 0:
+        return 0
+    cfg = _vintage_price_config
+    fee = cfg["jp_fee_pct"] / 100
+    jp_ship = cfg.get("jp_domestic_shipping", 800)
+    rate = get_cached_rate() or 9.23
+    cost = (jpy + jp_ship) * (1 + fee) * rate
+    return int(math.ceil(cost / 100) * 100)
+
+
 def _calc_vintage_price(jpy: int, margin_type="b2c") -> int:
     """빈티지 상품 한국 판매가 계산
     B2C: 일본가 기반 정상 계산
@@ -1236,6 +1248,15 @@ def get_orders():
             extras = product_extras.get(r["product_code"], {})
             o["product_link"] = extras.get("link", "")
             o["product_img"] = extras.get("img", "")
+            # 원가/마진 계산
+            pjpy = o.get("price_jpy", 0) or 0
+            if pjpy > 0:
+                o["cost_krw"] = _calc_vintage_cost(pjpy)
+                sell_price = int(str(o.get("price", "0")).replace(",", "").replace("원", "").strip() or 0)
+                o["margin_krw"] = sell_price - o["cost_krw"] if sell_price > 0 else 0
+            else:
+                o["cost_krw"] = 0
+                o["margin_krw"] = 0
             orders.append(o)
         return jsonify({"ok": True, "orders": orders})
     finally:
