@@ -820,12 +820,13 @@
                 <th>상품명</th>
                 <th>상품코드</th>
                 <th>가격</th>
+                <th>원가(¥)</th>
                 <th>상태</th>
                 <th style="width:80px">메모</th>
               </tr>
             </thead>
             <tbody id="order-tbody">
-              <tr><td colspan="10" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr>
+              <tr><td colspan="14" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr>
             </tbody>
           </table>
         </div>
@@ -4292,25 +4293,32 @@ function calcVtExample() {
   const rate = parseFloat(rateText) || 9.23;
 
   const jpyTotal = (jpy + jpShip) * (1 + fee);
+  const costKrw  = jpyTotal * rate;  // 원가 (환율 적용만)
   const base     = jpyTotal * rate * (1 + markup);
   const finalB2C = Math.ceil((base * (1 + b2c) + ship) / 100) * 100;
-  const finalB2B = Math.ceil((base * (1 + b2b) + ship) / 100) * 100;
+  const finalB2B = Math.ceil(finalB2C * 0.95 / 100) * 100;
+  const profitB2C = finalB2C - Math.ceil(costKrw) - ship;
+  const profitB2B = finalB2B - Math.ceil(costKrw) - ship;
 
   updateVtFormulaLabels();
   const fmt = n => n.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,",");
   document.getElementById("vt-calc-result").innerHTML = `
     <div>일본가: <b style="color:var(--text)">¥${jpy.toLocaleString()}</b></div>
-    <div>+ 일본택배: <b>¥${jpShip.toLocaleString()}</b> = ¥${(jpy+jpShip).toLocaleString()}</div>
+    <div>+ 일본택배: ¥${jpShip.toLocaleString()} = ¥${(jpy+jpShip).toLocaleString()}</div>
     <div>× (1+수수료 ${(fee*100).toFixed(1)}%): ¥${fmt(jpyTotal)}</div>
-    <div>× 환율 ${rate.toFixed(2)}: ${fmt(jpyTotal*rate)}원</div>
-    <div>× (1+환율추가 ${(markup*100).toFixed(1)}%): ${fmt(base)}원</div>
-    <div style="border-top:1px solid var(--border);padding-top:6px;margin-top:4px">
+    <div>× 환율 ${rate.toFixed(2)}: ${fmt(costKrw)}원</div>
+    <div style="border-top:1px solid var(--border);padding-top:6px;margin-top:6px">
+      <div style="color:var(--red);font-weight:700;">원가: ${fmt(costKrw)}원 <span style="font-size:0.72rem;color:var(--dim);">(¥${jpy.toLocaleString()} × ${rate.toFixed(2)})</span></div>
+    </div>
+    <div style="border-top:1px solid var(--border);padding-top:6px;margin-top:6px">
       <b style="color:var(--green);font-size:1rem">B2C: ${finalB2C.toLocaleString()}원</b>
-      <span style="color:var(--muted);font-size:0.72rem;margin-left:6px">(마진 ${(b2c*100).toFixed(1)}%)</span>
+      <span style="color:var(--muted);font-size:0.72rem;margin-left:4px">(마진 ${(b2c*100).toFixed(1)}%)</span>
+      <div style="font-size:0.72rem;color:var(--accent);">이익: ${fmt(profitB2C)}원</div>
     </div>
     <div style="border-top:1px solid var(--border);padding-top:6px;margin-top:4px">
       <b style="color:#4f8ef7;font-size:1rem">B2B: ${finalB2B.toLocaleString()}원</b>
-      <span style="color:var(--muted);font-size:0.72rem;margin-left:6px">(마진 ${(b2b*100).toFixed(1)}%)</span>
+      <span style="color:var(--muted);font-size:0.72rem;margin-left:4px">(B2C-5%)</span>
+      <div style="font-size:0.72rem;color:var(--accent);">이익: ${fmt(profitB2B)}원</div>
     </div>`;
 }
 
@@ -4503,6 +4511,7 @@ async function loadOrders() {
         <td style="padding:6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.product_name||''}</td>
         <td style="padding:6px;font-family:monospace;font-size:0.72rem;"><a href="${o.product_link || ('{{ url_prefix }}/shop?code='+encodeURIComponent(o.product_code||''))}" target="_blank" style="color:var(--accent);text-decoration:underline;cursor:pointer;" title="${o.product_link?'원본 상품 페이지':'쇼핑몰에서 보기'}">${o.product_code||''}</a></td>
         <td style="padding:6px;font-weight:700;color:var(--accent);">${o.price||''}</td>
+        <td style="padding:6px;font-size:0.72rem;color:var(--dim);">${o.price_jpy ? '¥'+o.price_jpy.toLocaleString() : ''}</td>
         <td style="padding:6px;">
           <select onchange="updateOrderStatus(${o.id},this.value)" style="background:#0d0d0a;border:1px solid var(--border);color:${sc};padding:3px 6px;border-radius:4px;font-size:0.72rem;font-weight:600;">
             ${Object.entries(statusOpts).map(([k,v])=>`<option value="${k}" ${k===o.status?'selected':''}>${v}</option>`).join('')}
