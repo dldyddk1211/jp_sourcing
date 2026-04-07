@@ -824,6 +824,8 @@
                 <th>원가</th>
                 <th>마진</th>
                 <th>상태</th>
+                <th>택배사</th>
+                <th>송장번호</th>
                 <th style="width:80px">메모</th>
               </tr>
             </thead>
@@ -4689,6 +4691,23 @@ async function loadOrders() {
           </select>
         </td>
         <td style="padding:6px;">
+          <select onchange="updateOrderField(${o.id},'courier',this.value)" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:3px 4px;border-radius:4px;font-size:0.68rem;width:70px;">
+            <option value="" ${!o.courier?'selected':''}>선택</option>
+            <option value="CJ대한통운" ${o.courier==='CJ대한통운'?'selected':''}>CJ대한통운</option>
+            <option value="한진택배" ${o.courier==='한진택배'?'selected':''}>한진택배</option>
+            <option value="롯데택배" ${o.courier==='롯데택배'?'selected':''}>롯데택배</option>
+            <option value="우체국" ${o.courier==='우체국'?'selected':''}>우체국</option>
+            <option value="로젠택배" ${o.courier==='로젠택배'?'selected':''}>로젠택배</option>
+            <option value="EMS" ${o.courier==='EMS'?'selected':''}>EMS</option>
+            <option value="DHL" ${o.courier==='DHL'?'selected':''}>DHL</option>
+            <option value="FedEx" ${o.courier==='FedEx'?'selected':''}>FedEx</option>
+            <option value="기타" ${o.courier==='기타'?'selected':''}>기타</option>
+          </select>
+        </td>
+        <td style="padding:6px;">
+          <input value="${o.tracking_no||''}" onchange="updateOrderField(${o.id},'tracking_no',this.value)" placeholder="송장번호" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:0.72rem;width:90px;">
+        </td>
+        <td style="padding:6px;">
           <input value="${o.memo||''}" onchange="updateOrderMemo(${o.id},this.value)" placeholder="메모" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:0.72rem;width:70px;">
         </td>
       </tr>`;
@@ -4782,6 +4801,17 @@ async function updateOrderStatus(id, status) {
 async function updateOrderMemo(id, memo) {
   try {
     await fetch(PREFIX + "/orders/" + id, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({memo})});
+  } catch(e) {}
+}
+
+async function updateOrderField(id, field, value) {
+  try {
+    await fetch(PREFIX + "/orders/" + id, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({[field]: value})});
+    // 송장번호 입력 시 자동으로 배송중 상태 변경
+    if (field === 'tracking_no' && value) {
+      await fetch(PREFIX + "/orders/" + id, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({status: 'shipped'})});
+      loadOrders();
+    }
   } catch(e) {}
 }
 

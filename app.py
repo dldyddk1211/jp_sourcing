@@ -1154,6 +1154,13 @@ def _init_orders_db():
             conn.commit()
         except Exception:
             pass
+        # 마이그레이션: 택배사/송장번호 컬럼 추가
+        for col in ["courier", "tracking_no"]:
+            try:
+                conn.execute(f"ALTER TABLE orders ADD COLUMN {col} TEXT DEFAULT ''")
+                conn.commit()
+            except Exception:
+                pass
         # 기존 주문에 order_number 부여
         rows = conn.execute("SELECT id, created_at FROM orders WHERE order_number='' OR order_number IS NULL ORDER BY id").fetchall()
         for r in rows:
@@ -1336,6 +1343,12 @@ def update_order(order_id):
         if "memo" in data:
             updates.append("memo = ?")
             params.append(data["memo"])
+        if "courier" in data:
+            updates.append("courier = ?")
+            params.append(data["courier"])
+        if "tracking_no" in data:
+            updates.append("tracking_no = ?")
+            params.append(data["tracking_no"])
         if not updates:
             return jsonify({"ok": False})
         params.append(order_id)
