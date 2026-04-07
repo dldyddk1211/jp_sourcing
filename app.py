@@ -1258,7 +1258,18 @@ def get_orders():
                 o["cost_krw"] = 0
                 o["margin_krw"] = 0
             orders.append(o)
-        return jsonify({"ok": True, "orders": orders})
+        # 현재 적용 환율 + 회원 레벨
+        current_rate = get_cached_rate() or 0
+        user_levels = {}
+        try:
+            level_rows = conn.execute("SELECT username, level FROM users").fetchall()
+            for lr in level_rows:
+                user_levels[lr["username"]] = lr["level"] if "level" in lr.keys() else "b2c"
+        except Exception:
+            pass
+        for o in orders:
+            o["user_level"] = user_levels.get(o.get("username",""), "b2c")
+        return jsonify({"ok": True, "orders": orders, "rate": current_rate})
     finally:
         conn.close()
 
