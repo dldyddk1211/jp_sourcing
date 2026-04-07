@@ -1274,6 +1274,52 @@ def get_orders():
         conn.close()
 
 
+@app.route(f"{URL_PREFIX}/orders/<int:order_id>/related")
+@admin_required
+def get_related_orders(order_id):
+    """일괄결제 관련 개별 주문 조회"""
+    _init_orders_db()
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        order = conn.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+        if not order:
+            return jsonify({"ok": False})
+        username = order["username"]
+        memo = order["memo"] or ""
+        # 같은 사용자 + 같은 결제 메모(토스결제 키)를 가진 개별 주문 조회
+        related = []
+        if memo and "토스결제" in memo:
+            rows = conn.execute(
+                "SELECT * FROM orders WHERE username=? AND memo=? AND id!=? ORDER BY created_at",
+                (username, memo, order_id)
+            ).fetchall()
+            related = [{c: r[c] for c in r.keys()} for r in rows]
+        # 메모가 없으면 같은 사용자의 비슷한 시간대(±5분) 주문 조회
+        if not related:
+            rows = conn.execute("""
+                SELECT * FROM orders WHERE username=? AND id!=? AND type='order'
+                AND abs(strftime('%s', created_at) - strftime('%s', ?)) < 300
+                ORDER BY created_at
+            """, (username, order_id, order["created_at"])).fetchall()
+            related = [{c: r[c] for c in r.keys()} for r in rows]
+        # 상품 이미지 조회
+        for o in related:
+            code = o.get("product_code", "")
+            if code:
+                try:
+                    from product_db import _conn as prod_conn
+                    pconn = prod_conn()
+                    pr = pconn.execute("SELECT img_url FROM products WHERE internal_code=? LIMIT 1", (code,)).fetchone()
+                    o["product_img"] = pr["img_url"] if pr else ""
+                    pconn.close()
+                except Exception:
+                    o["product_img"] = ""
+        return jsonify({"ok": True, "related": related, "count": len(related)})
+    finally:
+        conn.close()
+
+
 @app.route(f"{URL_PREFIX}/orders/<int:order_id>", methods=["PATCH"])
 @admin_required
 def update_order(order_id):

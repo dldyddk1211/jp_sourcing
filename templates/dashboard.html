@@ -4596,6 +4596,55 @@ async function loadMembers() {
 }
 
 // ── 주문확인 ─────────────────────────────
+async function showBatchOrders(orderId, title) {
+  const modal = document.getElementById("member-modal");
+  const content = document.getElementById("mm-content");
+  document.getElementById("mm-title").textContent = `일괄결제 상세: ${title}`;
+  content.innerHTML = "로딩 중...";
+  modal.style.display = "flex";
+  try {
+    const res = await fetch(PREFIX + "/orders/" + orderId + "/related");
+    const d = await res.json();
+    if (!d.ok || !d.related || !d.related.length) {
+      content.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;">관련 주문을 찾을 수 없습니다</div>';
+      return;
+    }
+    const statusLabels = {"new":"신규","confirmed":"확인","processing":"처리중","shipped":"배송중","completed":"완료","cancelled":"취소"};
+    const statusColors = {"new":"var(--yellow)","confirmed":"var(--blue)","processing":"var(--accent)","shipped":"#6cf","completed":"var(--green)","cancelled":"var(--red)"};
+    let totalPrice = 0;
+    content.innerHTML = `
+      <div style="font-size:0.78rem;color:var(--accent);font-weight:700;margin-bottom:10px;">포함 상품 ${d.related.length}건</div>
+      <div style="max-height:400px;overflow-y:auto;">
+        ${d.related.map((o, i) => {
+          const sc = statusColors[o.status] || "var(--muted)";
+          const sl = statusLabels[o.status] || o.status;
+          const priceNum = parseInt((o.price||'0').replace(/[^0-9]/g,'')) || 0;
+          totalPrice += priceNum;
+          return `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(42,45,58,0.3);font-size:0.8rem;">
+            <div style="color:var(--dim);font-size:0.72rem;width:20px;text-align:center;">${i+1}</div>
+            ${o.product_img ? `<img src="${o.product_img}" style="width:44px;height:44px;object-fit:cover;border-radius:4px;flex-shrink:0;" onerror="this.style.display='none'">` : '<div style="width:44px;height:44px;background:var(--bg);border-radius:4px;flex-shrink:0;"></div>'}
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-weight:600;">${o.brand||''}</span>
+                <span style="color:${sc};font-weight:600;font-size:0.72rem;">${sl}</span>
+              </div>
+              <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:0.78rem;">${o.product_name||''}</div>
+              <div style="display:flex;justify-content:space-between;margin-top:2px;">
+                <span style="font-family:monospace;font-size:0.68rem;color:var(--dim);">${o.order_number||''} · ${o.product_code||''}</span>
+                <span style="font-weight:700;color:var(--accent);">${o.price||''}</span>
+              </div>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+      <div style="border-top:2px solid var(--accent);margin-top:10px;padding-top:10px;display:flex;justify-content:space-between;font-size:0.9rem;">
+        <span style="font-weight:700;">합계 ${d.related.length}건</span>
+        <span style="font-weight:800;color:var(--green);">${totalPrice.toLocaleString()}원</span>
+      </div>
+    `;
+  } catch(e) { content.innerHTML = `<div style="color:var(--red);">로드 실패: ${e}</div>`; }
+}
+
 async function loadOrders() {
   const tbody = document.getElementById("order-tbody");
   if (!tbody) return;
@@ -4629,7 +4678,7 @@ async function loadOrders() {
         <td style="padding:6px;"><a href="#" onclick="showCustomerPopup(event,'${o.username||''}')" style="color:var(--accent);text-decoration:underline;cursor:pointer;">${o.customer_name||'-'}</a></td>
         <td style="padding:4px;"><img src="${o.product_img||''}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;border:1px solid var(--border);" onerror="this.style.display='none'"></td>
         <td style="padding:6px;">${o.brand||''}</td>
-        <td style="padding:6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.product_name||''}</td>
+        <td style="padding:6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(o.product_name||'').includes('일괄결제') ? `<a href="#" onclick="event.preventDefault();showBatchOrders(${o.id},'${(o.product_name||'').replace(/'/g,"\\'")}')" style="color:var(--yellow);text-decoration:underline;cursor:pointer;">${o.product_name}</a>` : (o.product_name||'')}</td>
         <td style="padding:6px;font-family:monospace;font-size:0.72rem;"><a href="${o.product_link || ('{{ url_prefix }}/shop?code='+encodeURIComponent(o.product_code||''))}" target="_blank" style="color:var(--accent);text-decoration:underline;cursor:pointer;" title="${o.product_link?'원본 상품 페이지':'쇼핑몰에서 보기'}">${o.product_code||''}</a></td>
         <td style="padding:6px;font-weight:700;color:var(--accent);">${o.price||''}${currentRate ? `<br><span style="font-size:0.6rem;color:var(--dim);font-weight:400;">@${currentRate}</span>` : ''}</td>
         <td style="padding:6px;font-size:0.75rem;color:var(--muted);">${o.cost_krw ? o.cost_krw.toLocaleString()+'원' : ''}<br><span style="font-size:0.65rem;color:var(--dim);">${o.price_jpy ? '¥'+o.price_jpy.toLocaleString() : ''}${currentRate ? ' @'+currentRate : ''}</span></td>
