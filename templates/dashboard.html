@@ -4312,14 +4312,22 @@ async function loadVtPriceSettings() {
   } catch(e) {}
 }
 
-function syncCostFromVt() {
+async function syncCostFromVt() {
   document.getElementById("cost-fee-input").value = document.getElementById("vt-fee-input").value;
   document.getElementById("cost-jpship-input").value = document.getElementById("vt-jp-ship-input").value;
   document.getElementById("cost-markup-input").value = document.getElementById("vt-markup-input").value;
   document.getElementById("cost-b2c-input").value = document.getElementById("vt-b2c-input").value;
   document.getElementById("cost-ship-input").value = document.getElementById("vt-shipping-input").value;
-  const rateText = document.getElementById("rate").textContent || "9.23원";
-  document.getElementById("cost-rate-input").value = parseFloat(rateText) || 9.23;
+  // 실시간 환율 가져오기
+  let rate = parseFloat(document.getElementById("rate")?.textContent) || 0;
+  if (!rate || rate < 1) {
+    try {
+      const r = await fetch(PREFIX + "/status");
+      const d = await r.json();
+      rate = d.rate || 9.23;
+    } catch(e) { rate = 9.23; }
+  }
+  document.getElementById("cost-rate-input").value = rate.toFixed(2);
   calcCostExample();
 }
 
