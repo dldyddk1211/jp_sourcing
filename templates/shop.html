@@ -423,15 +423,29 @@
       font-size:1.2rem; cursor:pointer;
       box-shadow:0 4px 16px rgba(0,0,0,0.4);
     }
+    /* ── Mobile Sub-nav bar ── */
+    .mobile-nav {
+      display:none; position:fixed; left:0; right:0; z-index:99;
+      background:rgba(12,13,17,0.98); border-bottom:1px solid var(--border);
+      padding:0 12px; height:38px;
+      justify-content:center; align-items:center; gap:0;
+    }
+    .mobile-nav .shop-nav-item {
+      flex:1; text-align:center; padding:8px 0; font-size:0.78rem;
+      border-bottom:2px solid transparent;
+    }
+
     @media (max-width:768px) {
       .announce-bar { font-size:0.68rem; height:28px; }
-      .topbar { top:28px; height:52px; padding:0 12px; }
-      .topbar-logo { font-size:1.2rem; }
-      .topbar-logo span { font-size:0.8rem; margin-left:4px; }
-      .topbar-right { gap:8px; font-size:0.78rem; }
-      .topbar-btn { padding:5px 10px; font-size:0.72rem; white-space:nowrap; }
-      .layout { margin-top:80px; min-height:calc(100vh - 80px); }
-      .sidebar { display:none; position:fixed; top:80px; left:0; z-index:110; height:calc(100vh - 80px); }
+      .topbar { top:28px; height:48px; padding:0 12px; }
+      .topbar .shop-nav { display:none; }
+      .mobile-nav { display:flex; top:76px; }
+      .topbar-logo { font-size:1.1rem; }
+      .topbar-logo span { font-size:0.75rem; margin-left:4px; }
+      .topbar-right { gap:6px; font-size:0.75rem; }
+      .topbar-btn { padding:4px 8px; font-size:0.7rem; white-space:nowrap; }
+      .layout { margin-top:114px; min-height:calc(100vh - 114px); }
+      .sidebar { display:none; position:fixed; top:114px; left:0; z-index:110; height:calc(100vh - 114px); }
       .sidebar.open { display:block; }
       .sidebar-toggle { display:block; }
       .product-grid { grid-template-columns:repeat(2, 1fr); gap:10px; }
@@ -444,8 +458,6 @@
       .hero-visual { display:none; }
       .hero-cta { padding:9px 22px; font-size:0.78rem; }
       .brand-strip { gap:18px; padding:12px 0; font-size:0.78rem; }
-      .shop-nav { gap:12px; font-size:0.75rem; }
-      .shop-nav-item { padding:6px 10px; }
     }
 
     /* ── Shop Navigation Tabs ── */
@@ -582,6 +594,13 @@
     <a href="{{ url_prefix }}/signup" class="topbar-btn">회원가입</a>
     {% endif %}
   </div>
+</div>
+
+<!-- Mobile Navigation -->
+<div class="mobile-nav" id="mobile-nav">
+  <span class="shop-nav-item active" onclick="switchShopTab('products')">SHOP</span>
+  <span class="shop-nav-item" onclick="switchShopTab('notices')">공지사항</span>
+  <span class="shop-nav-item" onclick="switchShopTab('reviews')">구매후기</span>
 </div>
 
 <div class="layout">
@@ -1560,7 +1579,7 @@ startAutoRefresh();
 // ── Shop Tab 전환 ──
 function switchShopTab(tab) {
   document.querySelectorAll(".shop-nav-item").forEach(el => el.classList.remove("active"));
-  document.querySelector(`.shop-nav-item[onclick*="${tab}"]`).classList.add("active");
+  document.querySelectorAll(`.shop-nav-item[onclick*="${tab}"]`).forEach(el => el.classList.add("active"));
 
   // products 관련 요소
   const productEls = ["hero-banner","brand-strip","content-header","product-grid","pagination"];
