@@ -615,6 +615,7 @@
         <button onclick="loadShop(1)" style="padding:8px 14px;border-radius:8px;background:var(--accent);border:none;color:#000;font-size:0.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">검색</button>
       </div>
       <div style="font-size:0.65rem;color:var(--dim);margin-top:4px;">예: 숄더백 가죽, PRADA 블랙, No.S-260402</div>
+      <button class="reset-btn" onclick="resetFilters()" style="margin-top:8px;">필터 초기화</button>
     </div>
 
     <!-- 브랜드 -->
@@ -676,7 +677,6 @@
         <option value="price_asc">가격 낮은순</option>
         <option value="price_desc">가격 높은순</option>
       </select>
-      <button class="reset-btn" onclick="resetFilters()">필터 초기화</button>
     </div>
 
     {% if is_admin %}
@@ -1139,12 +1139,28 @@ function renderSiteList(sites) {
 
 function renderBrandList(brands) {
   const el = document.getElementById("brand-list");
+  const mainBrands = brands.filter(b => b.count > 10);
+  const etcBrands = brands.filter(b => b.count <= 10);
+  const etcTotal = etcBrands.reduce((s, b) => s + b.count, 0);
+
   let html = `<li class="filter-item ${!filters.brand?'active':''}" data-val="" onclick="selectFilter('brand',this)"><span>전체</span></li>`;
-  brands.forEach(b => {
+  mainBrands.forEach(b => {
     html += `<li class="filter-item ${filters.brand===b.name?'active':''}" data-val="${b.name}" onclick="selectFilter('brand',this)">
       <span>${b.name}</span><span class="filter-count">${b.count}</span>
     </li>`;
   });
+  if (etcBrands.length > 0) {
+    html += `<li class="filter-item" style="color:var(--dim);cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+      <span>ETC (${etcBrands.length}개 브랜드)</span><span class="filter-count">${etcTotal}</span>
+    </li>`;
+    html += `<div style="display:none;">`;
+    etcBrands.forEach(b => {
+      html += `<li class="filter-item ${filters.brand===b.name?'active':''}" data-val="${b.name}" onclick="selectFilter('brand',this)" style="padding-left:18px;font-size:0.78rem;">
+        <span>${b.name}</span><span class="filter-count">${b.count}</span>
+      </li>`;
+    });
+    html += `</div>`;
+  }
   el.innerHTML = html;
 }
 
