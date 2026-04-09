@@ -8,6 +8,11 @@ import time
 
 logger = logging.getLogger(__name__)
 
+
+class TranslationError(Exception):
+    """AI 번역 실패 시 발생하는 에러"""
+    pass
+
 # 번역기 초기화
 try:
     from googletrans import Translator
@@ -89,20 +94,23 @@ def apply_custom_dict(text: str) -> str:
     return text
 
 
-_ai_rate_limited_until = 0  # rate limit 발생 시 대기 시간
+_current_ai_model = ""  # 현재 사용 중인 AI 모델명
+
+def get_current_ai_model() -> str:
+    """현재 번역에 사용 중인 AI 모델명 반환"""
+    return _current_ai_model
+
 
 def _translate_with_ai(text: str) -> str:
-    """AI API로 일본어 → 한국어 번역 (Gemini/OpenAI/Claude, rate limit 대응)"""
-    global _ai_rate_limited_until
-    # rate limit 쿨다운 중이면 스킵
-    if time.time() < _ai_rate_limited_until:
-        return ""
+    """
+    AI API로 일본어 → 한국어 번역
+    순서: OpenAI → Gemini → OpenAI → Gemini (2회 반복) → Claude (최종)
+    모두 실패 시 빈 문자열 반환 (호출측에서 에러 처리)
+    """
+    global _current_ai_model
     try:
         from post_generator import get_ai_config, _call_gemini, _call_claude, _call_openai
         config = get_ai_config()
-        provider = config.get("provider", "none")
-        if provider == "none":
-            return ""
 
         prompt = f"""다음 일본어 중고 명품 상품 정보를 자연스러운 한국어로 번역해주세요.
 규칙:
@@ -116,41 +124,50 @@ def _translate_with_ai(text: str) -> str:
 
 원문: {text}"""
 
-        # 우선순위: Gemini → OpenAI → Claude (rate limit 분산)
-        providers = []
-        if config.get("gemini_key"):
-            providers.append(("gemini", _call_gemini))
+        # 시도 순서: OpenAI → Gemini → OpenAI → Gemini (2회 반복)
+        attempts = []
         if config.get("openai_key"):
-            providers.append(("openai", _call_openai))
+            attempts.append(("OpenAI", _call_openai))
+        if config.get("gemini_key"):
+            attempts.append(("Gemini", _call_gemini))
+        if config.get("openai_key"):
+            attempts.append(("OpenAI(재시도)", _call_openai))
+        if config.get("gemini_key"):
+            attempts.append(("Gemini(재시도)", _call_gemini))
+        # 최종 폴백: Claude
         if config.get("claude_key"):
-            providers.append(("claude", _call_claude))
+            attempts.append(("Claude(최종)", _call_claude))
 
-        # 현재 설정된 provider를 맨 앞으로
-        providers.sort(key=lambda x: 0 if x[0] == provider else 1)
+        if not attempts:
+            return ""
 
-        for pname, pfunc in providers:
+        for pname, pfunc in attempts:
             try:
                 result = pfunc(prompt)
                 if result and len(result) > 1:
+                    _current_ai_model = pname.split("(")[0]  # "OpenAI(재시도)" → "OpenAI"
                     return result
             except Exception as e:
                 err = str(e)
                 if "429" in err or "rate_limit" in err.lower() or "RateLimit" in err:
-                    _ai_rate_limited_until = time.time() + 60  # 60초 쿨다운
-                    logger.warning(f"⚠️ {pname} rate limit — 60초 대기, 다음 provider 시도")
+                    logger.warning(f"⚠️ {pname} rate limit — 10초 대기 후 다음 시도")
+                    time.sleep(10)
                     continue
-                logger.debug(f"{pname} 번역 실패: {e}")
+                logger.warning(f"⚠️ {pname} 실패: {str(e)[:80]}")
+                time.sleep(2)
                 continue
+
+        _current_ai_model = "실패"
     except Exception as e:
-        logger.debug(f"AI 번역 실패: {e}")
+        logger.warning(f"AI 번역 실패: {e}")
+        _current_ai_model = "실패"
     return ""
 
 
 def translate_ja_ko(text: str, retries: int = 3) -> str:
     """
-    일본어 → 한국어 번역
-    1. AI API 번역 (Gemini/OpenAI/Claude) — 최우선
-    2. AI 실패 시 → 사전 번역 + 구글 번역 (폴백)
+    일본어 → 한국어 번역 (AI 필수)
+    AI 번역 실패 시 에러 발생 → 수집 중단
     """
     if not text or not text.strip():
         return text
@@ -159,13 +176,13 @@ def translate_ja_ko(text: str, retries: int = 3) -> str:
     if text in _cache:
         return _cache[text]
 
-    # 1단계: AI API 번역 (최우선)
+    # 1단계: AI API 번역 (필수)
     ai_result = _translate_with_ai(text)
     if ai_result and len(ai_result) > 1:
         _cache[text] = ai_result
         return ai_result
 
-    # 2단계: 사전 번역 (AI 실패 시 폴백)
+    # 2단계: 사전으로 번역 시도 (일본어가 완전히 제거되면 OK)
     pre_translated = apply_custom_dict(text)
 
     import re as _re
@@ -173,21 +190,9 @@ def translate_ja_ko(text: str, retries: int = 3) -> str:
         _cache[text] = pre_translated
         return pre_translated
 
-    # 3단계: 구글 번역 (최종 폴백)
-    if TRANSLATE_AVAILABLE:
-        for attempt in range(retries):
-            try:
-                result = _translator.translate(pre_translated, src="ja", dest="ko")
-                translated = result.text.strip()
-                _cache[text] = translated
-                return translated
-            except Exception as e:
-                if attempt < retries - 1:
-                    time.sleep(1)
-                else:
-                    logger.debug(f"구글 번역 실패: {e}")
-
-    _cache[text] = pre_translated
+    # 3단계: 모든 AI 실패 + 사전으로도 일본어 남음 → 에러
+    logger.error(f"❌ AI 번역 모두 실패 — 사용 가능한 AI 모델이 없습니다: {text[:50]}")
+    raise TranslationError(f"AI 번역 실패: 사용 가능한 AI 모델이 없습니다. OpenAI/Gemini/Claude 키를 확인해주세요.")
     return pre_translated
 
 

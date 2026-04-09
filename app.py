@@ -3183,12 +3183,19 @@ def bulk_update_product_status():
 def get_status():
     """현재 실행 상태 반환"""
     products = load_latest_products()
+    # 현재 AI 모델
+    try:
+        from translator import get_current_ai_model
+        ai_model = get_current_ai_model()
+    except Exception:
+        ai_model = ""
     return jsonify({
         **status,
         "product_count": len(products),
-        "rate": get_cached_rate(),  # 캐시 우선 사용
+        "rate": get_cached_rate(),
         "margin": get_margin_rate(),
         "schedule_time": f"{AUTO_SCHEDULE_HOUR:02d}:{AUTO_SCHEDULE_MINUTE:02d}",
+        "ai_model": ai_model,
     })
 
 

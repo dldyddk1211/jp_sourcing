@@ -3842,9 +3842,16 @@ async function refreshStatus() {
     document.getElementById("s-last-upload").textContent = d.last_upload || "-";
     document.getElementById("s-schedule").textContent    = d.schedule_time || "-";
 
-    // 수집 상태 배너 (우측 상단)
+    // 수집 상태 배너 (우측 상단) + AI 모델 표시
     const banner = document.getElementById("scrape-status-banner");
-    if (banner) banner.style.display = d.scraping ? "" : "none";
+    if (banner) {
+      banner.style.display = d.scraping ? "" : "none";
+      if (d.scraping && d.ai_model) {
+        banner.innerHTML = `🔄 수집중 <span style="margin-left:8px;padding:2px 8px;border-radius:4px;background:rgba(79,142,247,0.15);color:#4f8ef7;font-size:0.7rem;">🤖 ${d.ai_model}</span>`;
+      } else if (d.scraping) {
+        banner.textContent = "🔄 수집중";
+      }
+    }
 
     const scEl = document.getElementById("s-scraping");
     const pauseBtn = document.getElementById("btn-pause");

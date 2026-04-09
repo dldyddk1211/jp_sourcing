@@ -643,8 +643,15 @@ async def _process_detail_pages(page, products, log, _random, category=""):
             log(f"      ✅ {name_ko} | {prod.get('subcategory','?')}")
             await asyncio.sleep(_random.uniform(2, 3))
         except Exception as e:
+            from translator import TranslationError
+            if isinstance(e, TranslationError):
+                log(f"      ❌ AI 번역 불가 — 수집 중단: {e}")
+                raise
             log(f"      ⚠️ 상세 실패: {str(e)[:50]}")
-            _translate_and_save(prod, log)
+            try:
+                _translate_and_save(prod, log)
+            except Exception:
+                pass
             continue
 
 
@@ -872,11 +879,11 @@ async def rescrape_details(log=None):
 
 
 def _translate_and_save(product: dict, log_func=None):
-    """상품 1건 즉시 번역 + DB 저장 (AI 번역 우선)"""
+    """상품 1건 즉시 번역 + DB 저장 (AI 번역 필수 — 실패 시 에러 발생)"""
+    import re as _re
+    from translator import translate_ja_ko, translate_brand, get_current_ai_model, TranslationError
+    _ja = _re.compile(r'[\u3040-\u30FF\u4E00-\u9FFF]')
     try:
-        import re as _re
-        from translator import translate_ja_ko, translate_brand
-        _ja = _re.compile(r'[\u3040-\u30FF\u4E00-\u9FFF]')
         if product.get("name") and not product.get("name_ko"):
             product["name_ko"] = translate_ja_ko(product["name"])
         if product.get("description") and not product.get("description_ko"):
@@ -888,6 +895,14 @@ def _translate_and_save(product: dict, log_func=None):
             product["color"] = translate_ja_ko(product["color"])
         if product.get("material") and _ja.search(product["material"]):
             product["material"] = translate_ja_ko(product["material"])
+        # 사용 중인 AI 모델 로그
+        model = get_current_ai_model()
+        if model and log_func:
+            log_func(f"      🤖 AI: {model}")
+    except TranslationError as e:
+        if log_func:
+            log_func(f"      ❌ {e}")
+        raise  # 수집 중단을 위해 상위로 전파
     except Exception as e:
         if log_func:
             log_func(f"      ⚠️ 번역 오류: {e}")
