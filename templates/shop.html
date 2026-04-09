@@ -1823,11 +1823,8 @@ async function deleteReview(id) {
       <a href="#" onclick="event.preventDefault();openFooterModal('guide')">이용안내</a>
       <a href="http://pf.kakao.com/_geJHxj/chat" target="_blank">고객센터</a>
     </div>
-    <div class="footer-biz">
-      <b>TheOne Vintage</b> | 대표: 박수현<br>
-      사업자등록번호: 000-00-00000 | 통신판매업신고: 제0000-서울강남-0000호<br>
-      주소: 서울특별시 강남구 테헤란로 000, 0층<br>
-      이메일: support@theone-biz.com | 고객센터: 카카오톡 채널 "TheOne Vintage"
+    <div class="footer-biz" id="footer-biz-info">
+      <b>TheOne Vintage</b>
     </div>
     <div class="footer-notice">
       TheOne Vintage는 일본 현지 빈티지 명품의 구매를 대행하는 서비스를 제공하며, 상품의 이미지 및 등록내용에 대하여는 책임지지 않습니다.
@@ -1849,6 +1846,17 @@ async function deleteReview(id) {
 </div>
 
 <script>
+// 푸터 사업자 정보 로드
+fetch(PREFIX + "/settings/biz-info/active").then(r=>r.json()).then(d=>{
+  if (!d.ok || !d.name) return;
+  document.getElementById("footer-biz-info").innerHTML = `
+    <b>${d.name}</b> | 대표: ${d.ceo||''}<br>
+    사업자등록번호: ${d.biznum||''} | 통신판매업신고: ${d.ecom||''}<br>
+    주소: ${d.addr||''}<br>
+    ${d.email ? '이메일: '+d.email+' | ' : ''}${d.phone ? '전화: '+d.phone : '고객센터: 카카오톡 채널 "TheOne Vintage"'}
+  `;
+}).catch(()=>{});
+
 function openFooterModal(type) {
   const el = document.getElementById("footer-modal-content");
   const modal = document.getElementById("footer-modal");

@@ -216,6 +216,54 @@ def signup():
                            url_prefix=URL_PREFIX, env=APP_ENV)
 
 
+# ── 사업자 정보 설정 ──────────────────────────
+_biz_info_path = os.path.join(get_path("db"), "biz_info.json")
+
+def _load_biz_info():
+    import json as _json
+    if os.path.exists(_biz_info_path):
+        try:
+            with open(_biz_info_path, "r", encoding="utf-8") as f:
+                return _json.load(f)
+        except Exception:
+            pass
+    return {"active": 1, "biz1": {}, "biz2": {}}
+
+def _save_biz_info(data):
+    import json as _json
+    os.makedirs(os.path.dirname(_biz_info_path), exist_ok=True)
+    with open(_biz_info_path, "w", encoding="utf-8") as f:
+        _json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+@app.route(f"{URL_PREFIX}/settings/biz-info", methods=["GET"])
+@admin_required
+def get_biz_info():
+    return jsonify({"ok": True, **_load_biz_info()})
+
+
+@app.route(f"{URL_PREFIX}/settings/biz-info", methods=["POST"])
+@admin_required
+def update_biz_info():
+    data = request.json or {}
+    info = _load_biz_info()
+    info["active"] = int(data.get("active", info.get("active", 1)))
+    for key in ["biz1", "biz2"]:
+        if key in data:
+            info[key] = data[key]
+    _save_biz_info(info)
+    return jsonify({"ok": True, "message": "사업자 정보 저장 완료"})
+
+
+@app.route(f"{URL_PREFIX}/settings/biz-info/active")
+def get_active_biz_info():
+    """활성 사업자 정보 (푸터용, 비로그인 접근 가능)"""
+    info = _load_biz_info()
+    active = info.get("active", 1)
+    biz = info.get(f"biz{active}", {})
+    return jsonify({"ok": True, **biz})
+
+
 @app.route("/robots.txt")
 def robots_txt():
     return Response(

@@ -1413,6 +1413,53 @@
           </div>
         </div>
       </div>
+
+      <!-- 사업자 정보 설정 -->
+      <div class="panel" style="margin-top:16px;">
+        <div class="panel-title">&#x1f3e2; 사이트 사업자 정보 (푸터 표시용)</div>
+        <p style="color:var(--muted);font-size:0.8rem;margin-bottom:14px;">쇼핑몰 하단 푸터에 표시되는 사업자 정보입니다. 2개 사업자를 등록하고 활성 사업자를 선택할 수 있습니다.</p>
+
+        <div style="display:grid;gap:14px;">
+          <!-- 사업자 1 -->
+          <div style="padding:16px;border:1px solid var(--border);border-radius:8px;background:var(--bg);">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+              <span style="font-weight:700;font-size:0.85rem;">&#x1f4bc; 사업자 1</span>
+              <label style="font-size:0.78rem;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer;">
+                <input type="radio" name="active-biz" value="1" onchange="saveBizInfo()" style="accent-color:var(--accent);"> 활성
+              </label>
+            </div>
+            <div style="display:grid;grid-template-columns:100px 1fr;gap:6px 10px;font-size:0.82rem;">
+              <label style="color:var(--muted);">상호명</label><input id="biz1-name" placeholder="TheOne Vintage" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.82rem;">
+              <label style="color:var(--muted);">대표</label><input id="biz1-ceo" placeholder="홍길동" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.82rem;">
+              <label style="color:var(--muted);">사업자번호</label><input id="biz1-biznum" placeholder="000-00-00000" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.82rem;">
+              <label style="color:var(--muted);">통신판매업</label><input id="biz1-ecom" placeholder="제0000-서울강남-0000호" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.82rem;">
+              <label style="color:var(--muted);">주소</label><input id="biz1-addr" placeholder="서울시 강남구..." style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.82rem;">
+              <label style="color:var(--muted);">이메일</label><input id="biz1-email" placeholder="support@theone-biz.com" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.82rem;">
+              <label style="color:var(--muted);">전화번호</label><input id="biz1-phone" placeholder="02-0000-0000" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.82rem;">
+            </div>
+          </div>
+          <!-- 사업자 2 -->
+          <div style="padding:16px;border:1px solid var(--border);border-radius:8px;background:var(--bg);">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+              <span style="font-weight:700;font-size:0.85rem;">&#x1f4bc; 사업자 2</span>
+              <label style="font-size:0.78rem;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer;">
+                <input type="radio" name="active-biz" value="2" onchange="saveBizInfo()" style="accent-color:var(--accent);"> 활성
+              </label>
+            </div>
+            <div style="display:grid;grid-template-columns:100px 1fr;gap:6px 10px;font-size:0.82rem;">
+              <label style="color:var(--muted);">상호명</label><input id="biz2-name" placeholder="상호명" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.82rem;">
+              <label style="color:var(--muted);">대표</label><input id="biz2-ceo" placeholder="대표자명" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.82rem;">
+              <label style="color:var(--muted);">사업자번호</label><input id="biz2-biznum" placeholder="000-00-00000" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.82rem;">
+              <label style="color:var(--muted);">통신판매업</label><input id="biz2-ecom" placeholder="제0000-서울강남-0000호" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.82rem;">
+              <label style="color:var(--muted);">주소</label><input id="biz2-addr" placeholder="주소" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.82rem;">
+              <label style="color:var(--muted);">이메일</label><input id="biz2-email" placeholder="이메일" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.82rem;">
+              <label style="color:var(--muted);">전화번호</label><input id="biz2-phone" placeholder="전화번호" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.82rem;">
+            </div>
+          </div>
+        </div>
+        <button class="btn b-green" onclick="saveBizInfo()" style="margin-top:12px;width:100%;padding:10px;">&#x2705; 사업자 정보 저장</button>
+      </div>
+      </div>
     </div>
 
     <!-- ═══ 텔레그램 알림 설정 ═══ -->
@@ -4313,6 +4360,50 @@ function updateVtFormulaLabels() {
   document.getElementById("vt-shipping-formula").textContent = ship.toLocaleString() + "원";
 }
 
+// ── 사업자 정보 ──
+async function loadBizInfo() {
+  try {
+    const r = await fetch(PREFIX + "/settings/biz-info");
+    const d = await r.json();
+    if (!d.ok) return;
+    const active = d.active || 1;
+    document.querySelector(`input[name="active-biz"][value="${active}"]`).checked = true;
+    for (const n of [1, 2]) {
+      const b = d[`biz${n}`] || {};
+      document.getElementById(`biz${n}-name`).value = b.name || "";
+      document.getElementById(`biz${n}-ceo`).value = b.ceo || "";
+      document.getElementById(`biz${n}-biznum`).value = b.biznum || "";
+      document.getElementById(`biz${n}-ecom`).value = b.ecom || "";
+      document.getElementById(`biz${n}-addr`).value = b.addr || "";
+      document.getElementById(`biz${n}-email`).value = b.email || "";
+      document.getElementById(`biz${n}-phone`).value = b.phone || "";
+    }
+  } catch(e) {}
+}
+
+async function saveBizInfo() {
+  const active = document.querySelector('input[name="active-biz"]:checked')?.value || "1";
+  const data = { active: parseInt(active) };
+  for (const n of [1, 2]) {
+    data[`biz${n}`] = {
+      name: document.getElementById(`biz${n}-name`).value.trim(),
+      ceo: document.getElementById(`biz${n}-ceo`).value.trim(),
+      biznum: document.getElementById(`biz${n}-biznum`).value.trim(),
+      ecom: document.getElementById(`biz${n}-ecom`).value.trim(),
+      addr: document.getElementById(`biz${n}-addr`).value.trim(),
+      email: document.getElementById(`biz${n}-email`).value.trim(),
+      phone: document.getElementById(`biz${n}-phone`).value.trim(),
+    };
+  }
+  try {
+    const r = await fetch(PREFIX + "/settings/biz-info", {
+      method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(data)
+    });
+    const d = await r.json();
+    if (d.ok) addLog("✅ 사업자 정보 저장 완료", "ok");
+  } catch(e) { addLog("❌ 사업자 정보 저장 실패", "err"); }
+}
+
 async function loadVtPriceSettings() {
   try {
     const r = await fetch(PREFIX + "/settings/vintage-price");
@@ -5944,6 +6035,7 @@ loadProducts(1);
 loadBrands();
 loadPriceSettings();
 loadVtPriceSettings();
+loadBizInfo();
 loadSites();
 loadScrapeHistory();
 loadCheckSchedule();
