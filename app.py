@@ -216,6 +216,24 @@ def signup():
                            url_prefix=URL_PREFIX, env=APP_ENV)
 
 
+@app.route("/robots.txt")
+def robots_txt():
+    return Response(
+        "User-agent: *\nAllow: /shop\nAllow: /shop/api/notices\nAllow: /shop/api/reviews\nDisallow: /dashboard\nDisallow: /orders\nDisallow: /members\nDisallow: /scrape\nDisallow: /settings\nSitemap: https://vintage.theone-biz.com/sitemap.xml\n",
+        mimetype="text/plain"
+    )
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+    xml += '  <url><loc>https://vintage.theone-biz.com/shop</loc><changefreq>daily</changefreq><priority>1.0</priority></url>\n'
+    xml += '  <url><loc>https://vintage.theone-biz.com/</loc><changefreq>daily</changefreq><priority>0.8</priority></url>\n'
+    xml += '</urlset>'
+    return Response(xml, mimetype="application/xml")
+
+
 @app.route(f"{URL_PREFIX}/shop")
 def shop():
     """고객용 빈티지 상품 카탈로그 (비회원도 접근 가능)"""
