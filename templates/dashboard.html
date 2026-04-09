@@ -3480,6 +3480,15 @@ async function stopAllTasks() {
 }
 
 async function runBrandRoundRobin() {
+  // '수집중' 멈춤 작업 → 대기로 복구
+  const stuck = scrapeTaskList.filter(t => t.status === "수집중");
+  if (stuck.length > 0) {
+    for (const t of stuck) {
+      await fetch(PREFIX + "/scrape/tasks/" + t.id, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({status:"대기"})}).catch(()=>{});
+    }
+    addLog(`🔧 수집중 멈춤 작업 ${stuck.length}건 → 대기로 복구`, "info");
+    await loadScrapeTasks();
+  }
   const pending = scrapeTaskList.filter(t => t.status === "대기" || t.status === "예약");
   if (!pending.length) { addLog("\u26a0\ufe0f 대기/예약 상태 작업이 없습니다", "info"); return; }
 

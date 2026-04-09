@@ -4406,6 +4406,21 @@ def _save_vintage_price():
 
 _load_vintage_price()
 
+# 서버 시작 시 '수집중' 멈춤 작업 자동 복구
+try:
+    import sqlite3 as _sq
+    _db = os.path.join(get_path("db"), "users.db")
+    if os.path.exists(_db):
+        _c = _sq.connect(_db)
+        _stuck = _c.execute("SELECT count(*) FROM scrape_tasks WHERE status='수집중'").fetchone()[0]
+        if _stuck > 0:
+            _c.execute("UPDATE scrape_tasks SET status='대기' WHERE status='수집중'")
+            _c.commit()
+            logger.info(f"🔧 서버 시작: 수집중 멈춤 작업 {_stuck}건 → 대기로 복구")
+        _c.close()
+except Exception:
+    pass
+
 
 @app.route(f"{URL_PREFIX}/settings/vintage-price", methods=["GET"])
 @admin_required

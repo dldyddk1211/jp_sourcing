@@ -421,13 +421,19 @@ def _run_task_by_number(arg: str, log_callback=None, force=False):
 
 
 def _run_per_brand(log_callback=None):
-    """브랜드별 순환수집 (라운드로빈): 모든 대기 작업을 브랜드별 교차 순서로 큐에 등록"""
+    """브랜드별 순환수집 (라운드로빈): 모든 대기/예약/수집중(멈춤) 작업을 브랜드별 교차 순서로 큐에 등록"""
     try:
         import sqlite3
         from data_manager import get_path
         db_path = os.path.join(get_path("db"), "users.db")
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
+        # '수집중' 상태 작업 → 대기로 복구 (비정상 종료된 작업)
+        stuck = conn.execute("SELECT count(*) FROM scrape_tasks WHERE status='수집중'").fetchone()[0]
+        if stuck > 0:
+            conn.execute("UPDATE scrape_tasks SET status='대기' WHERE status='수집중'")
+            conn.commit()
+            send_telegram(f"🔧 수집중 멈춤 작업 {stuck}건 → 대기로 복구")
         rows = conn.execute("SELECT * FROM scrape_tasks WHERE status IN ('대기','예약') ORDER BY id").fetchall()
         conn.close()
 
