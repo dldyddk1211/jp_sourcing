@@ -1634,17 +1634,22 @@ function clickBrandStrip(name) {
 
 loadShop(1);
 
-// 30초마다 자동 새로고침 (수집 중 실시간 반영)
+// 자동 새로고침: 관리자 + 수집 중일 때만
+{% if is_admin %}
 let _autoRefreshTimer = null;
 function startAutoRefresh() {
   if (_autoRefreshTimer) return;
-  _autoRefreshTimer = setInterval(() => {
-    // 모달이 열려있으면 새로고침 안 함
+  _autoRefreshTimer = setInterval(async () => {
     if (document.getElementById("modal").classList.contains("show")) return;
-    loadShop(currentPage);
-  }, 30000);
+    try {
+      const r = await fetch(PREFIX + "/status");
+      const d = await r.json();
+      if (d.scraping) loadShop(currentPage);
+    } catch(e) {}
+  }, 60000);
 }
 startAutoRefresh();
+{% endif %}
 
 // ── Shop Tab 전환 ──
 function switchShopTab(tab) {
