@@ -92,6 +92,112 @@ def admin_required(f):
     return decorated
 
 
+# ── 네이버 소셜 로그인 ──────────────────────────
+NAVER_CLIENT_ID = "CH3HgXly53mIV7WYrg_c"
+NAVER_CLIENT_SECRET = "yPrHZRAHNH"
+
+
+@app.route(f"{URL_PREFIX}/auth/naver")
+def naver_login():
+    """네이버 로그인 시작"""
+    import urllib.parse, uuid
+    state = uuid.uuid4().hex[:16]
+    session["naver_state"] = state
+    callback = request.host_url.rstrip("/") + f"{URL_PREFIX}/auth/naver/callback"
+    params = urllib.parse.urlencode({
+        "response_type": "code",
+        "client_id": NAVER_CLIENT_ID,
+        "redirect_uri": callback,
+        "state": state,
+    })
+    return redirect(f"https://nid.naver.com/oauth2.0/authorize?{params}")
+
+
+@app.route(f"{URL_PREFIX}/auth/naver/callback")
+def naver_callback():
+    """네이버 로그인 콜백"""
+    code = request.args.get("code", "")
+    state = request.args.get("state", "")
+    if not code or state != session.pop("naver_state", ""):
+        return redirect(f"{URL_PREFIX}/login")
+
+    callback = request.host_url.rstrip("/") + f"{URL_PREFIX}/auth/naver/callback"
+    # 토큰 발급
+    try:
+        token_res = requests.post("https://nid.naver.com/oauth2.0/token", data={
+            "grant_type": "authorization_code",
+            "client_id": NAVER_CLIENT_ID,
+            "client_secret": NAVER_CLIENT_SECRET,
+            "code": code,
+            "state": state,
+            "redirect_uri": callback,
+        }, timeout=10)
+        token = token_res.json()
+        access_token = token.get("access_token")
+        if not access_token:
+            logger.warning(f"네이버 토큰 실패: {token}")
+            return redirect(f"{URL_PREFIX}/login")
+
+        # 프로필 조회
+        profile_res = requests.get("https://openapi.naver.com/v1/nid/me",
+                                   headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
+        profile = profile_res.json().get("response", {})
+        naver_id = profile.get("id", "")
+        name = profile.get("name", "") or profile.get("nickname", "")
+        email = profile.get("email", "")
+        phone = profile.get("mobile", "")
+
+        if not naver_id:
+            return redirect(f"{URL_PREFIX}/login")
+
+        # 네이버 ID로 기존 회원 확인
+        social_username = f"naver_{naver_id[:12]}"
+        customer = get_customer(social_username)
+
+        if not customer:
+            # 자동 회원가입
+            try:
+                from user_db import _conn as _uc
+                conn = _uc()
+                conn.execute("""INSERT OR IGNORE INTO users (username, password, name, phone, status, level)
+                                VALUES (?,?,?,?,?,?)""",
+                             (social_username, "", name, phone, "approved", "b2c"))
+                conn.commit()
+                conn.close()
+                logger.info(f"네이버 소셜 회원가입: {social_username} ({name})")
+                # 텔레그램 알림
+                try:
+                    from notifier import send_telegram
+                    send_telegram(f"👤 <b>네이버 소셜 회원가입</b>\n이름: {name}\n아이디: {social_username}")
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.warning(f"네이버 회원가입 실패: {e}")
+                return redirect(f"{URL_PREFIX}/login")
+            customer = get_customer(social_username)
+
+        # 로그인 처리
+        session["logged_in"] = True
+        session["username"] = social_username
+        session["role"] = "customer"
+        session["level"] = customer["level"] if customer and "level" in customer.keys() else "b2c"
+        session["name"] = name
+        # 마지막 접속 시간 업데이트
+        try:
+            from user_db import _conn as _uc
+            uc = _uc()
+            uc.execute("UPDATE users SET last_login=datetime('now','localtime') WHERE username=?", (social_username,))
+            uc.commit()
+            uc.close()
+        except Exception:
+            pass
+        logger.info(f"네이버 소셜 로그인: {social_username} ({name})")
+        return redirect(f"{URL_PREFIX}/shop")
+    except Exception as e:
+        logger.error(f"네이버 로그인 오류: {e}")
+        return redirect(f"{URL_PREFIX}/login")
+
+
 @app.route(f"{URL_PREFIX}/login", methods=["GET", "POST"])
 def login():
     """로그인 페이지"""
@@ -4793,8 +4899,8 @@ def set_active_naver_account():
 
 @app.route(f"{URL_PREFIX}/naver/login", methods=["POST"])
 @admin_required
-def naver_login():
-    """네이버 로그인 시작 (저장된 계정 자동 입력)"""
+def naver_cafe_login():
+    """네이버 카페 로그인 시작 (저장된 계정 자동 입력)"""
     d = request.json or {}
     slot = int(d.get("slot", 1))
     cookie_path = _get_cookie_path(slot)
