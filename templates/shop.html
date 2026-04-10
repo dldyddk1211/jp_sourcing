@@ -1582,6 +1582,20 @@ const heroBanner = document.getElementById("hero-banner");
 if (heroBanner) {
   heroBanner.addEventListener("mouseenter", () => clearInterval(heroTimer));
   heroBanner.addEventListener("mouseleave", startHeroTimer);
+  // 터치 스와이프
+  let _touchX = 0;
+  heroBanner.addEventListener("touchstart", e => {
+    _touchX = e.touches[0].clientX;
+    clearInterval(heroTimer);
+  }, {passive: true});
+  heroBanner.addEventListener("touchend", e => {
+    const diff = _touchX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 40) {
+      if (diff > 0) goHeroSlide(Math.min(heroIdx + 1, heroTotal - 1));
+      else goHeroSlide(Math.max(heroIdx - 1, 0));
+    }
+    startHeroTimer();
+  }, {passive: true});
 }
 startHeroTimer();
 
