@@ -1460,7 +1460,30 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
                         _log(f"   🔗 게시글 URL: {post_url}")
                         return post_url
                     else:
-                        _log(f"   ❌ 등록 실패 — 게시글 URL 확인 불가 (20초 대기 후에도 글쓰기 페이지)")
+                        # 실패 원인 추가 분석
+                        cur_url = page.url
+                        _log(f"   ❌ 등록 실패 — 현재 URL: {cur_url}")
+                        # 에러 메시지/팝업 텍스트 수집
+                        try:
+                            all_text = ""
+                            for frm in page.frames:
+                                try:
+                                    # 에러 팝업, 알림 다이얼로그 등
+                                    for err_sel in [".popup_error", "[role='alertdialog']", ".layer_alert", ".toast_msg", ".error_msg", ".se-popup", ".alert"]:
+                                        els = frm.locator(err_sel)
+                                        cnt = await els.count()
+                                        for ei in range(min(cnt, 3)):
+                                            txt = (await els.nth(ei).inner_text()).strip()
+                                            if txt:
+                                                all_text += f" [{err_sel}: {txt[:80]}]"
+                                except Exception:
+                                    pass
+                            if all_text:
+                                _log(f"   🔍 감지된 메시지: {all_text[:200]}")
+                            else:
+                                _log(f"   🔍 에러 팝업/메시지 없음 — 페이지 상태 불명")
+                        except Exception:
+                            pass
                         _set_fail_reason("등록 버튼 클릭했으나 게시글 페이지로 이동되지 않음")
                         return False
             except Exception:
