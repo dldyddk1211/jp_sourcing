@@ -366,11 +366,12 @@ def get_product_status(product_code: str) -> str:
         conn.close()
 
 
-def get_stats() -> dict:
-    """통계 반환"""
+def get_stats(source_type=None) -> dict:
+    """통계 반환 (source_type 필터 지원)"""
     conn = _conn()
     try:
-        total = conn.execute("SELECT COUNT(*) c FROM products").fetchone()["c"]
+        where = f" WHERE source_type='{source_type}'" if source_type else ""
+        total = conn.execute(f"SELECT COUNT(*) c FROM products{where}").fetchone()["c"]
 
         # 사이트별 통계 (카테고리 + 브랜드)
         site_rows = conn.execute("""
@@ -448,13 +449,16 @@ def get_stats() -> dict:
 
 
 def search_products(query="", site_id="", category_id="", brand="",
-                    cafe_status="", page=1, per_page=50) -> dict:
-    """상품 검색 (페이지네이션)"""
+                    cafe_status="", page=1, per_page=50, source_type="") -> dict:
+    """상품 검색 (페이지네이션, source_type 필터)"""
     conn = _conn()
     try:
         conditions = []
         params = []
 
+        if source_type:
+            conditions.append("source_type = ?")
+            params.append(source_type)
         if query:
             conditions.append("(name_ko LIKE ? OR product_code LIKE ? OR brand_ko LIKE ?)")
             q = f"%{query}%"
@@ -539,12 +543,15 @@ def delete_by_ids(ids: list) -> int:
         conn.close()
 
 
-def export_all(query="", site_id="", brand="") -> list:
+def export_all(query="", site_id="", brand="", source_type="") -> list:
     """전체 상품 내보내기 (필터 적용 가능)"""
     conn = _conn()
     try:
         conditions = []
         params = []
+        if source_type:
+            conditions.append("source_type = ?")
+            params.append(source_type)
         if query:
             conditions.append("(name_ko LIKE ? OR product_code LIKE ? OR brand_ko LIKE ?)")
             q = f"%{query}%"
@@ -707,12 +714,15 @@ def merge_products(csv_rows: list) -> dict:
         conn.close()
 
 
-def export_csv(query="", site_id="", brand="") -> list:
+def export_csv(query="", site_id="", brand="", source_type="") -> list:
     """전체 상품 CSV 내보내기용 데이터 (필터 적용 가능)"""
     conn = _conn()
     try:
         conditions = []
         params = []
+        if source_type:
+            conditions.append("source_type = ?")
+            params.append(source_type)
         if query:
             conditions.append("(name_ko LIKE ? OR product_code LIKE ? OR brand_ko LIKE ?)")
             q = f"%{query}%"
