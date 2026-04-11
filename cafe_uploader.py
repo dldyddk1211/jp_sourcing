@@ -746,9 +746,28 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
         else:
             price_info = calc_buying_price(product.get("price_jpy", 0))
 
-        # 게시글 제목 & 내용 생성 (Claude API 우선, 실패 시 기본 템플릿)
+        # sizes가 문자열이면 JSON 파싱
+        import json as _json2
+        if isinstance(product.get("sizes"), str):
+            try:
+                product["sizes"] = _json2.loads(product["sizes"])
+            except Exception:
+                product["sizes"] = []
+
+        # 게시글 제목 & 내용 생성 (빈티지: 기본 템플릿, 스포츠: AI)
         from post_generator import generate_cafe_post, get_detail_image_urls
-        post = generate_cafe_post(product, price_info)
+        if source_type == "vintage":
+            # 빈티지는 자체 템플릿 사용 (AI 제목 생성 불필요)
+            title = make_post_title(product, price_info)
+            content = make_post_content(product, price_info)
+            content_intro, content_detail = content, ""
+            detail_images = get_detail_image_urls(product)
+            tags = [product.get("brand", ""), "빈티지", "명품", "구매대행", "일본"]
+            tags = [t for t in tags if t]
+            post = {"title": title, "content": content, "tags": tags,
+                    "content_intro": content_intro, "content_detail": content_detail}
+        else:
+            post = generate_cafe_post(product, price_info)
         if post is None:
             _log("❌ AI 제목 생성 실패 — 이 상품 건너뜀")
             return False, "AI 제목 생성 실패"
