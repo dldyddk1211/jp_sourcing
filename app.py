@@ -392,6 +392,48 @@ def get_active_biz_info():
     return jsonify({"ok": True, **biz})
 
 
+@app.route(f"{URL_PREFIX}/api/vintage-cafe-products")
+@admin_required
+def vintage_cafe_products():
+    """빈티지 카페 업로드용 상품 목록 (B2C 가격, 전체)"""
+    from product_db import _conn
+    conn = _conn()
+    try:
+        rows = conn.execute("""
+            SELECT id, site_id, product_code, internal_code, name, name_ko, brand, brand_ko,
+                   price_jpy, img_url, link, condition_grade, cafe_status, cafe_uploaded_at,
+                   description, description_ko, color, material
+            FROM products WHERE source_type='vintage' AND in_stock=1
+            ORDER BY created_at DESC
+        """).fetchall()
+        products = []
+        brands_set = set()
+        for r in rows:
+            b2c = _calc_vintage_price(r["price_jpy"], "b2c")
+            name = r["name_ko"] if r["name_ko"] and r["name_ko"] != r["name"] else r["name"]
+            brand = r["brand"]
+            brands_set.add(brand)
+            products.append({
+                "id": r["id"],
+                "product_code": r["internal_code"] or r["product_code"],
+                "name": name,
+                "brand": brand,
+                "price_jpy": r["price_jpy"],
+                "price_krw": b2c,
+                "img_url": r["img_url"],
+                "link": r["link"],
+                "condition_grade": r["condition_grade"] or "",
+                "cafe_status": r["cafe_status"] or "대기",
+                "cafe_uploaded_at": r["cafe_uploaded_at"] or "",
+                "description": r["description_ko"] or r["description"] or "",
+                "color": r["color"] or "",
+                "material": r["material"] or "",
+            })
+        return jsonify({"ok": True, "products": products, "brands": sorted(brands_set), "total": len(products)})
+    finally:
+        conn.close()
+
+
 @app.route("/robots.txt")
 def robots_txt():
     return Response(

@@ -6123,22 +6123,23 @@ let vtCafePage = 1;
 const VT_CAFE_PER_PAGE = 30;
 
 async function loadVtCafeProducts() {
+  const tbody = document.getElementById("vt-cafe-tbody");
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px;">상품 로딩 중...</td></tr>';
   try {
-    const res = await fetch(PREFIX + "/shop/api/products?per_page=500&sort=newest");
+    const res = await fetch(PREFIX + "/api/vintage-cafe-products");
     const d = await res.json();
-    vtCafeProducts = (d.products || []).map(p => ({
-      ...p,
-      cafe_status: p.cafe_status || "대기",
-    }));
+    if (!d.ok) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--red);padding:30px;">로드 실패</td></tr>'; return; }
+    vtCafeProducts = d.products || [];
     // 브랜드 필터 채우기
-    const brands = [...new Set(vtCafeProducts.map(p => p.brand))].sort();
+    const brands = d.brands || [];
     const sel = document.getElementById("vt-cafe-brand-filter");
     if (sel) {
-      sel.innerHTML = '<option value="">전체 브랜드</option>' + brands.map(b => `<option value="${b}">${b}</option>`).join("");
+      sel.innerHTML = '<option value="">전체 브랜드 (' + brands.length + ')</option>' + brands.map(b => `<option value="${b}">${b}</option>`).join("");
     }
+    addLog(`☕ 빈티지 카페 상품 로드: ${vtCafeProducts.length}개 (B2C 가격)`, "info");
     updateVtCafeSummary();
     renderVtCafeTable();
-  } catch(e) { console.error("빈티지 카페 로드 실패", e); }
+  } catch(e) { console.error("빈티지 카페 로드 실패", e); tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--red);padding:30px;">로드 실패: ' + e + '</td></tr>'; }
 }
 
 function updateVtCafeSummary() {
