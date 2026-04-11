@@ -757,13 +757,58 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
         # 게시글 제목 & 내용 생성 (빈티지: 기본 템플릿, 스포츠: AI)
         from post_generator import generate_cafe_post, get_detail_image_urls
         if source_type == "vintage":
-            # 빈티지는 자체 템플릿 사용 (AI 제목 생성 불필요)
+            # 빈티지는 자체 템플릿 사용
+            import random as _rnd
             title = make_post_title(product, price_info)
             content = make_post_content(product, price_info)
             content_intro, content_detail = content, ""
             detail_images = get_detail_image_urls(product)
-            tags = [product.get("brand", ""), "빈티지", "명품", "구매대행", "일본"]
-            tags = [t for t in tags if t]
+
+            # 필수 태그 4개: 구매대행 랜덤 + 빈티지 랜덤 + 브랜드 + 카테고리
+            tag_buying = _rnd.choice(["일본구매대행", "일본구대"])
+            tag_vintage = _rnd.choice(["빈티지", "중고명품"])
+            tag_brand = product.get("brand", "")
+            # 카테고리 추출 (상품명에서)
+            _cat_map = {"숄더백":"숄더백","토트백":"토트백","핸드백":"핸드백","백팩":"백팩","클러치":"클러치백","지갑":"지갑","벨트":"벨트","선글라스":"선글라스","모자":"모자","자켓":"자켓","코트":"코트","팬츠":"팬츠","스커트":"스커트","원피스":"원피스","파우치":"파우치","보스턴백":"보스턴백",
+                "ショルダーバッグ":"숄더백","トートバッグ":"토트백","ハンドバッグ":"핸드백","リュック":"백팩","財布":"지갑","ベルト":"벨트","サングラス":"선글라스","ジャケット":"자켓","コート":"코트","ポーチ":"파우치","ボストンバッグ":"보스턴백"}
+            tag_cat = ""
+            _pname = product.get("name_ko") or product.get("name", "")
+            for k, v in _cat_map.items():
+                if k in _pname:
+                    tag_cat = v
+                    break
+            if not tag_cat:
+                tag_cat = "명품가방"
+
+            must_tags = [tag_buying, tag_vintage, tag_brand, tag_cat]
+            must_tags = [t for t in must_tags if t]
+
+            # AI 추천 태그 6개
+            ai_tags = []
+            try:
+                from post_generator import get_ai_config, _call_openai, _call_gemini
+                config = get_ai_config()
+                tag_prompt = f"다음 중고 명품 상품에 대해 네이버 카페 검색에 효과적인 한국어 태그 6개를 쉼표로 구분해서 추천해주세요. 태그만 출력하세요.\n브랜드: {tag_brand}\n상품명: {_pname}\n카테고리: {tag_cat}"
+                tag_result = ""
+                if config.get("openai_key"):
+                    try: tag_result = _call_openai(tag_prompt)
+                    except: pass
+                if not tag_result and config.get("gemini_key"):
+                    try: tag_result = _call_gemini(tag_prompt)
+                    except: pass
+                if tag_result:
+                    ai_tags = [t.strip().replace("#","") for t in tag_result.split(",") if t.strip()][:6]
+                    _log(f"   🏷️ AI 추천 태그: {', '.join(ai_tags)}")
+            except Exception as e:
+                _log(f"   ⚠️ AI 태그 추천 실패: {e}")
+
+            tags = must_tags + ai_tags
+            tags = list(dict.fromkeys(tags))  # 중복 제거 (순서 유지)
+            tags = tags[:10]  # 최대 10개
+
+            # 제목에도 필수 키워드 포함
+            title = f"{tag_buying} {tag_vintage} {title}"
+
             post = {"title": title, "content": content, "tags": tags,
                     "content_intro": content_intro, "content_detail": content_detail}
         else:
