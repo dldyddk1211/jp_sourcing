@@ -1700,6 +1700,19 @@ async def type_content_to_editor_iframe(page, frame_locator, content: str, log=N
 
     await asyncio.sleep(0.5)
 
+    # 커서를 템플릿 맨 끝으로 이동 + 엔터 2번 (빈줄 삽입)
+    try:
+        await target_el.press("Control+End")
+        await asyncio.sleep(0.3)
+        await page.keyboard.press("Enter")
+        await asyncio.sleep(0.1)
+        await page.keyboard.press("Enter")
+        await asyncio.sleep(0.3)
+        if log:
+            log("   ✅ 템플릿 끝에서 빈줄 2줄 삽입 완료")
+    except Exception:
+        pass
+
     # 툴바 locator (frame_locator와 다를 수 있음)
     tb = toolbar_locator if toolbar_locator else frame_locator
 
