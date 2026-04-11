@@ -2834,9 +2834,9 @@ async def upload_image_from_url(page, img_url: str):
 # =============================================
 
 def make_post_title(product: dict, price_info: dict) -> str:
-    """게시글 제목 생성"""
+    """게시글 제목 생성 (일본어 자동 번역)"""
     source_type = product.get("source_type", "sports")
-    name = product.get("name_ko") or product.get("name", "상품명 없음")
+    name = _ensure_korean(product.get("name_ko") or product.get("name", "상품명 없음"))
     brand = product.get("brand_ko") or product.get("brand", "")
     price_krw = format_price(price_info["price_final"])
 
@@ -2865,17 +2865,33 @@ def make_post_content(product: dict, price_info: dict) -> str:
     return _make_sports_content(product, price_info)
 
 
+def _ensure_korean(text: str) -> str:
+    """일본어가 남아있으면 AI 번역, 없으면 그대로 반환"""
+    if not text or not text.strip():
+        return text
+    import re
+    if re.search(r'[\u3040-\u309F\u30A0-\u30FF]', text):
+        try:
+            from translator import translate_ja_ko
+            translated = translate_ja_ko(text)
+            if translated:
+                return translated
+        except Exception:
+            pass
+    return text
+
+
 def _make_vintage_content(product: dict, price_info: dict) -> str:
-    """빈티지 상품 카페 게시글 본문"""
-    name = product.get("name_ko") or product.get("name", "")
+    """빈티지 상품 카페 게시글 본문 (모든 필드 한국어 보장)"""
+    name = _ensure_korean(product.get("name_ko") or product.get("name", ""))
     brand = product.get("brand", "")
     code = product.get("product_code", "")
     grade = product.get("condition_grade", "")
     grade_labels = {"NS":"신품/미사용","S":"중고S (최상)","A":"중고A (양호)","B":"중고B (사용감 있음)","C":"중고C (사용감 많음)","D":"중고D (난있음)"}
     grade_text = grade_labels.get(grade, grade)
-    material = product.get("material", "")
-    color = product.get("color", "")
-    desc = product.get("description_ko") or product.get("description", "")
+    material = _ensure_korean(product.get("material", ""))
+    color = _ensure_korean(product.get("color", ""))
+    desc = _ensure_korean(product.get("description_ko") or product.get("description", ""))
     price_krw = format_price(price_info["price_final"])
 
     # B2B 가격 (5% 할인)
@@ -2923,8 +2939,8 @@ def _make_vintage_content(product: dict, price_info: dict) -> str:
 
 
 def _make_sports_content(product: dict, price_info: dict) -> str:
-    """스포츠 상품 카페 게시글 본문 (기존)"""
-    name = product.get("name_ko") or product.get("name", "상품명 없음")
+    """스포츠 상품 카페 게시글 본문 (모든 필드 한국어 보장)"""
+    name = _ensure_korean(product.get("name_ko") or product.get("name", "상품명 없음"))
     name_ja = product.get("name", "")
     brand = product.get("brand_ko") or product.get("brand", "")
     link = product.get("link", "")
