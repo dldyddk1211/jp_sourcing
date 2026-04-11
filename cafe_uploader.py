@@ -823,10 +823,11 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
         detail_images = get_detail_image_urls(product)
 
         # ── 1단계: 글쓰기 페이지로 직접 이동 ──
-        # 네이버 카페 URL 형식이 변경될 수 있으므로 여러 형식 시도
+        # 빈티지: menuId=159 (빈티지 구매대행), 스포츠: menuId=100 (스포츠 브랜드)
+        menu_id = "159" if source_type == "vintage" else CAFE_MENU_ID
         write_urls = [
-            f"https://cafe.naver.com/ca-fe/cafes/{CAFE_ID}/articles/write?boardType=L&menuId={CAFE_MENU_ID}",
-            f"https://cafe.naver.com/f-e/cafes/{CAFE_ID}/articles/write?menuId={CAFE_MENU_ID}",
+            f"https://cafe.naver.com/ca-fe/cafes/{CAFE_ID}/articles/write?boardType=L&menuId={menu_id}",
+            f"https://cafe.naver.com/f-e/cafes/{CAFE_ID}/articles/write?menuId={menu_id}",
         ]
         page_loaded = False
         for try_url in write_urls:
