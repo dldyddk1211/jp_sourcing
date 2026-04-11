@@ -3755,10 +3755,16 @@ async function unlockStatus() {
 
 async function post(path, body) {
   try {
+    addLog(`📡 서버 요청: POST ${path}`, "info");
     const r = await fetch(PREFIX + path, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+    if (!r.ok) {
+      addLog(`❌ 서버 응답 오류: ${r.status} ${r.statusText}`, "err");
+      return null;
+    }
     const d = await r.json();
-    addLog("\uD83D\uDE80 " + d.message, "info");
-  } catch(e) { addLog("\u274C \uC694\uCCAD \uC2E4\uD328: " + e, "err"); }
+    addLog("🚀 " + d.message, "info");
+    return d;
+  } catch(e) { addLog("❌ 요청 실패: " + e, "err"); return null; }
 }
 
 function addLog(msg, cls="") {
