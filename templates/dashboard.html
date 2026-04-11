@@ -1772,6 +1772,15 @@
         </div>
         <div id="vt-cafe-pagination" style="display:flex;justify-content:center;gap:4px;margin-top:12px;"></div>
       </div>
+
+      <!-- 빈티지 카페 업로드 로그 -->
+      <div class="panel" style="margin-top:16px;">
+        <div class="panel-title">
+          <span>&#x1f4cb; 업로드 로그</span>
+          <button class="btn b-gray" onclick="document.getElementById('vt-cafe-log').innerHTML=''" style="padding:4px 10px;font-size:0.72rem;">로그 지우기</button>
+        </div>
+        <div id="vt-cafe-log" class="log-box" style="height:300px;overflow-y:auto;background:#0a0b0f;border:1px solid var(--border);border-radius:8px;padding:10px;font-family:monospace;font-size:0.75rem;line-height:1.8;color:var(--muted);"></div>
+      </div>
     </div>
 
     <!-- ═══ 빅데이터 관리 ═══ -->
@@ -6235,6 +6244,17 @@ function selectAllVtCafe(checked) {
   document.querySelectorAll(".vt-cafe-chk:not(:disabled)").forEach(c => c.checked = checked);
 }
 
+function vtCafeLog(msg, cls="") {
+  const el = document.getElementById("vt-cafe-log");
+  if (!el) return;
+  const t = new Date().toLocaleTimeString();
+  const d = document.createElement("div");
+  d.style.color = cls === "ok" ? "var(--green)" : cls === "err" ? "var(--red)" : "var(--muted)";
+  d.textContent = `[${t}] ${msg}`;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
 async function vtCafeUpload() {
   const checked = [...document.querySelectorAll(".vt-cafe-chk:checked")].map(c => c.dataset.code);
   if (!checked.length) { alert("업로드할 상품을 선택해주세요"); return; }
@@ -6243,14 +6263,46 @@ async function vtCafeUpload() {
   const delayMin = parseInt(document.getElementById("vt-cafe-delay-min").value) || 8;
   const delayMax = parseInt(document.getElementById("vt-cafe-delay-max").value) || 13;
   if (!confirm(`${checked.length}개 상품 중 최대 ${max}개를 카페에 업로드합니다.\n${shuffle?'브랜드 셔플 ON':'순서대로'}\n대기시간: ${delayMin}~${delayMax}분\n\n진행하시겠습니까?`)) return;
+
+  vtCafeLog(`🚀 업로드 시작: ${checked.length}개 선택, 최대 ${max}개`, "ok");
+  document.getElementById("btn-vt-cafe-stop").style.display = "";
+
   try {
     const r = await fetch(PREFIX + "/run/upload", {
       method: "POST", headers: {"Content-Type":"application/json"},
       body: JSON.stringify({checked_codes: checked.slice(0, max), max_upload: max, shuffle_brands: shuffle, delay_min: delayMin, delay_max: delayMax, source_type: "vintage"})
     });
     const d = await r.json();
+    vtCafeLog("🚀 " + (d.message || "업로드 요청 완료"), d.ok ? "ok" : "err");
     addLog("🚀 " + (d.message || "빈티지 카페 업로드 시작"), "ok");
-  } catch(e) { addLog("❌ 업로드 요청 실패: " + e, "err"); }
+    // SSE 로그 수신 시작
+    startVtCafeLogStream();
+  } catch(e) {
+    vtCafeLog("❌ 업로드 요청 실패: " + e, "err");
+    addLog("❌ 업로드 요청 실패: " + e, "err");
+  }
+}
+
+let _vtCafeLogSSE = null;
+function startVtCafeLogStream() {
+  if (_vtCafeLogSSE) _vtCafeLogSSE.close();
+  _vtCafeLogSSE = new EventSource(PREFIX + "/logs/stream");
+  _vtCafeLogSSE.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d.message && !d.message.includes("heartbeat")) {
+        vtCafeLog(d.message);
+        // 업로드 완료 감지
+        if (d.message.includes("업로드 완료") || d.message.includes("업로드 중단")) {
+          document.getElementById("btn-vt-cafe-stop").style.display = "none";
+          loadVtCafeProducts();
+        }
+      }
+    } catch(ex) {
+      if (e.data && !e.data.includes("heartbeat")) vtCafeLog(e.data);
+    }
+  };
+  _vtCafeLogSSE.onerror = () => { _vtCafeLogSSE.close(); _vtCafeLogSSE = null; };
 }
 
 async function vtCafeCheck() {
@@ -6267,7 +6319,10 @@ async function vtCafeCheck() {
 
 function vtCafeStop() {
   fetch(PREFIX + "/run/upload-stop", {method: "POST"}).catch(()=>{});
+  vtCafeLog("⏹ 업로드 중지 요청", "err");
   addLog("⏹ 업로드 중지 요청", "info");
+  document.getElementById("btn-vt-cafe-stop").style.display = "none";
+  if (_vtCafeLogSSE) { _vtCafeLogSSE.close(); _vtCafeLogSSE = null; }
 }
 loadSites();
 loadScrapeHistory();
