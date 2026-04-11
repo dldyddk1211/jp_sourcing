@@ -1158,8 +1158,19 @@ async function loadShop(page = 1) {
       const idx = allProducts.findIndex(p => p.product_code === urlCode);
       if (idx >= 0) {
         openModal(idx);
-        // 파라미터 제거 (뒤로가기 시 다시 안 열리게)
         history.replaceState(null, "", location.pathname);
+      } else {
+        // 현재 페이지에 없으면 API로 직접 조회
+        fetch(PREFIX + "/shop/api/product-by-code?code=" + encodeURIComponent(urlCode))
+          .then(r => r.json()).then(d => {
+            if (d.ok && d.product) {
+              const p = d.product;
+              p.product_code = urlCode;
+              allProducts.unshift(p);
+              openModal(0);
+              history.replaceState(null, "", location.pathname);
+            }
+          }).catch(() => {});
       }
     }
   } catch(e) {
