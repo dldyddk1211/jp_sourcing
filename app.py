@@ -119,7 +119,16 @@ def naver_callback():
     """네이버 로그인 콜백"""
     code = request.args.get("code", "")
     state = request.args.get("state", "")
-    if not code or state != session.pop("naver_state", ""):
+    error = request.args.get("error", "")
+    if error:
+        logger.warning(f"네이버 로그인 거부: {error} - {request.args.get('error_description','')}")
+        return redirect(f"{URL_PREFIX}/login")
+    if not code:
+        return redirect(f"{URL_PREFIX}/login")
+    # state 검증 (세션 유실 시에도 진행 허용)
+    saved_state = session.pop("naver_state", "")
+    if saved_state and state != saved_state:
+        logger.warning(f"네이버 state 불일치: {state} != {saved_state}")
         return redirect(f"{URL_PREFIX}/login")
 
     callback = NAVER_CALLBACK_URL
