@@ -2916,7 +2916,8 @@ def _make_vintage_content(product: dict, price_info: dict) -> str:
 
     content += f"""
 
-🛒 쇼핑몰에서 상세 보기: {shop_url}"""
+🛒 쇼핑몰에서 상세 보기
+{shop_url}"""
 
     return content.strip()
 
