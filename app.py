@@ -415,9 +415,10 @@ def shop():
     """고객용 빈티지 상품 카탈로그 (비회원도 접근 가능)"""
     logged_in = session.get("logged_in", False)
     user_level = session.get("level", "b2c") if logged_in else "guest"
+    display_name = session.get("name", "") or session.get("username", "")
     return render_template("shop.html",
                            url_prefix=URL_PREFIX, env=APP_ENV,
-                           username=session.get("username", ""),
+                           username=display_name,
                            is_admin=session.get("role", "") == "admin",
                            user_level=user_level,
                            logged_in=logged_in)
