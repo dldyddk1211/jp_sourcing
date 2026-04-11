@@ -2771,63 +2771,37 @@ def _make_vintage_content(product: dict, price_info: dict) -> str:
 
     shop_url = f"https://vintage.theone-biz.com/shop?code={code}"
 
-    content = f"""🛒 일본 빈티지 쇼핑몰 바로가기
-실시간 재고 확인과 상세 이미지를 확인하세요!
-👉 vintage.theone-biz.com
-
-💼 사업자 회원 5% 할인! B2B 파트너 모집 중!
-사업자 등록 시 모든 상품 5% 자동 할인 적용
-
-📝 구매 문의: 카페 [주문/문의] 게시판
+    # 상품 상세 정보 (템플릿 위에 삽입되는 부분)
+    content = f"""[{brand}] {name}
 
 ━━━━━━━━━━━━━━━━━━
 
-[{brand}] {name}
-
-상품번호: {code}
-상태: {grade_text}
-
-━━━━━━━━━━━━━━━━━━
-
-✅ 구매대행가: {price_krw}
-💼 사업자 회원가: {b2b_text} (5% 할인)
-
-(관부가세/해외배송비 별도)
-
-━━━━━━━━━━━━━━━━━━"""
+📋 상품 정보
+• 상품번호: {code}
+• 상태: {grade_text}"""
 
     if material:
-        content += f"\n소재: {material}"
+        content += f"\n• 소재: {material}"
     if color:
-        content += f"\n사이즈: {color}"
-
-    if desc and len(desc) > 10:
-        content += f"\n\n📋 상품 설명:\n{desc[:300]}"
+        content += f"\n• 사이즈: {color}"
 
     content += f"""
 
 ━━━━━━━━━━━━━━━━━━
 
-🛒 온라인 구매: {shop_url}
-💬 카카오톡 상담: TheOne Vintage 채널
+💰 가격 안내
+✅ 구매대행가: {price_krw}
+💼 사업자 회원가: {b2b_text} (5% 할인)
+※ 관부가세/해외배송비 별도
 
-━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━"""
 
-⚠️ 구매 전 꼭 확인해 주세요!
-• 빈티지 상품은 세월의 흔적이나 미세한 사용감이 있을 수 있습니다.
-• 쇼핑몰의 상세 사진과 설명을 충분히 확인 후 신중한 구매 부탁드립니다.
-• 현지 주문 완료 후 단순 변심 교환/반품이 어렵습니다.
+    if desc and len(desc) > 10:
+        content += f"\n\n📝 상품 상세 설명\n{desc[:500]}\n\n━━━━━━━━━━━━━━━━━━"
 
-━━━━━━━━━━━━━━━━━━
+    content += f"""
 
-★ TheOne Vintage ★
-일본 현지 프리미엄 빈티지 구매대행 전문
-✔ 정품 보증 ✔ 안전 배송 ✔ 실시간 환율 적용
-
-💼 사업자 회원 혜택
-✔ 전 상품 B2C 대비 5% 할인
-✔ 대량 구매 추가 상담 가능
-▶ 회원가입: vintage.theone-biz.com"""
+🛒 쇼핑몰에서 상세 보기: {shop_url}"""
 
     return content.strip()
 
