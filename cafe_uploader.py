@@ -731,8 +731,20 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
             log(msg)
 
     try:
-        # 가격 계산
-        price_info = calc_buying_price(product.get("price_jpy", 0))
+        # 가격 계산 (빈티지/스포츠 분기)
+        source_type = product.get("source_type", "sports")
+        if source_type == "vintage":
+            import math as _math
+            from app import _calc_vintage_price, get_cached_rate
+            jpy = product.get("price_jpy", 0)
+            b2c = _calc_vintage_price(jpy, "b2c")
+            price_info = {
+                "price_jpy": jpy,
+                "rate": round(get_cached_rate() or 9.23, 2),
+                "price_final": b2c,
+            }
+        else:
+            price_info = calc_buying_price(product.get("price_jpy", 0))
 
         # 게시글 제목 & 내용 생성 (Claude API 우선, 실패 시 기본 템플릿)
         from post_generator import generate_cafe_post, get_detail_image_urls
