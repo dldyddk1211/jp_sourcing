@@ -516,8 +516,9 @@ async def upload_products(products: list, status_callback=None, max_upload=None,
                 code = product.get("product_code", "")
                 uploaded = False
 
-                # ── 세션 내 중복 즉시 차단 ──
-                if code and code in uploaded_codes_session:
+                # ── 세션 내 중복 즉시 차단 (코드 + 상품명 기준) ──
+                dup_key = code or f"{product.get('brand','')}-{product.get('name','')}"
+                if dup_key in uploaded_codes_session:
                     log(f"   ⏩ [{i}/{len(upload_list)}] 스킵: {name_short} — 이번 세션에서 이미 업로드됨")
                     continue
 
@@ -557,7 +558,7 @@ async def upload_products(products: list, status_callback=None, max_upload=None,
                                     log(f"      📝 JSON 상태 → 완료")
                                 except Exception as json_err:
                                     log(f"      ⚠️ JSON 업데이트 실패: {json_err}")
-                            uploaded_codes_session.add(code)
+                            uploaded_codes_session.add(dup_key)
                             continue
                         log(f"   ✅ [{i}/{len(upload_list)}] 중복 없음 — 업로드 진행")
                         # 검색 후 글쓰기 페이지로 다시 이동해야 하므로 카페 홈으로 복귀
@@ -573,8 +574,7 @@ async def upload_products(products: list, status_callback=None, max_upload=None,
                     result = await upload_single_product(page, product, log)
                     if result:
                         success_count += 1
-                        if code:
-                            uploaded_codes_session.add(code)
+                        uploaded_codes_session.add(dup_key)
                         post_url = result if isinstance(result, str) else ""
                         log(f"   ✅ 업로드 성공 ({success_count}개 완료)")
                         notify_upload_success(name_short, success_count, len(upload_list), post_url)
@@ -605,7 +605,7 @@ async def upload_products(products: list, status_callback=None, max_upload=None,
                                 if already:
                                     log(f"   ✅ 실제로는 등록됨 확인! (결과 확인만 실패)")
                                     success_count += 1
-                                    uploaded_codes_session.add(code)
+                                    uploaded_codes_session.add(dup_key)
                                     notify_upload_success(name_short, success_count, len(upload_list), "")
                                     try:
                                         from product_db import update_cafe_status
