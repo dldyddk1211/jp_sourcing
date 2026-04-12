@@ -1992,18 +1992,18 @@
           </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;">
           <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;">
-            <div style="font-size:0.72rem;color:var(--muted);">NAS 경로</div>
-            <div id="nas-path" style="font-size:0.78rem;color:var(--text);margin-top:4px;word-break:break-all;">-</div>
-          </div>
-          <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;">
-            <div style="font-size:0.72rem;color:var(--muted);">NAS DB 상태</div>
+            <div style="font-size:0.72rem;color:var(--muted);">NAS DB (원본)</div>
             <div id="nas-db-status" style="font-size:0.78rem;margin-top:4px;">-</div>
           </div>
           <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;">
-            <div style="font-size:0.72rem;color:var(--muted);">NAS DB 수정시간</div>
+            <div style="font-size:0.72rem;color:var(--muted);">NAS 수정시간</div>
             <div id="nas-mtime" style="font-size:0.78rem;color:var(--text);margin-top:4px;">-</div>
+          </div>
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;">
+            <div style="font-size:0.72rem;color:var(--muted);">로컬 DB (서버)</div>
+            <div id="local-db-status" style="font-size:0.78rem;margin-top:4px;">-</div>
           </div>
           <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;">
             <div style="font-size:0.72rem;color:var(--muted);">마지막 동기화</div>
@@ -2012,10 +2012,11 @@
         </div>
 
         <div style="padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:0.78rem;color:var(--muted);">
-          <b>동기화 방식:</b><br>
-          &#x1f5a5; 윈도우 스크래핑 PC → <code>Z:\VOL1\파일공유\00 이용아\thone\srv\data\jp_sourcing\db\products.db</code> 저장<br>
-          &#x1f4bb; 맥 서버 → 매시 30분 NAS에서 자동 읽어서 로컬 DB 병합<br>
-          &#x2705; 수동 동기화: 위 "지금 동기화" 버튼
+          <b>동기화 흐름:</b><br>
+          &#x1f5a5; <b>윈도우 PC</b>: 스크래핑 → NAS <code>products.db</code> 저장<br>
+          &#x1f4bb; <b>맥미니 서버</b>: 매시 30분 NAS → 로컬 <code>products.db</code> 병합 (변경분만)<br>
+          &#x1f310; <b>쇼핑몰 고객</b>: 로컬 DB에서 빠르게 응답<br>
+          &#x1f4c2; <b>기타 설정/DB</b>: NAS 공유 폴더에서 직접 사용
         </div>
 
         <!-- 동기화 로그 -->
@@ -7206,12 +7207,14 @@ async function loadNasStatus() {
     const r = await fetch(PREFIX + "/api/nas-sync/status");
     const d = await r.json();
     if (d.ok) {
-      document.getElementById("nas-path").textContent = d.nas_path || "-";
       document.getElementById("nas-db-status").innerHTML = d.nas_exists
         ? `<span style="color:var(--green);">연결됨 (${(d.nas_size/1024/1024).toFixed(1)}MB)</span>`
-        : `<span style="color:var(--red);">없음 — NAS 마운트 확인 필요</span>`;
+        : `<span style="color:var(--red);">없음 — NAS 마운트 확인</span>`;
       document.getElementById("nas-mtime").textContent = d.nas_mtime || "-";
-      document.getElementById("nas-last-sync").textContent = d.last_sync || "동기화 기록 없음";
+      document.getElementById("local-db-status").innerHTML = d.local_size
+        ? `<span style="color:var(--green);">${(d.local_size/1024/1024).toFixed(1)}MB</span>`
+        : `<span style="color:var(--dim);">없음</span>`;
+      document.getElementById("nas-last-sync").textContent = d.last_sync || "기록 없음";
     }
   } catch(e) { console.error(e); }
 }

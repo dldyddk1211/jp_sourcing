@@ -1,13 +1,12 @@
 """
 data_manager.py
-서버 로컬 데이터 경로 관리
+서버 데이터 경로 관리
 
 구조:
-  Mac:     ~/Documents/theone/srv/data/jp_sourcing/
-  Windows: ~/Documents/theone/srv/data/jp_sourcing/
-  하위:    db/, outputs/, logs/
-
-※ NAS는 백업용으로만 사용 (기본 저장은 서버 로컬)
+  공유폴더(NAS): /Volumes/파일공유/00 이용아/thone/srv/data/jp_sourcing/
+    → products.db, 스케줄, AI설정, 이미지 등 모든 데이터
+  로컬:          기존 경로
+    → users.db (회원/주문/장바구니 — 외부 접근 쇼핑몰 전용)
 """
 
 import json
@@ -19,7 +18,10 @@ logger = logging.getLogger(__name__)
 
 PROJECT_NAME = "jp_sourcing"
 
-# OS별 기본 경로 (서버 로컬)
+# NAS 공유 폴더 경로
+NAS_SHARED_PATH = "/Volumes/파일공유/00 이용아/thone/srv/data/jp_sourcing"
+
+# OS별 기본 경로 (로컬 — users.db 전용 폴백)
 _home = os.path.expanduser("~")
 _DEFAULT_PATHS = {
     "Darwin":  os.path.join(_home, "Documents", "theone", "srv", "data", PROJECT_NAME),
@@ -101,8 +103,24 @@ def set_data_root(path: str) -> bool:
 
 
 def get_path(subdir: str) -> str:
-    """하위 경로 반환 (예: get_path('db') → .../jp_sourcing/db)"""
+    """하위 경로 반환 — NAS 공유 폴더 우선, 없으면 로컬 폴백
+    대부분의 데이터는 NAS에 저장 (스케줄, AI설정, 히스토리, 이미지 등)
+    """
+    nas_path = os.path.join(NAS_SHARED_PATH, SUBDIRS.get(subdir, subdir))
+    if os.path.isdir(NAS_SHARED_PATH):
+        os.makedirs(nas_path, exist_ok=True)
+        return nas_path
     return os.path.join(get_data_root(), SUBDIRS.get(subdir, subdir))
+
+
+def get_local_path(subdir: str) -> str:
+    """로컬 전용 경로 — 외부 접속 속도가 중요한 DB용
+    products.db (쇼핑몰 상품 리스트) → 고객 접속 시 빠른 응답 필요
+    """
+    local_root = get_data_root()
+    path = os.path.join(local_root, SUBDIRS.get(subdir, subdir))
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def is_connected() -> bool:
