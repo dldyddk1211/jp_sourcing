@@ -104,7 +104,7 @@ _SITE_CODE = {
 _internal_code_counter = {}
 
 def _generate_internal_code(conn, site_id: str) -> str:
-    """사이트별 고유번호 생성: S-260331-0001 (배치 내 중복 방지)"""
+    """사이트별 고유번호 생성: S-260331-0001 (중복 방지 강화)"""
     prefix = _SITE_CODE.get(site_id, site_id[0].upper())
     today = datetime.now().strftime("%y%m%d")
     key = f"{prefix}-{today}"
@@ -114,19 +114,20 @@ def _generate_internal_code(conn, site_id: str) -> str:
         _internal_code_counter[key] += 1
         return f"No.{key}-{_internal_code_counter[key]:04d}"
 
-    # DB에서 마지막 번호 조회
-    row = conn.execute(
-        "SELECT internal_code FROM products WHERE internal_code LIKE ? ORDER BY internal_code DESC LIMIT 1",
+    # DB에서 해당 날짜의 모든 번호를 가져와 최대값 찾기
+    rows = conn.execute(
+        "SELECT internal_code FROM products WHERE internal_code LIKE ?",
         (f"No.{prefix}-{today}-%",)
-    ).fetchone()
-    if row and row["internal_code"]:
+    ).fetchall()
+    max_num = 0
+    for row in rows:
         try:
-            last_num = int(row["internal_code"].split("-")[-1])
-            next_num = last_num + 1
+            num = int(row["internal_code"].split("-")[-1])
+            if num > max_num:
+                max_num = num
         except (ValueError, IndexError):
-            next_num = 1
-    else:
-        next_num = 1
+            pass
+    next_num = max_num + 1
     _internal_code_counter[key] = next_num
     return f"No.{key}-{next_num:04d}"
 
