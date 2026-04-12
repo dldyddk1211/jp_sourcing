@@ -3182,7 +3182,7 @@ def _start_scheduler_once():
     logger.info(f"📅 스케줄러 초기화 ({env_label})")
 
     if is_windows:
-        # ── 윈도우 전용: 수집 관련 스케줄 ──
+        # ── 윈도우 전용: 수집 + NAS 내보내기 ──
         _register_task_schedule_jobs()     # 자동 수집/체크/콤보
         _register_check_schedule_job()     # 업로드 체크
         # 오류 작업 자동 재시도 (매일 23:00)
@@ -3192,6 +3192,17 @@ def _start_scheduler_once():
             id="retry_failed_tasks", replace_existing=True,
             name="오류 작업 자동 재시도 (23:00)",
         )
+        # 매시 NAS로 products.db 내보내기
+        try:
+            scheduler.add_job(
+                func=export_products_to_nas,
+                trigger="cron", minute=0,
+                id="nas_export", replace_existing=True,
+                name="NAS 상품 내보내기 (매시 정각)",
+            )
+            logger.info("📤 [Windows] NAS 내보내기 등록 (매시 정각)")
+        except NameError:
+            pass
         logger.info("🔄 [Windows] 수집 스케줄 등록 완료")
 
     if is_mac:
@@ -6142,14 +6153,15 @@ def upload_free_board_to_cafe(post_id):
 
 # ── NAS 공유 폴더 상품 동기화 ──────────────────
 # 윈도우 PC → NAS에 products.db 저장 → 맥미니가 매시 30분 로컬로 가져옴
-from data_manager import NAS_SHARED_PATH
+from data_manager import NAS_SHARED_PATH, get_nas_path
 NAS_IMPORT_PATH = os.path.join(NAS_SHARED_PATH, "db")
 
 def sync_products_from_nas():
-    """NAS 공유 폴더의 products.db → 맥미니 로컬 products.db로 동기화
-    맥미니 과부하 방지: NAS에서 변경분만 빠르게 병합
+    """NAS products.db 파일을 로컬로 복사하여 동기화
+    NAS DB를 직접 열지 않음 — 파일 복사 후 로컬에서 병합
     """
     import sqlite3 as _sq
+    import shutil
     nas_db_path = os.path.join(NAS_IMPORT_PATH, "products.db")
 
     if not os.path.exists(nas_db_path):
@@ -6162,8 +6174,7 @@ def sync_products_from_nas():
         nas_size = nas_stat.st_size
 
         # 마지막 동기화 시간 확인
-        from data_manager import get_local_path
-        sync_info_path = os.path.join(get_local_path("db"), "nas_sync_info.json")
+        sync_info_path = os.path.join(get_path("db"), "nas_sync_info.json")
         last_sync_mtime = ""
         if os.path.exists(sync_info_path):
             try:
@@ -6177,37 +6188,41 @@ def sync_products_from_nas():
             logger.debug("NAS DB 변경 없음 — 스킵")
             return {"ok": True, "message": "변경 없음", "skipped": True}
 
-        push_log(f"📂 NAS → 로컬 동기화 시작 ({nas_size/1024/1024:.1f}MB, 수정: {nas_mtime})")
+        push_log(f"📂 NAS → 로컬 동기화 시작 ({nas_size/1024/1024:.1f}MB)")
 
-        # NAS DB에서 최근 변경된 상품만 읽기 (전체 대비 빠름)
-        nas_conn = _sq.connect(f"file:{nas_db_path}?mode=ro", uri=True, timeout=30)
-        nas_conn.row_factory = _sq.Row
+        # 1단계: NAS 파일을 로컬 임시 파일로 복사 (NAS DB 직접 열기 금지)
+        local_db_dir = get_path("db")
+        tmp_db_path = os.path.join(local_db_dir, "products_nas_tmp.db")
+        shutil.copy2(nas_db_path, tmp_db_path)
+        push_log(f"📂 NAS 파일 복사 완료 → 로컬 임시 DB")
 
-        # 마지막 동기화 이후 변경된 것만 (없으면 전체)
+        # 2단계: 임시 DB에서 로컬 DB로 병합 (로컬 파일끼리만 작업)
+        tmp_conn = _sq.connect(tmp_db_path, timeout=10)
+        tmp_conn.row_factory = _sq.Row
+
         if last_sync_mtime:
-            rows = nas_conn.execute(
+            rows = tmp_conn.execute(
                 "SELECT * FROM products WHERE created_at > ? OR scraped_at > ? ORDER BY id",
                 (last_sync_mtime, last_sync_mtime)
             ).fetchall()
         else:
-            rows = nas_conn.execute("SELECT * FROM products ORDER BY id").fetchall()
+            rows = tmp_conn.execute("SELECT * FROM products ORDER BY id").fetchall()
 
-        nas_total = nas_conn.execute("SELECT COUNT(*) c FROM products").fetchone()["c"]
-        nas_conn.close()
+        nas_total = tmp_conn.execute("SELECT COUNT(*) c FROM products").fetchone()["c"]
+        tmp_conn.close()
 
         if not rows:
-            push_log(f"📂 NAS 변경 없음 (전체 {nas_total:,}개)")
-            # 시간 기록은 업데이트
+            push_log(f"📂 변경 없음 (전체 {nas_total:,}개)")
             import json as _json
             with open(sync_info_path, "w") as f:
                 _json.dump({"last_mtime": nas_mtime, "last_sync": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, f)
+            os.remove(tmp_db_path)
             return {"ok": True, "message": "변경 없음", "skipped": True, "total": nas_total}
 
         # 로컬 DB에 병합
         from product_db import _conn as local_conn_fn, init_db as init_product_db
         init_product_db()
         local_conn = local_conn_fn()
-
         inserted = 0
         updated = 0
         skipped = 0
@@ -6217,46 +6232,32 @@ def sync_products_from_nas():
                 rd = dict(r)
                 site_id = rd.get("site_id", "")
                 product_code = rd.get("product_code", "")
-                price_jpy = rd.get("price_jpy", 0)
-
                 if not site_id or not product_code:
                     skipped += 1
                     continue
-
                 existing = local_conn.execute(
                     "SELECT id FROM products WHERE site_id=? AND product_code=?",
-                    (site_id, product_code)
-                ).fetchone()
-
+                    (site_id, product_code)).fetchone()
                 if existing:
-                    local_conn.execute("""
-                        UPDATE products SET price_jpy=?, in_stock=?, original_price=?,
+                    local_conn.execute("""UPDATE products SET price_jpy=?, in_stock=?, original_price=?,
                         discount_rate=?, scraped_at=?, name=?, name_ko=?, brand=?, brand_ko=?,
                         img_url=?, link=?, description=?, description_ko=?,
-                        sizes=?, detail_images=?, condition_grade=?, color=?, material=?
-                        WHERE id=?
-                    """, (price_jpy, rd.get("in_stock", 1), rd.get("original_price", 0),
-                          rd.get("discount_rate", 0), rd.get("scraped_at", ""),
-                          rd.get("name", ""), rd.get("name_ko", ""),
-                          rd.get("brand", ""), rd.get("brand_ko", ""),
-                          rd.get("img_url", ""), rd.get("link", ""),
-                          rd.get("description", ""), rd.get("description_ko", ""),
-                          rd.get("sizes", "[]"), rd.get("detail_images", "[]"),
-                          rd.get("condition_grade", ""), rd.get("color", ""), rd.get("material", ""),
-                          existing["id"]))
+                        sizes=?, detail_images=?, condition_grade=?, color=?, material=? WHERE id=?""",
+                        (rd.get("price_jpy",0), rd.get("in_stock",1), rd.get("original_price",0),
+                         rd.get("discount_rate",0), rd.get("scraped_at",""),
+                         rd.get("name",""), rd.get("name_ko",""), rd.get("brand",""), rd.get("brand_ko",""),
+                         rd.get("img_url",""), rd.get("link",""), rd.get("description",""), rd.get("description_ko",""),
+                         rd.get("sizes","[]"), rd.get("detail_images","[]"),
+                         rd.get("condition_grade",""), rd.get("color",""), rd.get("material",""), existing["id"]))
                     updated += 1
                 else:
-                    cols = ["site_id", "category_id", "product_code", "name", "name_ko",
-                            "brand", "brand_ko", "price_jpy", "link", "img_url",
-                            "description", "description_ko", "sizes", "detail_images",
-                            "original_price", "discount_rate", "in_stock",
-                            "scraped_at", "created_at", "source_type",
-                            "condition_grade", "color", "material"]
+                    cols = ["site_id","category_id","product_code","name","name_ko","brand","brand_ko",
+                            "price_jpy","link","img_url","description","description_ko","sizes","detail_images",
+                            "original_price","discount_rate","in_stock","scraped_at","created_at","source_type",
+                            "condition_grade","color","material"]
                     vals = [rd.get(c, "") for c in cols]
-                    placeholders = ",".join(["?"] * len(cols))
-                    col_names = ",".join(cols)
                     try:
-                        local_conn.execute(f"INSERT OR IGNORE INTO products ({col_names}) VALUES ({placeholders})", vals)
+                        local_conn.execute(f"INSERT OR IGNORE INTO products ({','.join(cols)}) VALUES ({','.join(['?']*len(cols))})", vals)
                         inserted += 1
                     except Exception:
                         skipped += 1
@@ -6266,21 +6267,56 @@ def sync_products_from_nas():
         local_conn.commit()
         local_conn.close()
 
-        # 동기화 시간 기록
+        # 3단계: 임시 파일 삭제 + 동기화 시간 기록
+        os.remove(tmp_db_path)
         import json as _json
         with open(sync_info_path, "w") as f:
             _json.dump({"last_mtime": nas_mtime, "last_sync": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, f)
 
-        msg = f"📂 NAS → 로컬 동기화 완료: 신규 {inserted} / 업데이트 {updated} / 스킵 {skipped} (변경 {len(rows)}개 / 전체 {nas_total:,}개)"
+        msg = f"📂 동기화 완료: 신규 {inserted} / 업데이트 {updated} / 스킵 {skipped} (변경 {len(rows)} / 전체 {nas_total:,})"
         push_log(msg)
         logger.info(msg)
-        return {"ok": True, "inserted": inserted, "updated": updated, "skipped": skipped, "changed": len(rows), "total": nas_total}
+        return {"ok": True, "inserted": inserted, "updated": updated, "skipped": skipped, "total": nas_total}
 
     except Exception as e:
+        # 임시 파일 정리
+        tmp_path = os.path.join(get_path("db"), "products_nas_tmp.db")
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
         msg = f"❌ NAS 동기화 오류: {e}"
         push_log(msg)
         logger.error(msg)
         return {"ok": False, "message": str(e)}
+
+
+def export_products_to_nas():
+    """로컬 products.db → NAS 공유 폴더로 복사 (윈도우 수집PC용)"""
+    import shutil
+    try:
+        local_db = os.path.join(get_path("db"), "products.db")
+        nas_db_dir = get_nas_path("db")
+        nas_db = os.path.join(nas_db_dir, "products.db")
+        if not os.path.exists(local_db):
+            return {"ok": False, "message": "로컬 products.db 없음"}
+        if not os.path.isdir(os.path.dirname(nas_db)):
+            return {"ok": False, "message": "NAS 경로 접근 불가"}
+        shutil.copy2(local_db, nas_db)
+        size = os.path.getsize(nas_db)
+        msg = f"📤 로컬 → NAS 복사 완료 ({size/1024/1024:.1f}MB)"
+        push_log(msg)
+        logger.info(msg)
+        return {"ok": True, "message": msg}
+    except Exception as e:
+        logger.error(f"NAS 내보내기 실패: {e}")
+        return {"ok": False, "message": str(e)}
+
+
+@app.route(f"{URL_PREFIX}/api/nas-export", methods=["POST"])
+@admin_required
+def manual_nas_export():
+    """수동: 로컬 DB → NAS 복사"""
+    result = export_products_to_nas()
+    return jsonify(result)
 
 
 @app.route(f"{URL_PREFIX}/api/nas-sync", methods=["POST"])
