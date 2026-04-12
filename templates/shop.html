@@ -97,6 +97,7 @@
     }
     .search-box:focus { border-color:var(--accent); }
     .search-box::placeholder { color:var(--dim); }
+    #img-search-btn:hover { background:var(--accent)!important; color:#000!important; border-color:var(--accent)!important; }
 
     /* 필터 리스트 */
     .filter-list { list-style:none; }
@@ -650,12 +651,17 @@
     <!-- 검색 -->
     <div class="sidebar-section">
       <div class="sidebar-title">검색</div>
-      <div style="display:flex;gap:6px;">
+      <div style="display:flex;gap:6px;align-items:center;">
         <input type="text" class="search-box" id="keyword-input" placeholder="브랜드, 상품명, 코드 검색..."
                onkeydown="if(event.key==='Enter')loadShop(1)" style="flex:1;">
+        <!-- 📷 이미지 검색 버튼 -->
+        <input type="file" id="img-search-input" accept="image/*" style="display:none;" onchange="handleImageSearch(this)">
+        <button id="img-search-btn" onclick="document.getElementById('img-search-input').click()"
+                style="padding:8px 10px;border-radius:8px;background:var(--card);border:1px solid var(--border);color:var(--text);font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;"
+                title="이미지로 비슷한 상품 검색">📷</button>
         <button onclick="loadShop(1)" style="padding:8px 14px;border-radius:8px;background:var(--accent);border:none;color:#000;font-size:0.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">검색</button>
       </div>
-      <div style="font-size:0.65rem;color:var(--dim);margin-top:4px;">예: 숄더백 가죽, PRADA 블랙, No.S-260402</div>
+      <div style="font-size:0.65rem;color:var(--dim);margin-top:4px;">예: 숄더백 가죽, PRADA 블랙, No.S-260402 | 📷 사진으로 검색</div>
       <button class="reset-btn" onclick="resetFilters()" style="margin-top:8px;">필터 초기화</button>
     </div>
 
@@ -895,14 +901,20 @@
         <button class="modal-order-btn" onclick="addToCart()">장바구니</button>
         {% else %}
         <a href="{{ url_prefix }}/login" class="modal-order-btn primary" style="text-align:center;">로그인 후 주문</a>
+        <button class="modal-order-btn" disabled style="opacity:0.5;">장바구니</button>
         {% endif %}
+        <button class="modal-order-btn" onclick="showCostBreakdown()" id="btn-cost-breakdown">총 예상비용</button>
+      </div>
+      <div class="modal-btn-row">
         <button class="modal-order-btn" onclick="inquiryProduct()">카카오 문의</button>
         <button class="modal-order-btn" onclick="shareProduct()">공유</button>
+        <button class="modal-order-btn" onclick="aiAnalyze()" id="btn-ai-analyze">AI 상품분석</button>
       </div>
       <div class="modal-btn-row">
         <button class="modal-close" onclick="closeModal()">&#x2190; 목록화면</button>
-        <button class="modal-order-btn" onclick="aiAnalyze()" id="btn-ai-analyze">AI 상품분석</button>
       </div>
+      <!-- 총 예상비용 패널 -->
+      <div id="cost-breakdown-panel" style="display:none;margin-top:6px;padding:12px;background:var(--bg);border:1px solid var(--accent);border-radius:10px;font-size:0.8rem;"></div>
     </div>
   </div>
 </div>
@@ -1066,6 +1078,61 @@ function selectFilter(type, el) {
   loadShop(1);
 }
 
+/* ── 📷 이미지 검색 ──────────────────────── */
+async function handleImageSearch(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = "";  // 같은 파일 재선택 가능하도록 리셋
+
+  const btn = document.getElementById("img-search-btn");
+  const origText = btn.textContent;
+  btn.textContent = "⏳";
+  btn.style.pointerEvents = "none";
+
+  const grid = document.getElementById("product-grid");
+  grid.innerHTML = '<div class="loading"><div class="spinner"></div> AI가 이미지를 분석 중입니다...</div>';
+
+  try {
+    // 이미지 → base64
+    const base64 = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(",")[1]);
+      reader.readAsDataURL(file);
+    });
+
+    const resp = await fetch("{{ url_prefix }}/shop/api/image-search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image: base64, mime_type: file.type })
+    });
+    const data = await resp.json();
+    if (!data.ok) {
+      grid.innerHTML = `<div class="loading">${data.message || "이미지 분석 실패"}</div>`;
+      return;
+    }
+
+    // AI가 추출한 키워드를 검색창에 넣고 검색 실행
+    const kw = data.keywords || "";
+    document.getElementById("keyword-input").value = kw;
+    // AI 분석 결과 태그 표시
+    if (data.analysis) {
+      const tagHtml = `<div id="img-search-result" style="margin-top:8px;padding:8px 10px;background:rgba(212,175,55,0.1);border:1px solid var(--accent);border-radius:8px;font-size:0.72rem;color:var(--muted);">
+        📷 <b>AI 분석:</b> ${data.analysis}
+        <span onclick="this.parentElement.remove()" style="cursor:pointer;float:right;color:var(--dim);">✕</span>
+      </div>`;
+      const old = document.getElementById("img-search-result");
+      if (old) old.remove();
+      document.getElementById("keyword-input").closest(".sidebar-section").insertAdjacentHTML("beforeend", tagHtml);
+    }
+    loadShop(1);
+  } catch (e) {
+    grid.innerHTML = `<div class="loading">이미지 검색 오류: ${e.message}</div>`;
+  } finally {
+    btn.textContent = origText;
+    btn.style.pointerEvents = "";
+  }
+}
+
 function resetFilters() {
   filters = { site: "", brand: "", condition: "", bag_type: "", keyword: "" };
   multiFilters = { brand: [], condition: [], bag_type: [] };
@@ -1111,6 +1178,7 @@ async function loadShop(page = 1) {
     if (res.status === 401) { location.href = PREFIX + "/login"; return; }
     const d = await res.json();
     allProducts = d.products || [];
+    if (d.exchange_rate) window._cachedRate = d.exchange_rate;
 
     // 사이드바 목록 갱신
     renderBrandList(d.brands || []);
@@ -1277,6 +1345,9 @@ function openModal(idx) {
   const p = allProducts[idx];
   if (!p) return;
   currentModalIdx = idx;
+  // 패널 초기화
+  const cbp = document.getElementById("cost-breakdown-panel"); if (cbp) cbp.style.display = "none";
+  const aip = document.getElementById("ai-result"); if (aip) aip.style.display = "none";
   // 화살표 버튼 표시/숨김
   document.getElementById("modal-prev").style.display = idx > 0 ? "" : "none";
   document.getElementById("modal-next").style.display = idx < allProducts.length - 1 ? "" : "none";
@@ -1487,6 +1558,35 @@ async function orderProduct() {
     closeModal();
     location.href = PREFIX + "/shop/mypage#orders";
   } catch(e) { alert("주문 추가 실패"); }
+}
+
+function showCostBreakdown() {
+  const p = allProducts[currentModalIdx];
+  if (!p) return;
+  const panel = document.getElementById("cost-breakdown-panel");
+  if (panel.style.display !== "none") { panel.style.display = "none"; return; }
+
+  const price = p.price_krw || 0;
+  const intlShip = 20000;
+  const duty = Math.round(price * 0.20);
+  const totalCost = price + intlShip + duty;
+
+  panel.innerHTML = `
+    <div style="font-weight:700;color:var(--accent);margin-bottom:8px;font-size:0.85rem;">💰 총 예상비용 안내</div>
+    <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
+      <tr><td style="padding:4px 0;color:var(--muted);">상품가격</td><td style="text-align:right;">${price.toLocaleString()}원</td></tr>
+      <tr><td style="padding:4px 0;color:var(--muted);">국제배송비</td><td style="text-align:right;">${intlShip.toLocaleString()}원</td></tr>
+      <tr><td style="padding:4px 0;color:var(--muted);">관부가세 (약 20%)</td><td style="text-align:right;">${duty.toLocaleString()}원</td></tr>
+      <tr><td colspan="2" style="padding:2px 0 6px;font-size:0.68rem;color:var(--dim);">* 개인통관 시 미화 $150 이하 관부가세 면세 가능</td></tr>
+      <tr style="border-top:1px solid var(--border);">
+        <td style="padding:6px 0;font-weight:700;color:var(--accent);font-size:0.85rem;">총 예상비용</td>
+        <td style="text-align:right;font-weight:800;color:var(--accent);font-size:0.9rem;">${totalCost.toLocaleString()}원</td>
+      </tr>
+    </table>
+    <div style="margin-top:8px;font-size:0.68rem;color:var(--dim);">* 개인통관 시 미화 $150 이하 관부가세 면세 가능</div>
+    <div style="font-size:0.68rem;color:var(--dim);">* 실제 비용은 환율 및 통관 방식에 따라 달라질 수 있습니다</div>
+  `;
+  panel.style.display = "block";
 }
 
 function inquiryProduct() {

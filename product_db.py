@@ -789,7 +789,13 @@ def get_unuploaded_products(source_type="") -> list:
         sql += " ORDER BY created_at DESC"
         rows = conn.execute(sql, params).fetchall()
         products = []
+        seen_codes = set()
         for r in rows:
+            # product_code 기준 중복 제거 (같은 코드 여러 행 방지)
+            dup_key = r["product_code"] or f"{r['brand']}-{r['name']}"
+            if dup_key in seen_codes:
+                continue
+            seen_codes.add(dup_key)
             products.append({
                 "site_id": r["site_id"],
                 "category_id": r["category_id"],

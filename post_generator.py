@@ -74,11 +74,31 @@ def _load_ai_settings_from_db() -> dict:
     except Exception:
         pass
 
+    # .env 파일에서 키 보충 (DB/config.py 값이 플레이스홀더일 때)
+    env_keys = {}
+    try:
+        env_path = os.path.join(os.path.dirname(__file__), ".env")
+        if os.path.exists(env_path):
+            with open(env_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        env_keys[k.strip()] = v.strip()
+    except Exception:
+        pass
+
+    def _best_key(db_val, config_val, env_name):
+        """DB → .env → config.py 순으로 가장 긴(유효한) 키 선택"""
+        candidates = [db_val, env_keys.get(env_name, ""), config_val]
+        valid = [c for c in candidates if c and len(c) > 20]
+        return valid[0] if valid else (db_val or config_val)
+
     return {
-        "provider": settings.get("provider") or AI_PROVIDER,
-        "gemini_key": settings.get("gemini_key") or GEMINI_API_KEY,
-        "claude_key": settings.get("claude_key") or ANTHROPIC_API_KEY,
-        "openai_key": settings.get("openai_key") or OPENAI_API_KEY,
+        "provider": settings.get("provider") or env_keys.get("AI_PROVIDER", "") or AI_PROVIDER,
+        "gemini_key": _best_key(settings.get("gemini_key", ""), GEMINI_API_KEY, "GEMINI_API_KEY"),
+        "claude_key": _best_key(settings.get("claude_key", ""), ANTHROPIC_API_KEY, "ANTHROPIC_API_KEY"),
+        "openai_key": _best_key(settings.get("openai_key", ""), OPENAI_API_KEY, "OPENAI_API_KEY"),
     }
 
 

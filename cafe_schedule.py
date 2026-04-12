@@ -49,10 +49,10 @@ def save_schedule(slots: list):
 _VT_SCHEDULE_PATH = os.path.join(get_path("db"), "vt_cafe_schedule.json")
 
 VT_DEFAULT_SLOTS = [
-    {"id": "vt_morning",   "label": "아침",  "hour": 8,  "minute": 0, "enabled": False, "brand": "ALL", "quantity": 3},
-    {"id": "vt_afternoon", "label": "점심",  "hour": 13, "minute": 0, "enabled": False, "brand": "ALL", "quantity": 3},
-    {"id": "vt_evening",   "label": "저녁",  "hour": 19, "minute": 0, "enabled": False, "brand": "ALL", "quantity": 3},
-    {"id": "vt_night",     "label": "새벽",  "hour": 3,  "minute": 0, "enabled": False, "brand": "ALL", "quantity": 2},
+    {"id": "vt_morning",   "label": "아침",  "hour": 8,  "minute": 0, "enabled": False, "brand": "ALL", "category": "ALL", "min_grade": "", "quantity": 3},
+    {"id": "vt_afternoon", "label": "점심",  "hour": 13, "minute": 0, "enabled": False, "brand": "ALL", "category": "ALL", "min_grade": "", "quantity": 3},
+    {"id": "vt_evening",   "label": "저녁",  "hour": 19, "minute": 0, "enabled": False, "brand": "ALL", "category": "ALL", "min_grade": "", "quantity": 3},
+    {"id": "vt_night",     "label": "새벽",  "hour": 3,  "minute": 0, "enabled": False, "brand": "ALL", "category": "ALL", "min_grade": "", "quantity": 2},
 ]
 
 

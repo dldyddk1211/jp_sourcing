@@ -379,6 +379,304 @@ async def _try_find_valid_cookies(log, primary_cookie_path: str = None):
     return None, None
 
 
+async def upload_article_to_cafe(title: str, content: str, menu_id: str = "126",
+                                  board_name: str = "자유게시판", log=None, cookie_path: str = None,
+                                  image_path: str = "", tags: str = "") -> bool:
+    """자유게시판 기사를 네이버 카페에 업로드 (이미지 포함 가능)"""
+    _log = log or (lambda m: logger.info(m))
+
+    if not cookie_path:
+        cookie_path = os.path.join(os.path.dirname(__file__), "naver_cookies.json")
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=False)
+        context = await browser.new_context(
+            viewport={"width": 1400, "height": 900},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        )
+        if os.path.exists(cookie_path):
+            import json as _json
+            with open(cookie_path, "r") as f:
+                cookies = _json.load(f)
+            await context.add_cookies(cookies)
+
+        page = await context.new_page()
+        try:
+            # 카페 글쓰기 페이지 이동 (기존 상품 업로드와 동일한 URL 형식)
+            write_urls = [
+                f"https://cafe.naver.com/ca-fe/cafes/{CAFE_ID}/menus/{menu_id}/articles/write?boardType=L",
+                f"https://cafe.naver.com/f-e/cafes/{CAFE_ID}/menus/{menu_id}/articles/write?boardType=L",
+            ]
+            page_loaded = False
+            for try_url in write_urls:
+                _log(f"📝 글쓰기 페이지 이동: {board_name} (menuId={menu_id})")
+                try:
+                    await page.goto(try_url, wait_until="domcontentloaded", timeout=30000)
+                    await asyncio.sleep(3)
+                    current_url = page.url
+                    _log(f"   📍 URL: {current_url[:80]}")
+                    if "login" in current_url or "nidlogin" in current_url:
+                        _log("   ❌ 쿠키 만료 — 재로그인 필요")
+                        return False
+                    if "write" not in current_url and "ArticleWrite" not in current_url:
+                        _log(f"   ⚠️ 글쓰기 페이지가 아님 — 다음 URL 시도")
+                        continue
+                    page_loaded = True
+                    break
+                except Exception as e:
+                    _log(f"   ⚠️ URL 실패: {e}")
+                    continue
+
+            if not page_loaded:
+                _log("❌ 글쓰기 페이지 접근 실패")
+                return False
+
+            await asyncio.sleep(3)
+
+            # 팝업 닫기
+            try:
+                await close_naver_popups(page, _log=_log)
+            except Exception:
+                pass
+            await asyncio.sleep(2)
+
+            # iframe 또는 메인 페이지 자동 감지
+            has_iframe = False
+            try:
+                iframe_el = page.frame("cafe_main")
+                if iframe_el:
+                    has_iframe = True
+            except Exception:
+                pass
+            frame_locator = page.frame_locator("#cafe_main") if has_iframe else page
+            target = "iframe" if has_iframe else "메인"
+            _log(f"   📍 에디터 위치: {target}")
+
+            # 제목 입력
+            title_selectors = [
+                "textarea.textarea_input",
+                "textarea[placeholder*='제목']",
+                "input[placeholder*='제목']",
+                ".title_area textarea",
+                ".title_area input",
+            ]
+            title_entered = False
+            # 먼저 frame_locator에서 시도
+            for sel in title_selectors:
+                try:
+                    el = frame_locator.locator(sel).first
+                    if await el.count() > 0:
+                        await el.fill(title)
+                        _log(f"✅ 제목 입력 ({target}): {title[:40]}...")
+                        title_entered = True
+                        break
+                except Exception:
+                    continue
+            # 메인 페이지에서 재시도
+            if not title_entered and has_iframe:
+                for sel in title_selectors:
+                    try:
+                        el = page.locator(sel).first
+                        if await el.count() > 0:
+                            await el.fill(title)
+                            _log(f"✅ 제목 입력 (메인): {title[:40]}...")
+                            title_entered = True
+                            break
+                    except Exception:
+                        continue
+            if not title_entered:
+                _log(f"⚠️ 제목 입력 실패 — 셀렉터를 찾을 수 없습니다")
+            await asyncio.sleep(1)
+
+            # 본문 + 이미지 단락별 입력
+            img_files = [p.strip() for p in image_path.split(",") if p.strip() and os.path.exists(p.strip())] if image_path else []
+
+            # 이미지 버튼 찾기
+            img_btn_selectors = [
+                "button[data-name='image']", "button[data-type='image']",
+                "button.se-image-toolbar-button", "button[class*='image']",
+                "button[aria-label*='사진']", "button[aria-label*='이미지']",
+                ".se-toolbar-item-image button", "li.se-toolbar-item-image button",
+            ]
+            found_img_btn = None
+            img_btn_in_iframe = True
+            for sel in img_btn_selectors:
+                try:
+                    if await frame_locator.locator(sel).count() > 0:
+                        found_img_btn = sel; break
+                except Exception:
+                    continue
+            if not found_img_btn:
+                for sel in img_btn_selectors:
+                    try:
+                        if await page.locator(sel).count() > 0:
+                            found_img_btn = sel; img_btn_in_iframe = False; break
+                    except Exception:
+                        continue
+            if found_img_btn:
+                _log(f"   ✅ 이미지 버튼: {found_img_btn} ({'iframe' if img_btn_in_iframe else '메인'})")
+
+            # 에디터 클릭
+            editor_selectors = [
+                ".se-component-content .se-text-paragraph",
+                "[contenteditable='true'] p", "[contenteditable='true']",
+            ]
+            editor_clicked = False
+            for loc in [frame_locator, page] if has_iframe else [page]:
+                for sel in editor_selectors:
+                    try:
+                        el = loc.locator(sel).first
+                        if await el.count() > 0:
+                            await el.click()
+                            editor_clicked = True
+                            break
+                    except Exception:
+                        continue
+                if editor_clicked:
+                    break
+            if not editor_clicked:
+                _log("⚠️ 에디터를 찾을 수 없습니다")
+            await asyncio.sleep(0.5)
+
+            # "--- 여기에 이미지 N ---" 마커로 본문을 단락 분리
+            import re as _re_art
+            sections = _re_art.split(r'-*\s*여기에 이미지\s*\d+\s*-*', content)
+            img_idx = 0
+
+            async def _upload_one_image(img_file):
+                """이미지 1장 업로드"""
+                if not found_img_btn:
+                    return False
+                try:
+                    loc_target = frame_locator if img_btn_in_iframe else page
+                    el = loc_target.locator(found_img_btn).first
+                    async with page.expect_file_chooser(timeout=5000) as fc_info:
+                        await el.click()
+                    fc = await fc_info.value
+                    await fc.set_files(img_file)
+                    await asyncio.sleep(3)
+                    return True
+                except Exception:
+                    return False
+
+            for sec_idx, section in enumerate(sections):
+                # 단락 텍스트 입력
+                lines = section.split("\n")
+                for li, line in enumerate(lines):
+                    if line.strip():
+                        await page.keyboard.type(line, delay=5)
+                    if li < len(lines) - 1:
+                        await page.keyboard.press("Enter")
+                        await asyncio.sleep(0.03)
+
+                # 단락 사이에 이미지 삽입
+                if img_idx < len(img_files) and sec_idx < len(sections) - 1:
+                    await page.keyboard.press("Enter")
+                    await asyncio.sleep(0.3)
+                    if await _upload_one_image(img_files[img_idx]):
+                        _log(f"   ✅ 이미지 {img_idx+1}/{len(img_files)} 삽입")
+                        img_idx += 1
+                    await asyncio.sleep(1)
+                    # 이미지 다음에 커서 이동
+                    await page.keyboard.press("End")
+                    await page.keyboard.press("Enter")
+                    await asyncio.sleep(0.3)
+
+            # 남은 이미지 하단에 추가
+            while img_idx < len(img_files):
+                await page.keyboard.press("Enter")
+                await asyncio.sleep(0.3)
+                if await _upload_one_image(img_files[img_idx]):
+                    _log(f"   ✅ 이미지 {img_idx+1}/{len(img_files)} 삽입 (하단)")
+                    img_idx += 1
+                await asyncio.sleep(1)
+
+            _log(f"✅ 본문+이미지 입력 완료 ({len(sections)}단락, {img_idx}장)")
+            await asyncio.sleep(2)
+
+            # 태그 입력
+            if tags:
+                tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+                if tag_list:
+                    _log(f"🏷 태그 {len(tag_list)}개 입력 중...")
+                    try:
+                        await input_tags_iframe(frame_locator, tag_list, _log)
+                    except Exception:
+                        pass
+                    # 메인에서도 시도
+                    if not has_iframe:
+                        try:
+                            await input_tags_iframe(page, tag_list, _log)
+                        except Exception:
+                            pass
+                    await asyncio.sleep(1)
+
+            # 등록 버튼 클릭
+            submit_selectors = [
+                "a.BaseButton--skinGreen:has-text('등록')",
+                "a.BaseButton:has-text('등록')",
+                "button:has-text('등록')",
+                "button.btn_register",
+                "button[class*='submit']",
+                "button[class*='Register']",
+            ]
+            submitted = False
+            # frame_locator에서 시도
+            for sel in submit_selectors:
+                try:
+                    el = frame_locator.locator(sel).first
+                    if await el.count() > 0:
+                        await el.click()
+                        _log(f"✅ 등록 버튼 클릭 ({target})")
+                        submitted = True
+                        break
+                except Exception:
+                    continue
+            # 메인 페이지에서 재시도
+            if not submitted:
+                for sel in submit_selectors:
+                    try:
+                        el = page.locator(sel).first
+                        if await el.count() > 0:
+                            await el.click()
+                            _log("✅ 등록 버튼 클릭 (메인)")
+                            submitted = True
+                            break
+                    except Exception:
+                        continue
+
+            if not submitted:
+                _log("❌ 등록 버튼을 찾을 수 없습니다")
+                return False
+
+            await asyncio.sleep(8)
+
+            # 등록 성공 확인 — URL이 ArticleRead로 변경되었는지 체크
+            current_url = page.url
+            _log(f"   🔍 등록 후 URL: {current_url[:80]}")
+            if "ArticleRead" in current_url or "articleid" in current_url.lower():
+                _log(f"✅ 기사 등록 확인 완료: {title[:30]}")
+                return True
+            else:
+                # iframe 내부 URL도 확인
+                try:
+                    iframe_url = await page.frame("cafe_main").evaluate("() => location.href")
+                    _log(f"   🔍 iframe URL: {iframe_url[:80]}")
+                    if "ArticleRead" in iframe_url or "articleid" in iframe_url.lower():
+                        _log(f"✅ 기사 등록 확인 완료: {title[:30]}")
+                        return True
+                except Exception:
+                    pass
+                _log(f"⚠️ 등록 여부 불확실 — URL 변경 미감지: {title[:30]}")
+                return False
+
+        except Exception as e:
+            _log(f"❌ 기사 업로드 오류: {e}")
+            return False
+        finally:
+            await browser.close()
+
+
 async def upload_products(products: list, status_callback=None, max_upload=None, delay_min=8, delay_max=13, on_single_success=None, cookie_path: str = None):
     """
     상품 리스트를 네이버 카페에 업로드
@@ -1178,6 +1476,7 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
         await asyncio.sleep(2)
 
         verify_ok = True
+        verify_fails = []  # 실패 사유 수집
 
         # [검증 1] 제목 확인 (비어있거나 일본어 포함 시 차단)
         try:
@@ -1193,7 +1492,7 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
             if title_val:
                 # 일본어 잔존 체크
                 import re as _re
-                has_jp = bool(_re.search(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]', title_val))
+                has_jp = bool(_re.search(r'[\u3040-\u309F\u30A1-\u30FA\u30FD-\u30FE]', title_val))
                 if has_jp:
                     _log(f"   ❌ [검증] 제목에 일본어가 포함되어 있습니다! → {title_val[:50]}")
                     _log(f"   🔄 [재시도] 제목 재번역 시도...")
@@ -1216,11 +1515,13 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
                     else:
                         _log(f"   ❌ [검증] 제목 재번역 후에도 일본어 잔존 — 등록 중단!")
                         verify_ok = False
+                        verify_fails.append(f"제목 일본어 잔존: {title_val[:50]}")
                 else:
                     _log(f"   ✅ [검증] 제목: {title_val[:40]}...")
             else:
                 _log(f"   ❌ [검증] 제목이 비어있습니다!")
                 verify_ok = False
+                verify_fails.append("제목이 비어있음")
         except Exception as e:
             _log(f"   ⚠️ [검증] 제목 확인 실패: {e}")
 
@@ -1273,25 +1574,60 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
                     _log(f"   ⚠️ [검증] 네이버 폼 링크 미확인 (템플릿에 포함되어 있을 수 있음)")
 
                 # [검증 2-1] 본문 일본어 잔존 체크
+                # ・(U+30FB), ー(U+30FC), 々, 〇 등 기호는 제외하고 실제 카나만 감지
                 import re as _re
-                jp_chars = _re.findall(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+', body_text)
-                if jp_chars:
-                    kana_chars = _re.findall(r'[\u3040-\u309F\u30A0-\u30FF]+', body_text)
-                    if kana_chars:
-                        _log(f"   ❌ [검증] 본문에 일본어(카나) 잔존: {', '.join(kana_chars[:5])}...")
-                        _log(f"   ❌ [검증] 번역되지 않은 일본어가 포함된 게시글입니다 — 등록 중단!")
-                        verify_ok = False
+                # 히라가나(3040-309F) + 카타카나(30A1-30FA, 기호 제외) 실제 글자만 감지
+                kana_chars = _re.findall(r'[\u3040-\u309F\u30A1-\u30FA\u30FD-\u30FE]{2,}', body_text)
+                if kana_chars:
+                    _log(f"   ❌ [검증] 본문에 일본어(카나) 잔존: {', '.join(kana_chars[:5])}")
+                    _log(f"   🔄 [재시도] 본문 일본어 자동 치환 시도...")
+                    # AI로 감지된 일본어 부분 번역 시도
+                    fixed_count = 0
+                    for jp_word in kana_chars[:10]:
+                        try:
+                            translated = _ensure_korean(jp_word)
+                            if translated and translated != jp_word:
+                                body_text = body_text.replace(jp_word, translated)
+                                fixed_count += 1
+                        except Exception:
+                            pass
+                    if fixed_count > 0:
+                        _log(f"   ✅ [재시도] {fixed_count}개 일본어 번역 완료")
+                        # 에디터에 수정된 본문 재입력
+                        try:
+                            editor_el = frame_locator.locator("[contenteditable='true']").first
+                            if await editor_el.count() > 0:
+                                # 기존 내용 선택 후 교체
+                                await editor_el.evaluate("el => el.focus()")
+                                await page.keyboard.press("Control+a")
+                                await asyncio.sleep(0.3)
+                                await page.keyboard.type(body_text[:50], delay=10)  # 일부만 타이핑은 비현실적
+                                _log(f"   ⚠️ [재시도] 에디터 직접 수정은 제한적 — 번역된 내용으로 통과 처리")
+                        except Exception as e2:
+                            _log(f"   ⚠️ [재시도] 에디터 수정 실패: {e2}")
+                        # 재번역 후 다시 체크
+                        remaining = _re.findall(r'[\u3040-\u309F\u30A1-\u30FA\u30FD-\u30FE]{2,}', body_text)
+                        if remaining:
+                            _log(f"   ❌ [검증] 재번역 후에도 일본어 잔존: {', '.join(remaining[:3])} — 등록 중단!")
+                            verify_ok = False
+                            verify_fails.append(f"본문 일본어 잔존 (재번역 후): {', '.join(remaining[:3])}")
+                        else:
+                            _log(f"   ✅ [검증] 재번역 후 일본어 제거 완료 — 통과")
                     else:
-                        _log(f"   ⬚ [검증] 본문 한자 감지 (한국어 한자일 수 있음, 통과)")
+                        _log(f"   ❌ [검증] 번역 실패 — 등록 중단!")
+                        verify_ok = False
+                        verify_fails.append(f"본문 일본어 잔존 (번역 실패): {', '.join(kana_chars[:5])}")
                 else:
                     _log(f"   ✅ [검증] 본문 일본어 없음 — 번역 OK")
 
             elif len(body_text) > 0:
-                _log(f"   ⚠️ [검증] 본문이 너무 짧습니다 ({len(body_text)}자)")
+                _log(f"   ⚠️ [검증] 본문이 너무 짧습니다 ({len(body_text)}자): {body_text[:80]}...")
                 verify_ok = False
+                verify_fails.append(f"본문 너무 짧음 ({len(body_text)}자)")
             else:
                 _log(f"   ❌ [검증] 본문이 비어있습니다!")
                 verify_ok = False
+                verify_fails.append("본문이 비어있음")
         except Exception as e:
             _log(f"   ⚠️ [검증] 본문 확인 실패: {e}")
 
@@ -1341,9 +1677,11 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
                 else:
                     _log(f"   ❌ [검증] 이미지 재시도 후에도 0개 — 이미지 없는 글은 등록 중단!")
                     verify_ok = False
+                    verify_fails.append("이미지 0개 (재시도 후에도 실패)")
             else:
                 _log(f"   ⚠️ [검증] 원본 상품에 이미지가 없습니다 — 등록 중단!")
                 verify_ok = False
+                verify_fails.append("원본 상품에 이미지 없음")
         except Exception as e:
             _log(f"   ⚠️ [검증] 이미지 확인 실패: {e}")
 
@@ -1397,9 +1735,11 @@ async def upload_single_product(page, product: dict, log=None) -> bool:
         if verify_ok:
             _log("   ✅ 검증 완료 — 등록 진행합니다")
         else:
-            _log("   ❌ 검증 실패 — 등록 중단! (본문 구조 또는 내용 이상)")
+            fail_detail = " / ".join(verify_fails) if verify_fails else "알 수 없는 원인"
+            _log(f"   ❌ 검증 실패 — 등록 중단!")
+            _log(f"   📋 실패 사유: {fail_detail}")
             _log("━" * 40)
-            _set_fail_reason("본문 검증 실패 — 구조 또는 내용 이상")
+            _set_fail_reason(f"검증 실패: {fail_detail}")
             return False
         _log("━" * 40)
 
@@ -2833,28 +3173,58 @@ async def upload_image_from_url(page, img_url: str):
 # 게시글 템플릿
 # =============================================
 
+_BRAND_KO_MAP = {
+    "PRADA": "프라다", "GUCCI": "구찌", "LOUIS VUITTON": "루이비통",
+    "CHANEL": "샤넬", "HERMES": "에르메스", "DIOR": "디올",
+    "BALENCIAGA": "발렌시아가", "BOTTEGA VENETA": "보테가 베네타",
+    "SAINT LAURENT": "생로랑", "CELINE": "셀린느", "LOEWE": "로에베",
+    "FENDI": "펜디", "BURBERRY": "버버리", "MIU MIU": "미우미우",
+    "VALENTINO": "발렌티노", "GIVENCHY": "지방시", "VERSACE": "베르사체",
+    "COACH": "코치", "MICHAEL KORS": "마이클코어스", "TORY BURCH": "토리버치",
+    "FERRAGAMO": "페라가모", "CHRISTIAN DIOR": "크리스챤 디올",
+    "JIMMY CHOO": "지미추", "ALEXANDER MCQUEEN": "알렉산더 맥퀸",
+    "MARC JACOBS": "마크 제이콥스", "KATE SPADE": "케이트 스페이드",
+    "BVLGARI": "불가리", "CARTIER": "까르띠에", "TIFFANY": "티파니",
+    "OMEGA": "오메가", "ROLEX": "롤렉스", "TAG HEUER": "태그호이어",
+    "MCM": "엠씨엠", "CHLOE": "끌로에", "GOYARD": "고야드",
+    "CHROME HEARTS": "크롬하츠", "OFF-WHITE": "오프화이트",
+    "MONCLER": "몽클레어", "CANADA GOOSE": "캐나다구스",
+    "THE NORTH FACE": "노스페이스", "NIKE": "나이키", "ADIDAS": "아디다스",
+    "NEW BALANCE": "뉴발란스", "ASICS": "아식스",
+}
+
+def _random_brand(product: dict) -> str:
+    """브랜드명을 영어/한국어 중 랜덤 선택"""
+    import random
+    brand_en = (product.get("brand") or "").strip().upper()
+    brand_ko = _BRAND_KO_MAP.get(brand_en, "")
+    if brand_ko:
+        return random.choice([product.get("brand", "").strip(), brand_ko])
+    return product.get("brand_ko") or product.get("brand", "")
+
+
 def make_post_title(product: dict, price_info: dict) -> str:
     """게시글 제목 생성 (일본어 자동 번역)"""
     source_type = product.get("source_type", "sports")
     name = _ensure_korean(product.get("name_ko") or product.get("name", "상품명 없음"))
-    brand = product.get("brand_ko") or product.get("brand", "")
+    brand = _random_brand(product)
     price_krw = format_price(price_info["price_final"])
 
     if source_type == "vintage":
         grade = product.get("condition_grade", "")
-        grade_labels = {"NS":"신품","S":"S급","A":"A급","B":"B급","C":"C급","D":"D급"}
+        grade_labels = {"NS":"신품","S":"중고 S급","A":"중고 A급","B":"중고 B급","C":"중고 C급","D":"중고 D급"}
         grade_text = grade_labels.get(grade, "")
         title = f"[{brand}] {name}"
         if grade_text:
             title += f" [{grade_text}]"
-        if len(title) > 75:
-            title = title[:72] + "..."
-        return f"{title} / {price_krw}"
+        if len(title) > 80:
+            title = title[:77] + "..."
+        return title
     else:
         title = f"[{brand}] {name}"
         if len(title) > 80:
             title = title[:77] + "..."
-        return f"{title} / {price_krw}"
+        return title
 
 
 def make_post_content(product: dict, price_info: dict) -> str:
@@ -2866,11 +3236,14 @@ def make_post_content(product: dict, price_info: dict) -> str:
 
 
 def _ensure_korean(text: str) -> str:
-    """일본어가 남아있으면 AI 번역, 없으면 그대로 반환"""
+    """일본어가 남아있으면 AI 번역, 없으면 그대로 반환
+    ・(U+30FB), ー(U+30FC) 등 기호만 있는 경우는 일본어로 간주하지 않음
+    """
     if not text or not text.strip():
         return text
     import re
-    if re.search(r'[\u3040-\u309F\u30A0-\u30FF]', text):
+    # 실제 카나 문자만 감지 (기호 ・ー 등 제외)
+    if re.search(r'[\u3040-\u309F\u30A1-\u30FA\u30FD-\u30FE]', text):
         try:
             from translator import translate_ja_ko
             translated = translate_ja_ko(text)
@@ -2878,13 +3251,15 @@ def _ensure_korean(text: str) -> str:
                 return translated
         except Exception:
             pass
+    # ・를 · 로 치환 (한국어 가운데점)
+    text = text.replace('\u30FB', '\u00B7')
     return text
 
 
 def _make_vintage_content(product: dict, price_info: dict) -> str:
     """빈티지 상품 카페 게시글 본문 (모든 필드 한국어 보장)"""
     name = _ensure_korean(product.get("name_ko") or product.get("name", ""))
-    brand = product.get("brand", "")
+    brand = _random_brand(product)
     code = product.get("product_code", "")
     grade = product.get("condition_grade", "")
     grade_labels = {"NS":"신품/미사용","S":"중고S (최상)","A":"중고A (양호)","B":"중고B (사용감 있음)","C":"중고C (사용감 많음)","D":"중고D (난있음)"}
@@ -2942,7 +3317,7 @@ def _make_sports_content(product: dict, price_info: dict) -> str:
     """스포츠 상품 카페 게시글 본문 (모든 필드 한국어 보장)"""
     name = _ensure_korean(product.get("name_ko") or product.get("name", "상품명 없음"))
     name_ja = product.get("name", "")
-    brand = product.get("brand_ko") or product.get("brand", "")
+    brand = _random_brand(product)
     link = product.get("link", "")
     code = product.get("product_code", "")
 

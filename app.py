@@ -843,19 +843,20 @@ def create_post():
         conn.execute("INSERT INTO board (username, name, category, title, content) VALUES (?,?,?,?,?)",
                      (username, name, category, title, content))
         conn.commit()
-        # 텔레그램 알림
-        cat_labels = {"brand":"브랜드 추가","feature":"기능 요청","inquiry":"문의","general":"기타"}
-        try:
-            from notifier import send_telegram
-            send_telegram(
-                f"📋 <b>고객 요청 게시판</b>\n"
-                f"👤 {username}" + (f" ({name})" if name else "") + f"\n"
-                f"📂 {cat_labels.get(category, category)}\n"
-                f"📝 {title}\n"
-                f"💬 {content[:100]}"
-            )
-        except Exception:
-            pass
+        # 텔레그램 알림 (관리자 글은 제외)
+        if session.get("role") != "admin":
+            cat_labels = {"brand":"브랜드 추가","feature":"기능 요청","inquiry":"문의","general":"기타"}
+            try:
+                from notifier import send_telegram
+                send_telegram(
+                    f"📋 <b>고객 요청 게시판</b>\n"
+                    f"👤 {username}" + (f" ({name})" if name else "") + f"\n"
+                    f"📂 {cat_labels.get(category, category)}\n"
+                    f"📝 {title}\n"
+                    f"💬 {content[:100]}"
+                )
+            except Exception:
+                pass
         return jsonify({"ok": True, "message": "등록 완료"})
     finally:
         conn.close()
@@ -1690,6 +1691,121 @@ def shop_ai_analyze():
         return jsonify({"ok": False, "message": str(e)})
 
 
+@app.route(f"{URL_PREFIX}/shop/api/image-search", methods=["POST"])
+def shop_image_search():
+    """📷 이미지 검색 — AI Vision으로 상품 분석 후 키워드 추출"""
+    data = request.json or {}
+    image_b64 = data.get("image", "")
+    mime_type = data.get("mime_type", "image/jpeg")
+    if not image_b64:
+        return jsonify({"ok": False, "message": "이미지가 없습니다"})
+
+    try:
+        from post_generator import get_ai_config, _get_gemini, _get_openai
+        config = get_ai_config()
+
+        prompt = """이 이미지의 상품을 분석해주세요.
+
+다음 정보를 추출하세요:
+1. 브랜드명 (영문)
+2. 상품 카테고리 (가방/지갑/의류/신발/악세서리 등)
+3. 세부 종류 (숄더백/토트백/핸드백/클러치/지갑/자켓/코트 등)
+4. 색상
+5. 소재 (가죽/캔버스/나일론 등)
+
+반드시 아래 JSON 형식으로만 응답하세요:
+{"brand":"브랜드명","category":"카테고리","type":"세부종류","color":"색상","material":"소재","keywords":"검색용 키워드 (공백 구분, 2~4개)"}"""
+
+        import base64
+        result_text = ""
+
+        # Gemini Vision 우선 시도
+        if config.get("gemini_key"):
+            try:
+                client = _get_gemini()
+                from google.genai import types
+                img_part = types.Part.from_bytes(data=base64.b64decode(image_b64), mime_type=mime_type)
+                resp = client.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=[prompt, img_part],
+                )
+                result_text = resp.text or ""
+            except Exception as e:
+                logger.warning(f"Gemini Vision 실패: {e}")
+
+        # Gemini 실패 시 OpenAI Vision
+        if not result_text and config.get("openai_key"):
+            try:
+                client = _get_openai()
+                resp = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_b64}", "detail": "low"}},
+                        ],
+                    }],
+                    max_tokens=300,
+                )
+                result_text = resp.choices[0].message.content or ""
+            except Exception as e:
+                logger.warning(f"OpenAI Vision 실패: {e}")
+
+        if not result_text:
+            return jsonify({"ok": False, "message": "AI 이미지 분석에 실패했습니다. API 키를 확인해주세요."})
+
+        # JSON 파싱
+        import json as _json
+        # ```json ... ``` 블록 제거
+        cleaned = result_text.strip()
+        if "```" in cleaned:
+            cleaned = cleaned.split("```json")[-1].split("```")[0].strip() if "```json" in cleaned else cleaned.split("```")[1].split("```")[0].strip()
+        try:
+            parsed = _json.loads(cleaned)
+        except Exception:
+            # JSON 파싱 실패 시 텍스트에서 키워드 추출
+            parsed = {"keywords": cleaned[:100]}
+
+        brand = parsed.get("brand", "")
+        category = parsed.get("category", "")
+        item_type = parsed.get("type", "")
+        color = parsed.get("color", "")
+        material = parsed.get("material", "")
+        keywords = parsed.get("keywords", "")
+
+        # 검색 키워드 조합
+        search_parts = []
+        if brand and brand.upper() not in ("UNKNOWN", "불명", "없음", "N/A", ""):
+            search_parts.append(brand)
+        if item_type:
+            search_parts.append(item_type)
+        if color and color not in ("없음", "N/A", ""):
+            search_parts.append(color)
+        if not search_parts and keywords:
+            search_parts = keywords.split()[:3]
+
+        search_keyword = " ".join(search_parts)
+
+        analysis_parts = []
+        if brand: analysis_parts.append(f"브랜드: {brand}")
+        if item_type: analysis_parts.append(f"종류: {item_type}")
+        if color: analysis_parts.append(f"색상: {color}")
+        if material: analysis_parts.append(f"소재: {material}")
+        analysis_text = " | ".join(analysis_parts)
+
+        return jsonify({
+            "ok": True,
+            "keywords": search_keyword,
+            "analysis": analysis_text,
+            "raw": parsed,
+        })
+
+    except Exception as e:
+        logger.error(f"이미지 검색 오류: {e}")
+        return jsonify({"ok": False, "message": f"처리 오류: {str(e)}"})
+
+
 @app.route(f"{URL_PREFIX}/shop/api/product-by-code")
 def shop_api_product_by_code():
     """internal_code(고유번호)로 상품 1건 정확 조회"""
@@ -1924,6 +2040,7 @@ def shop_api_products():
             "page": page,
             "per_page": per_page,
             "total_pages": (total + per_page - 1) // per_page,
+            "exchange_rate": get_cached_rate() or 9.23,
         })
     finally:
         conn.close()
@@ -2431,7 +2548,7 @@ def _shuffle_by_brand(products: list) -> list:
     return result
 
 
-def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None, delay_min=13, delay_max=15, source_type="sports"):
+def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None, delay_min=13, delay_max=15, source_type="sports", filter_brand="ALL", filter_category="ALL", filter_min_grade=""):
     """백그라운드 스레드에서 업로드 실행
 
     우선순위:
@@ -2455,11 +2572,39 @@ def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None, delay_
             from product_db import _conn
             conn = _conn()
             import json as _json
-            rows = conn.execute("""
+            sql = """
                 SELECT * FROM products WHERE source_type='vintage' AND in_stock=1
                 AND (cafe_status IS NULL OR cafe_status='' OR cafe_status='대기')
-                ORDER BY created_at DESC
-            """).fetchall()
+            """
+            params = []
+            if filter_brand and filter_brand != "ALL":
+                sql += " AND brand = ?"
+                params.append(filter_brand)
+            if filter_category and filter_category != "ALL":
+                # 카테고리는 상품명(name)에 일본어 키워드로 매칭
+                cat_keywords = {
+                    "bag": ["バッグ","ショルダー","トート","リュック","ハンド","ポーチ","ボストン","クラッチ","ウエスト"],
+                    "clothing": ["ジャケット","コート","シャツ","ブラウス","ワンピース","パンツ","スラックス","ニット","セーター","カーディガン","パーカー","スウェット","ベスト","Tシャツ","ドレス","スカート"],
+                    "shoes": ["シューズ","スニーカー","ブーツ","サンダル","パンプス","ローファー"],
+                    "watch": ["時計","ウォッチ"],
+                    "accessory": ["財布","ベルト","マフラー","帽子","サングラス","ネックレス","ブレスレット","リング","アクセサリー","ストール","スカーフ"],
+                }
+                kws = cat_keywords.get(filter_category, [])
+                if kws:
+                    like_clauses = " OR ".join(["name LIKE ?" for _ in kws])
+                    sql += f" AND ({like_clauses})"
+                    params.extend([f"%{k}%" for k in kws])
+            # 등급 필터 (선택 등급 이상만)
+            if filter_min_grade:
+                grade_rank = {"NS": 0, "S": 1, "A": 2, "B": 3, "C": 4, "D": 5}
+                threshold = grade_rank.get(filter_min_grade, 99)
+                allowed = [g for g, r in grade_rank.items() if r <= threshold]
+                if allowed:
+                    grade_placeholders = ",".join(["?"] * len(allowed))
+                    sql += f" AND condition_grade IN ({grade_placeholders})"
+                    params.extend(allowed)
+            sql += " ORDER BY created_at DESC"
+            rows = conn.execute(sql, params).fetchall()
             for r in rows:
                 p = {c: r[c] for c in r.keys()}
                 p["source_type"] = "vintage"
@@ -2471,7 +2616,7 @@ def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None, delay_
                     p["detail_images"] = []
                 products.append(p)
             conn.close()
-            push_log(f"📦 빈티지 대기 상품: {len(products)}개 로드 완료")
+            push_log(f"📦 빈티지 대기 상품: {len(products)}개 로드 완료 (브랜드={filter_brand}, 카테고리={filter_category})")
         except Exception as e:
             push_log(f"❌ 빈티지 상품 로드 실패: {e}")
             _upload_lock.release()
@@ -2770,6 +2915,8 @@ def run_scheduled_upload(slot_id: str, brand: str, quantity: int):
             products=to_upload,
             status_callback=push_log,
             max_upload=quantity,
+            delay_min=20,
+            delay_max=30,
             on_single_success=_on_single_upload_success,
             cookie_path=active_cookie,
         ))
@@ -2829,17 +2976,19 @@ def _register_vt_schedule_jobs():
                 minute=slot["minute"],
                 id=job_id,
                 name=f"빈티지 카페 [{slot['label']}] {slot['hour']:02d}:{slot['minute']:02d}",
-                args=[slot["id"], slot.get("brand", "ALL"), slot.get("quantity", 3)],
+                args=[slot["id"], slot.get("brand", "ALL"), slot.get("category", "ALL"), slot.get("min_grade", ""), slot.get("quantity", 3)],
                 replace_existing=True,
             )
-            logger.info(f"📅 빈티지 스케줄 등록: {slot['label']} {slot['hour']:02d}:{slot['minute']:02d}")
+            logger.info(f"📅 빈티지 스케줄 등록: {slot['label']} {slot['hour']:02d}:{slot['minute']:02d} 브랜드={slot.get('brand','ALL')} 카테고리={slot.get('category','ALL')} 최소등급={slot.get('min_grade','전체')}")
 
 
-def run_vt_scheduled_upload(slot_id: str, brand: str, quantity: int):
+def run_vt_scheduled_upload(slot_id: str, brand: str, category: str, min_grade: str, quantity: int):
     """빈티지 자동 카페 업로드"""
-    push_log(f"⏰ [빈티지/{slot_id}] 자동 업로드 시작 — {brand} {quantity}개")
+    grade_label = f"등급={min_grade}이상" if min_grade else "등급=전체"
+    push_log(f"⏰ [빈티지/{slot_id}] 자동 업로드 시작 — 브랜드={brand}, 카테고리={category}, {grade_label}, {quantity}개")
     run_upload(max_upload=quantity, shuffle_brands=(brand == "ALL"),
-               checked_codes=None, delay_min=8, delay_max=13, source_type="vintage")
+               checked_codes=None, delay_min=20, delay_max=30, source_type="vintage",
+               filter_brand=brand, filter_category=category, filter_min_grade=min_grade)
     push_log(f"⏰ [빈티지/{slot_id}] 자동 업로드 완료")
 
 
@@ -3026,6 +3175,21 @@ def _start_scheduler_once():
     _register_vt_schedule_jobs()
     _register_check_schedule_job()
     _register_task_schedule_jobs()
+    try:
+        _register_fb_schedule_jobs()
+    except NameError:
+        pass
+    # NAS 상품 동기화 (매시 30분)
+    try:
+        scheduler.add_job(
+            func=sync_products_from_nas,
+            trigger="cron", minute=30,
+            id="nas_sync", replace_existing=True,
+            name="NAS 상품 동기화 (매시 30분)",
+        )
+        logger.info("📂 NAS 동기화 스케줄 등록 (매시 30분)")
+    except NameError:
+        pass
     # AI API 상태 모니터링 (5분 간격)
     scheduler.add_job(
         func=_check_ai_api_job,
@@ -3166,6 +3330,7 @@ def get_products():
     brand_filter = request.args.get("brand", "").strip()
     search_filter = request.args.get("search", "").strip().lower()
     status_filter = request.args.get("status", "").strip()
+    category_filter = request.args.get("category", "").strip()
     if brand_filter and brand_filter != "ALL":
         products = [p for p in products if
                     (p.get("brand_ko") or "").strip() == brand_filter or
@@ -3174,6 +3339,17 @@ def get_products():
         products = [p for p in products if search_filter in p.get("name", "").lower()
                     or search_filter in p.get("brand", "").lower()
                     or search_filter in p.get("product_code", "").lower()]
+    if category_filter and category_filter != "ALL":
+        cat_keywords = {
+            "bag": ["バッグ","ショルダー","トート","リュック","ハンド","ポーチ","ボストン","クラッチ","ウエスト"],
+            "clothing": ["ジャケット","コート","シャツ","ブラウス","ワンピース","パンツ","スラックス","ニット","セーター","カーディガン","パーカー","スウェット","ベスト","Tシャツ","ドレス","スカート"],
+            "shoes": ["シューズ","スニーカー","ブーツ","サンダル","パンプス","ローファー"],
+            "watch": ["時計","ウォッチ"],
+            "accessory": ["財布","ベルト","マフラー","帽子","サングラス","ネックレス","ブレスレット","リング","アクセサリー","ストール","スカーフ"],
+        }
+        kws = cat_keywords.get(category_filter, [])
+        if kws:
+            products = [p for p in products if any(k in (p.get("name") or "") for k in kws)]
     if status_filter and status_filter != "ALL":
         products = [p for p in products if (p.get("cafe_status") or "대기") == status_filter]
         # 완료/중복 필터 시 DB에서도 해당 상태 상품 병합
@@ -4414,7 +4590,14 @@ def upload_stop():
 def upload_reset():
     """업로드 중지 + 상태 초기화"""
     request_upload_stop()
-    push_log("🔄 업로드 리셋 — 작업 중지 및 초기화")
+    status["uploading"] = False
+    status["stop_requested"] = False
+    # 락 강제 해제
+    try:
+        _upload_lock.release()
+    except RuntimeError:
+        pass
+    push_log("🔄 업로드 리셋 — 작업 중지 및 상태 초기화 완료")
     return jsonify({"ok": True, "message": "업로드 리셋 완료"})
 
 
@@ -4713,6 +4896,1376 @@ def update_price_settings():
            f"배송={cfg['intl_shipping_krw']:,}원")
     push_log("💰 " + msg)
     return jsonify({"ok": True, **cfg, "message": msg})
+
+
+# ── 자유게시판 (중고명품 기사) ──────────────────
+
+def _init_free_board_db():
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS free_board (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            url TEXT DEFAULT '',
+            image_path TEXT DEFAULT '',
+            status TEXT DEFAULT '대기',
+            cafe_menu_id TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime'))
+        )""")
+        # 기존 테이블에 컬럼 없으면 추가
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(free_board)").fetchall()}
+        if "image_path" not in cols:
+            conn.execute("ALTER TABLE free_board ADD COLUMN image_path TEXT DEFAULT ''")
+        if "tags" not in cols:
+            conn.execute("ALTER TABLE free_board ADD COLUMN tags TEXT DEFAULT ''")
+        if "article_type" not in cols:
+            conn.execute("ALTER TABLE free_board ADD COLUMN article_type TEXT DEFAULT ''")
+        conn.commit()
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/api/free-board", methods=["GET"])
+@admin_required
+def get_free_board():
+    _init_free_board_db()
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        rows = conn.execute("SELECT * FROM free_board ORDER BY id DESC LIMIT 50").fetchall()
+        posts = []
+        for r in rows:
+            p = {"id": r["id"], "title": r["title"], "content": r["content"],
+                 "url": r["url"] or "", "status": r["status"] or "대기",
+                 "created_at": r["created_at"] or ""}
+            try:
+                p["image_path"] = r["image_path"] or ""
+            except Exception:
+                p["image_path"] = ""
+            try:
+                p["tags"] = r["tags"] or ""
+            except Exception:
+                p["tags"] = ""
+            try:
+                p["article_type"] = r["article_type"] or ""
+            except Exception:
+                p["article_type"] = ""
+            posts.append(p)
+        return jsonify({"ok": True, "posts": posts})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/api/free-board", methods=["POST"])
+@admin_required
+def create_free_board():
+    _init_free_board_db()
+    data = request.json or {}
+    title = (data.get("title") or "").strip()
+    content = (data.get("content") or "").strip()
+    url = (data.get("url") or "").strip()
+    image_path = (data.get("image_path") or "").strip()
+    tags = (data.get("tags") or "").strip()
+    article_type = (data.get("article_type") or "").strip()
+    if not title or not content:
+        return jsonify({"ok": False, "message": "제목과 내용을 입력해주세요"})
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        conn.execute("INSERT INTO free_board (title, content, url, image_path, tags, article_type) VALUES (?,?,?,?,?,?)",
+                     (title, content, url, image_path, tags, article_type))
+        conn.commit()
+        return jsonify({"ok": True, "message": "등록 완료"})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/api/free-board/<int:post_id>/status", methods=["POST"])
+@admin_required
+def update_free_board_status(post_id):
+    _init_free_board_db()
+    data = request.json or {}
+    new_status = data.get("status", "대기")
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        conn.execute("UPDATE free_board SET status=? WHERE id=?", (new_status, post_id))
+        conn.commit()
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
+
+
+_FB_SCHEDULE_PATH = os.path.join(get_path("db"), "fb_schedule.json")
+
+@app.route(f"{URL_PREFIX}/api/free-board/schedule", methods=["GET"])
+@admin_required
+def get_fb_schedule():
+    import json as _json
+    data = {"enabled": False, "eco_hour": 8, "brand_hour": 17}
+    if os.path.exists(_FB_SCHEDULE_PATH):
+        try:
+            with open(_FB_SCHEDULE_PATH, "r") as f:
+                data.update(_json.load(f))
+        except Exception:
+            pass
+    return jsonify({"ok": True, "schedule": data})
+
+
+@app.route(f"{URL_PREFIX}/api/free-board/schedule", methods=["POST"])
+@admin_required
+def save_fb_schedule():
+    import json as _json
+    data = request.json or {}
+    sched = {
+        "enabled": bool(data.get("enabled")),
+        "eco_hour": int(data.get("eco_hour", 8)),
+        "brand_hour": int(data.get("brand_hour", 17)),
+    }
+    os.makedirs(os.path.dirname(_FB_SCHEDULE_PATH), exist_ok=True)
+    with open(_FB_SCHEDULE_PATH, "w") as f:
+        _json.dump(sched, f)
+    # 스케줄러 등록/해제
+    _register_fb_schedule_jobs()
+    return jsonify({"ok": True})
+
+
+def _register_fb_schedule_jobs():
+    """자유게시판 자동 기사 생성+업로드 스케줄 등록"""
+    import json as _json
+    sched = {"enabled": False, "eco_hour": 8, "brand_hour": 17}
+    if os.path.exists(_FB_SCHEDULE_PATH):
+        try:
+            with open(_FB_SCHEDULE_PATH, "r") as f:
+                sched.update(_json.load(f))
+        except Exception:
+            pass
+
+    # 기존 잡 제거
+    for jid in ["fb_auto_generate", "fb_auto_upload_eco", "fb_auto_upload_brand"]:
+        if scheduler.get_job(jid):
+            scheduler.remove_job(jid)
+
+    if sched.get("enabled"):
+        # 새벽 6시: 기사 자동 생성 (경제2 + 브랜드2)
+        scheduler.add_job(
+            func=_fb_auto_generate_articles,
+            trigger="cron", hour=6, minute=0,
+            id="fb_auto_generate", replace_existing=True,
+            name="자유게시판 자동 기사 생성 (06:00)",
+        )
+        # 경제 기사 업로드 (예약시간 - 컨펌 없으면 자동)
+        eco_hour = sched.get("eco_hour", 8)
+        scheduler.add_job(
+            func=lambda: _fb_auto_upload("economy"),
+            trigger="cron", hour=eco_hour, minute=0,
+            id="fb_auto_upload_eco", replace_existing=True,
+            name=f"자유게시판 경제기사 업로드 ({eco_hour:02d}:00)",
+        )
+        # 브랜드 기사 업로드
+        brand_hour = sched.get("brand_hour", 17)
+        scheduler.add_job(
+            func=lambda: _fb_auto_upload("brand"),
+            trigger="cron", hour=brand_hour, minute=0,
+            id="fb_auto_upload_brand", replace_existing=True,
+            name=f"자유게시판 브랜드기사 업로드 ({brand_hour:02d}:00)",
+        )
+        logger.info(f"📅 자유게시판 스케줄 등록: 생성 06:00, 경제 {eco_hour:02d}:00, 브랜드 {brand_hour:02d}:00")
+
+
+def _fb_auto_generate_articles():
+    """새벽 6시: 경제 기사 2개 + 브랜드 기사 2개 자동 생성"""
+    push_log("📰 [자동] 자유게시판 기사 생성 시작 (경제2 + 브랜드2)")
+    import requests as _req
+    base = f"http://localhost:{3002}"
+    # 세션 쿠키 없이 내부 호출이므로 직접 함수 호출
+    try:
+        from post_generator import get_ai_config, _call_gemini, _call_claude, _call_openai
+        config = get_ai_config()
+        from exchange import get_cached_rate
+        rate = get_cached_rate() or 9.23
+        import random, json as _json
+        from datetime import datetime as _dt
+        from user_db import _conn as user_conn
+
+        today = _dt.now().strftime("%Y년 %m월 %d일")
+        weekday = ["월","화","수","목","금","토","일"][_dt.now().weekday()]
+        provider = config.get("provider", "gemini")
+
+        articles = []
+        for atype in ["economy", "economy", "brand", "brand"]:
+            try:
+                # 간단한 프롬프트로 기사 생성
+                if atype == "economy":
+                    topics = ["일본환율 변동과 명품 소싱 전략", "글로벌 럭셔리 시장 전망", "엔저 시대 구매대행 기회", "해외직구 관세 변화"]
+                    topic = random.choice(topics)
+                    prompt = f"명품 구매대행 카페 경제 기사. 주제: {topic}. 오늘: {today}. 엔화: ¥100={rate*100:.0f}원. 500자 내외, 단락별 구조, 원화 표기. JSON: {{\"title\":\"제목\",\"content\":\"본문\",\"keywords\":[\"kw1\"]}}"
+                else:
+                    brands = ["롤렉스","에르메스","샤넬","루이비통","구찌","프라다"]
+                    brand = random.choice(brands)
+                    prompt = f"명품 브랜드 기사. 브랜드: {brand}. 오늘: {today}. 500자 내외, 단락별, 원화 표기. JSON: {{\"title\":\"제목\",\"content\":\"본문\",\"keywords\":[\"kw1\"]}}"
+
+                if provider == "gemini":
+                    result = _call_gemini(prompt)
+                elif provider == "claude":
+                    result = _call_claude(prompt)
+                else:
+                    result = _call_openai(prompt)
+
+                cleaned = result.strip()
+                if "```" in cleaned:
+                    cleaned = cleaned.split("```json")[-1].split("```")[0].strip() if "```json" in cleaned else cleaned.split("```")[1].split("```")[0].strip()
+                parsed = _json.loads(cleaned)
+                title = parsed.get("title", "")
+                content = parsed.get("content", "")
+
+                # 컨설팅 안내 추가
+                content += "\n\n\n🚀 중고명품창업 컨설팅 안내\n\n현지 소싱부터 실무 운영까지, 성공적인 창업을 지원합니다.\n\n👉 [컨설팅 상세 내용 확인하기]\nhttps://cafe.naver.com/sohosupport/2972\n\n━━━━━━━━━━━━━━━━━━━━"
+
+                # DB 저장
+                conn = user_conn()
+                conn.execute("INSERT INTO free_board (title, content, article_type, status) VALUES (?,?,?,?)",
+                             (title, content, atype, "대기"))
+                conn.commit()
+                conn.close()
+                articles.append({"type": atype, "title": title})
+                push_log(f"📰 [자동] {atype} 기사 생성: {title[:30]}...")
+                import time; time.sleep(3)
+            except Exception as e:
+                push_log(f"❌ [자동] 기사 생성 실패: {e}")
+                logger.warning(f"자동 기사 생성 실패: {e}")
+
+        push_log(f"📰 [자동] 총 {len(articles)}개 기사 생성 완료 — 컨펌 대기 중")
+    except Exception as e:
+        push_log(f"❌ [자동] 기사 생성 오류: {e}")
+
+
+def _fb_auto_upload(article_type: str):
+    """예약 시간: 승인된 기사 업로드, 미승인이면 자동 업로드"""
+    push_log(f"📰 [자동] {article_type} 기사 업로드 확인...")
+    try:
+        from user_db import _conn as user_conn
+        _init_free_board_db()
+        conn = user_conn()
+        # 승인된 기사 우선
+        row = conn.execute(
+            "SELECT id, title FROM free_board WHERE article_type=? AND status='승인' ORDER BY id DESC LIMIT 1",
+            (article_type,)).fetchone()
+        if not row:
+            # 승인 없으면 대기 기사 자동 업로드 (1시간 전까지 컨펌 없음)
+            row = conn.execute(
+                "SELECT id, title FROM free_board WHERE article_type=? AND status='대기' ORDER BY id DESC LIMIT 1",
+                (article_type,)).fetchone()
+            if row:
+                push_log(f"📰 [자동] 컨펌 없음 → 자동 업로드: {row['title'][:30]}...")
+        conn.close()
+
+        if row:
+            post_id = row["id"]
+            # 업로드 실행 (기존 upload_free_board_to_cafe 로직 재사용)
+            import threading
+            def _do():
+                import asyncio
+                from cafe_uploader import upload_article_to_cafe
+                conn2 = user_conn()
+                r = conn2.execute("SELECT * FROM free_board WHERE id=?", (post_id,)).fetchone()
+                conn2.close()
+                if not r:
+                    return
+                title = r["title"]
+                content = r["content"]
+                try:
+                    img_path = r["image_path"] or ""
+                except Exception:
+                    img_path = ""
+                try:
+                    tags = r["tags"] or ""
+                except Exception:
+                    tags = ""
+                naver_data = _load_naver_accounts()
+                active_slot = naver_data.get("active", 1)
+                cookie_path = _get_cookie_path(active_slot)
+                push_log(f"📰 [자동] 업로드 시작: {title[:30]}...")
+                result = asyncio.run(upload_article_to_cafe(
+                    title=title, content=content, menu_id="126",
+                    board_name="자유게시판", log=push_log, cookie_path=cookie_path,
+                    image_path=img_path, tags=tags,
+                ))
+                conn3 = user_conn()
+                conn3.execute("UPDATE free_board SET status=? WHERE id=?",
+                              ("완료" if result else "실패", post_id))
+                conn3.commit()
+                conn3.close()
+                push_log(f"📰 [자동] {'완료' if result else '실패'}: {title[:30]}")
+            threading.Thread(target=_do, daemon=True).start()
+        else:
+            push_log(f"📰 [자동] {article_type} 업로드할 기사 없음")
+    except Exception as e:
+        push_log(f"❌ [자동] 업로드 오류: {e}")
+
+
+@app.route(f"{URL_PREFIX}/api/free-board/<int:post_id>", methods=["DELETE"])
+@admin_required
+def delete_free_board(post_id):
+    _init_free_board_db()
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        conn.execute("DELETE FROM free_board WHERE id=?", (post_id,))
+        conn.commit()
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/api/free-board/generate", methods=["POST"])
+@admin_required
+def generate_free_board_article():
+    """AI로 중고명품 관련 기사 자동 생성"""
+    data = request.json or {}
+    article_type = data.get("type", "economy")  # economy / brand
+    user_keyword = (data.get("keyword") or "").strip()
+    image_source = data.get("image_source", "gemini")  # gemini / gemini_edit / pexels / none
+    user_image_prompt = (data.get("image_prompt") or "").strip()
+
+    try:
+        from post_generator import get_ai_config, _call_gemini, _call_claude, _call_openai
+        config = get_ai_config()
+        provider = config.get("provider", "none")
+        if provider == "none":
+            return jsonify({"ok": False, "message": "AI가 설정되지 않았습니다"})
+
+        from exchange import get_cached_rate
+        rate = get_cached_rate() or 9.23
+        import random
+        from datetime import datetime as _dt
+        today = _dt.now().strftime("%Y년 %m월 %d일")
+        weekday = ["월","화","수","목","금","토","일"][_dt.now().weekday()]
+
+        # 실시간 트렌드 수집 (Google 인기검색어 + 명품 관련 추천)
+        trending_keywords = []
+        luxury_suggestions = []
+        try:
+            import urllib.request
+            import xml.etree.ElementTree as ET
+            # 1) Google 트렌드 실시간 인기검색어
+            req = urllib.request.Request(
+                "https://trends.google.co.kr/trending/rss?geo=KR",
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            rss_data = urllib.request.urlopen(req, timeout=5).read().decode("utf-8")
+            root = ET.fromstring(rss_data)
+            for item in root.findall(".//item/title"):
+                if item.text:
+                    trending_keywords.append(item.text.strip())
+            trending_keywords = trending_keywords[:15]
+        except Exception as e:
+            logger.warning(f"트렌드 인기검색어 로드 실패: {e}")
+
+        try:
+            # 2) 명품/경제 관련 Google 추천 검색어
+            import re as _re2
+            search_seeds = ["명품 시세", "중고명품 가격", "일본환율 명품", "미국환율 관세", "명품 구매대행", "빈티지 명품"]
+            for seed in search_seeds[:3]:
+                encoded = urllib.request.quote(seed)
+                url = f"https://www.google.com/complete/search?q={encoded}&client=gws-wiz&hl=ko"
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                resp = urllib.request.urlopen(req, timeout=3).read().decode("utf-8")
+                # 추천 검색어 파싱
+                matches = _re2.findall(r'\["([^"]+)"', resp)
+                for m in matches[:3]:
+                    clean = _re2.sub(r'<[^>]+>', '', m).strip()
+                    if clean and clean not in luxury_suggestions and len(clean) < 30:
+                        luxury_suggestions.append(clean)
+            luxury_suggestions = luxury_suggestions[:10]
+        except Exception as e:
+            logger.warning(f"추천 검색어 로드 실패: {e}")
+
+        all_trend_info = trending_keywords + luxury_suggestions
+        logger.info(f"📊 트렌드: 인기 {len(trending_keywords)}개, 명품추천 {len(luxury_suggestions)}개")
+
+        trending_text = ""
+        if all_trend_info:
+            parts = []
+            if trending_keywords:
+                parts.append(f"실시간 인기검색어: {', '.join(trending_keywords[:10])}")
+            if luxury_suggestions:
+                parts.append(f"명품 관련 추천검색어: {', '.join(luxury_suggestions[:8])}")
+            trending_text = "\n\n[참고: 오늘의 검색 트렌드]\n" + "\n".join(parts) + "\n위 트렌드 중 명품/경제/패션과 연관 지을 수 있는 키워드가 있다면 자연스럽게 활용하세요.\n환율 언급 시 반드시 '일본환율' 또는 '미국환율'로만 표기하세요. 단순 '환율'은 사용하지 마세요."
+
+        if article_type == "economy":
+            topics = [
+                "오늘의 엔화/달러 환율 변동이 명품 구매대행 소싱가에 미치는 영향",
+                "일본 중고 명품 시장 동향과 한국 바이어 전략",
+                "미국 관세 정책 변화와 해외직구 면세 기준의 실질적 가치",
+                "일본 엔저 시대, 명품 소싱 최적 타이밍 분석",
+                "글로벌 럭셔리 시장 전망과 중고 명품 투자 가치",
+                "환율 변동기 구매대행 사업자를 위한 리스크 관리 전략",
+                "일본 빈티지 명품 시장의 가격 트렌드와 인기 아이템",
+                "해외 직구 vs 구매대행, 관부가세 절감 전략 비교",
+            ]
+            topic = user_keyword if user_keyword else random.choice(topics)
+            prompt = f"""당신은 명품 구매대행 전문 카페의 경제 매거진 에디터입니다.
+오늘 날짜: {today} ({weekday}요일)
+현재 엔화 환율: ¥100 = {rate*100:.0f}원
+
+주제: {topic}
+
+[작성 규칙]
+1. 제목: 흥미로운 헤드라인 (20~35자)
+2. 본문 구조를 반드시 아래 5개 단락으로 나누어 작성:
+
+   📌 [핵심 요약] (2~3줄 요약)
+   --- 여기에 이미지 1 ---
+
+   📊 [시장 분석] (현재 상황, 데이터 기반 분석)
+   --- 여기에 이미지 2 ---
+
+   💡 [실전 전략] (구매대행 사업자/직구족을 위한 구체적 팁 3가지, 불릿 포인트)
+   --- 여기에 이미지 3 ---
+
+   📈 [전망 & 인사이트] (앞으로의 전망, 주의점)
+
+   💬 [참여 질문] (회원 참여 유도 질문 1개)
+
+   ✅ 실무 팁: (한 줄 팁)
+
+3. 각 단락은 "--- 여기에 이미지 N ---" 줄로 구분 (이미지 삽입 위치 표시)
+4. 환율은 반드시 '일본환율' 또는 '미국환율'로 표기
+5. 서술식 장문 금지, 짧은 문장 + 불릿 포인트 위주
+6. 이모지는 섹션 제목에만 최소한으로 사용 (본문 내 이모지 남용 금지)
+7. 대표키워드 5~7개 선정 (제목/본문에 자연스럽게 포함)
+8. 모든 가격/금액은 반드시 한국 원화(원)로 표기 (달러($) 사용 금지)
+9. 반드시 사실 기반 정보만 작성 (추측/가정/허위 정보 금지, 확인된 데이터만 사용)
+10. 확인되지 않은 수치는 "약", "추정" 등을 붙여 구분
+
+반드시 아래 JSON 형식으로만 응답:
+{{"title":"기사 제목","content":"기사 본문","keywords":["키워드1","키워드2","키워드3","키워드4","키워드5"]}}{trending_text}"""
+
+        else:  # brand
+            brands = [
+                ("롤렉스", "Rolex", "시계"),
+                ("에르메스", "Hermès", "가방/소품"),
+                ("샤넬", "CHANEL", "가방/의류"),
+                ("루이비통", "Louis Vuitton", "가방/소품"),
+                ("구찌", "GUCCI", "가방/의류"),
+                ("프라다", "PRADA", "가방/의류"),
+                ("디올", "Dior", "가방/의류"),
+                ("보테가 베네타", "Bottega Veneta", "가방"),
+                ("셀린느", "CELINE", "가방"),
+                ("로에베", "LOEWE", "가방"),
+            ]
+            brand_ko, brand_en, category = random.choice(brands)
+            keyword_line = f"\n특히 다음 키워드를 중심으로 작성: {user_keyword}" if user_keyword else ""
+            prompt = f"""당신은 럭셔리 패션 매거진 에디터입니다.
+오늘 날짜: {today} ({weekday}요일)
+브랜드: {brand_ko} ({brand_en}) - {category}{keyword_line}
+
+[핵심 방향]
+- 이 브랜드의 최신 동향, 트렌드, 뉴스를 중심으로 작성
+- 중고명품 얘기는 전체의 20~30%만. 나머지는 브랜드 자체의 이야기 (신제품, 컬렉션, 디자이너, 패션쇼, 셀럽 착용, 글로벌 이슈 등)
+- 억지로 중고/구매대행과 연결하지 마세요
+
+[작성 규칙]
+1. 제목: "[{brand_ko}] ..." 형식, 매거진 스타일 (20~35자)
+2. 본문 구조를 반드시 아래 단락으로 작성:
+
+   🏷 [{brand_ko} 최신 뉴스] (최근 컬렉션/디자이너/캠페인/셀럽 이슈 등 브랜드 자체 소식)
+   --- 여기에 이미지 1 ---
+
+   🔥 [주목할 아이템] (이번 시즌 인기 아이템 3가지, 리스트 형식)
+   --- 여기에 이미지 2 ---
+
+   📊 [가격 동향] (신품 가격 변동, 중고 시세는 간단히 참고 수준만)
+   --- 여기에 이미지 3 ---
+
+   💡 [스타일링 & 팁] (착용법, 관리법, 또는 구매 시 체크 포인트)
+
+   💬 [참여 질문] (회원 참여 유도 질문 1개)
+
+3. 각 단락은 "--- 여기에 이미지 N ---" 줄로 구분
+4. 서술식 장문 금지, 짧은 문장 + 불릿 포인트 위주
+5. 이모지는 섹션 제목에만 최소한으로 사용
+6. 대표키워드 5~7개 선정 (예: {brand_ko}신상, {brand_ko}트렌드, {brand_ko}컬렉션)
+7. 모든 가격은 원화(원)로 표기
+8. 사실 기반 정보만 작성, 확인 안 된 수치는 "약", "추정" 표기
+
+반드시 아래 JSON 형식으로만 응답:
+{{"title":"기사 제목","content":"기사 본문","keywords":["키워드1","키워드2","키워드3","키워드4","키워드5"]}}{trending_text}"""
+
+        # AI 호출
+        if provider == "gemini" and config.get("gemini_key"):
+            result = _call_gemini(prompt)
+        elif provider == "claude" and config.get("claude_key"):
+            result = _call_claude(prompt)
+        elif provider == "openai" and config.get("openai_key"):
+            result = _call_openai(prompt)
+        else:
+            return jsonify({"ok": False, "message": "AI API 키가 설정되지 않았습니다"})
+
+        # JSON 파싱
+        import json as _json
+        cleaned = result.strip()
+        if "```" in cleaned:
+            cleaned = cleaned.split("```json")[-1].split("```")[0].strip() if "```json" in cleaned else cleaned.split("```")[1].split("```")[0].strip()
+        try:
+            parsed = _json.loads(cleaned)
+        except Exception:
+            parsed = {"title": f"[{today}] 럭셔리 경제 브리핑", "content": cleaned[:800]}
+
+        content = parsed.get("content", "")
+
+        # 하단 컨설팅 안내 삽입
+        content += """
+
+
+🚀 중고명품창업 컨설팅 안내
+
+현지 소싱부터 실무 운영까지, 성공적인 창업을 지원합니다.
+
+👉 [컨설팅 상세 내용 확인하기]
+https://cafe.naver.com/sohosupport/2972
+
+━━━━━━━━━━━━━━━━━━━━"""
+
+        keywords = parsed.get("keywords", [])
+        # 태그 10개 채우기: AI 키워드 + 자동 보충
+        base_tags = ["일본구매대행", "명품구매대행", "중고명품", "일본직구", "빈티지명품"]
+        for kw in keywords:
+            if kw not in base_tags:
+                base_tags.insert(0, kw)
+        tags = list(dict.fromkeys(base_tags))[:10]  # 중복 제거, 최대 10개
+
+        # ── 이미지 수집 (소스 선택) ──
+        image_path = ""
+        PEXELS_API_KEY = "ZMFMszrhmZ9oy5UTEC0XKa7h8JGytGpnLWkoFDcE4bdqxLv7r507JHEe"
+        UNSPLASH_ACCESS_KEY = ""  # 미설정 시 Pexels 폴백
+
+        # 기사 유형별 검색어
+        if article_type == "economy":
+            search_queries = ["일본 엔화 환율", "도쿄 명품거리 긴자", "명품 구매대행 시장", "일본 환전소", "명품 쇼핑백"]
+        else:
+            brand_ko_map = {"롤렉스":"롤렉스 시계 2026","에르메스":"에르메스 가방 최신","샤넬":"샤넬 2026 컬렉션",
+                "루이비통":"루이비통 최신 컬렉션","구찌":"구찌 2026 컬렉션","프라다":"프라다 최신 가방",
+                "디올":"디올 2026 컬렉션","보테가":"보테가 베네타 최신","셀린느":"셀린느 최신 가방","로에베":"로에베 2026 컬렉션"}
+            brand_query = "명품 브랜드 최신 컬렉션"
+            for bk, bq in brand_ko_map.items():
+                if bk in (parsed.get("title","") + content):
+                    brand_query = bq
+                    break
+            search_queries = [brand_query, f"{brand_query} 패션쇼", f"{brand_query} 셀럽", f"{brand_query} 매장", f"{brand_query} 신상"]
+
+        def _overlay_text_on_image(img_bytes, caption_text):
+            """PIL로 이미지 위에 정확한 한국어 텍스트 합성 (절대 깨지지 않음)"""
+            if not caption_text:
+                return img_bytes
+            try:
+                from PIL import Image, ImageDraw, ImageFont
+                import io
+                img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+                w, h = img.size
+                bar_h = int(h * 0.16)
+                overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+                d = ImageDraw.Draw(overlay)
+                d.rectangle([(0, h - bar_h), (w, h)], fill=(0, 0, 0, 170))
+                img = Image.alpha_composite(img, overlay).convert("RGB")
+                draw = ImageDraw.Draw(img)
+                font_path = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
+                if not os.path.exists(font_path):
+                    font_path = "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"
+                font_size = max(int(w * 0.038), 18)
+                font = ImageFont.truetype(font_path, font_size)
+                text_y = h - bar_h + int(bar_h * 0.3)
+                draw.text((int(w * 0.04), text_y), caption_text, fill="white", font=font)
+                buf = io.BytesIO()
+                img.save(buf, format="PNG", quality=92)
+                return buf.getvalue()
+            except Exception as te:
+                logger.warning(f"텍스트 합성 실패: {te}")
+                return img_bytes
+
+        # 모든 이미지 모드 공통: 캡션 추출
+        _gem_captions = []
+        if image_source != "none":
+            try:
+                hl_prompt = f"""아래 기사에서 이미지 캡션용 핵심 문장을 정확히 5개 뽑아주세요.
+각 문장은 10~15자 이내의 정확한 한국어.
+반드시 JSON 배열로만 응답: ["문장1","문장2","문장3","문장4","문장5"]
+
+제목: {parsed.get('title','')}
+본문: {content[:800]}"""
+                if provider == "gemini":
+                    hl_r = _call_gemini(hl_prompt)
+                elif provider == "claude":
+                    hl_r = _call_claude(hl_prompt)
+                else:
+                    hl_r = _call_openai(hl_prompt)
+                hl_c = hl_r.strip()
+                if "```" in hl_c:
+                    hl_c = hl_c.split("```json")[-1].split("```")[0].strip() if "```json" in hl_c else hl_c.split("```")[1].split("```")[0].strip()
+                _gem_captions = _json.loads(hl_c)
+                logger.info(f"🖼 캡션 추출: {_gem_captions}")
+            except Exception as ce:
+                logger.warning(f"캡션 추출 실패: {ce}")
+                _gem_captions = []
+
+        if image_source != "none":
+            try:
+                import requests as _req_lib
+                img_dir = os.path.join(get_path("db"), "article_images")
+                os.makedirs(img_dir, exist_ok=True)
+                image_paths = []
+
+                _image_sources = []  # 이미지 출처 URL 저장
+
+                def _search_google_images(query, count=5):
+                    """이미지 검색으로 고화질 이미지 URL 목록 반환 (인기 이미지 우선)"""
+                    import re as _re_g
+                    from collections import Counter
+                    try:
+                        url = f"https://www.bing.com/images/search?q={_req_lib.utils.quote(query)}&form=HDRSC2&first=1&count=50"
+                        r = _req_lib.get(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}, timeout=10)
+                        murls = _re_g.findall(r'murl&quot;:&quot;(https?://[^&]+?)&quot;', r.text)
+                        if not murls:
+                            murls = _re_g.findall(r'murl":"(https?://[^"]+?)"', r.text)
+                        if not murls:
+                            return []
+                        domain_count = Counter()
+                        for u in murls:
+                            try:
+                                domain = u.split("/")[2]
+                                domain_count[domain] += 1
+                            except Exception:
+                                pass
+                        def _score(u):
+                            try:
+                                return -domain_count.get(u.split("/")[2], 0)
+                            except Exception:
+                                return 0
+                        sorted_urls = sorted(murls, key=_score)
+                        seen_domains = set()
+                        selected = []
+                        for u in sorted_urls:
+                            try:
+                                d = u.split("/")[2]
+                            except Exception:
+                                d = ""
+                            if d not in seen_domains:
+                                selected.append(u)
+                                seen_domains.add(d)
+                            if len(selected) >= count * 2:
+                                break
+                        random.shuffle(selected)
+                        return selected[:count]
+                    except Exception as e:
+                        logger.warning(f"이미지 검색 실패: {e}")
+                        return []
+
+                def _get_gemini_key():
+                    gk = config.get("gemini_key", "")
+                    if not gk or len(gk) <= 20:
+                        try:
+                            env_path = os.path.join(os.path.dirname(__file__), ".env")
+                            with open(env_path, encoding="utf-8") as _ef:
+                                for _el in _ef:
+                                    if _el.strip().startswith("GEMINI_API_KEY="):
+                                        gk = _el.strip().split("=", 1)[1].strip()
+                                        break
+                        except Exception:
+                            pass
+                    return gk
+
+                # 구글검색+AI편집: 구글 이미지 검색 → Gemini 편집
+                if image_source == "google_edit":
+                    try:
+                        gemini_key = _get_gemini_key()
+                        from google import genai
+                        from google.genai import types as _gtypes
+                        gclient = genai.Client(api_key=gemini_key)
+
+                        import re as _re_img
+                        sections = _re_img.split(r'-*\s*여기에 이미지\s*\d+\s*-*', content)
+
+                        for idx in range(min(len(sections)-1, 5)):
+                            try:
+                                sq = search_queries[idx] if idx < len(search_queries) else search_queries[0]
+                                # 사용자 프롬프트가 있으면 검색어로 사용
+                                if user_image_prompt:
+                                    sq = user_image_prompt
+
+                                # 구글(Bing) 이미지 검색
+                                img_urls = _search_google_images(sq, 3)
+                                if not img_urls:
+                                    logger.warning(f"🖼 구글 이미지 없음: {sq}")
+                                    continue
+
+                                # 이미지 다운로드
+                                photo_data = None
+                                for img_url in img_urls:
+                                    try:
+                                        resp = _req_lib.get(img_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+                                        if resp.status_code == 200 and len(resp.content) > 5000:
+                                            photo_data = resp.content
+                                            _image_sources.append(img_url)
+                                            break
+                                    except Exception:
+                                        continue
+                                if not photo_data:
+                                    continue
+
+                                # Gemini 편집 (텍스트 없이)
+                                img_part = _gtypes.Part.from_bytes(data=photo_data, mime_type="image/jpeg")
+                                if user_image_prompt:
+                                    edit_p = f"이 사진을 기반으로: {user_image_prompt}\n규칙: 원본 현실감 유지. IMPORTANT: Do NOT include ANY text in the image."
+                                else:
+                                    edit_p = f"이 사진을 고급 매거진 스타일로 보정. 색감과 조명만 개선. IMPORTANT: Do NOT include ANY text in the image."
+                                resp = gclient.models.generate_content(
+                                    model="gemini-2.5-flash-image",
+                                    contents=[edit_p, img_part],
+                                    config=_gtypes.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
+                                )
+                                for part in resp.candidates[0].content.parts:
+                                    if part.inline_data:
+                                        img_data = part.inline_data.data
+                                        caption = _gem_captions[idx] if idx < len(_gem_captions) else ""
+                                        img_data = _overlay_text_on_image(img_data, caption)
+                                        img_filename = f"article_{_dt.now().strftime('%Y%m%d_%H%M%S')}_{idx+1}.png"
+                                        img_path = os.path.join(img_dir, img_filename)
+                                        with open(img_path, "wb") as out:
+                                            out.write(img_data)
+                                        image_paths.append(img_path)
+                                        logger.info(f"🖼 구글+AI편집 이미지 {idx+1} 완료")
+                                        break
+                            except Exception as ge:
+                                logger.warning(f"🖼 구글+AI편집 이미지 {idx+1} 실패: {ge}")
+                            import time; time.sleep(2)
+                        logger.info(f"🖼 구글+AI편집 이미지 {len(image_paths)}장 완료")
+                    except Exception as e:
+                        logger.warning(f"🖼 구글+AI편집 실패: {e}")
+
+                # 실사+AI편집: Pexels 사진 → Gemini 텍스트 합성
+                elif image_source == "gemini_edit":
+                    try:
+                        gemini_key = _get_gemini_key()
+                        from google import genai
+                        from google.genai import types as _gtypes
+                        gclient = genai.Client(api_key=gemini_key)
+
+                        import re as _re_img
+                        sections = _re_img.split(r'-*\s*여기에 이미지\s*\d+\s*-*', content)
+
+                        headline_lines = _gem_captions  # 공통 캡션 사용
+
+                        for idx in range(min(len(sections)-1, 5)):
+                            try:
+                                # Pexels에서 실사 사진 검색
+                                sq = search_queries[idx] if idx < len(search_queries) else search_queries[0]
+                                r = _req_lib.get("https://api.pexels.com/v1/search",
+                                    params={"query": sq, "per_page": 3, "orientation": "landscape"},
+                                    headers={"Authorization": PEXELS_API_KEY}, timeout=10)
+                                if r.status_code != 200:
+                                    continue
+                                photos = r.json().get("photos", [])
+                                if not photos:
+                                    continue
+                                photo_url = random.choice(photos)["src"]["large"]
+                                photo_data = _req_lib.get(photo_url, timeout=10).content
+
+                                # 캡션 텍스트 (미리 추출한 것 사용)
+                                caption = headline_lines[idx] if idx < len(headline_lines) else ""
+
+                                # Gemini에 사진 + 정확한 텍스트 전달
+                                img_part = _gtypes.Part.from_bytes(data=photo_data, mime_type="image/jpeg")
+                                if user_image_prompt:
+                                    edit_prompt = f"이 실제 사진을 기반으로: {user_image_prompt}\n규칙: 원본 사진의 현실감 유지. IMPORTANT: Do NOT include ANY text, letters, words, numbers, or typography in the image. The image must contain ZERO text. Only visual elements."
+                                else:
+                                    edit_prompt = f"이 실제 사진의 분위기를 더 고급스럽고 매거진 느낌으로 보정해주세요.\n규칙: 원본 사진 최대한 유지. 색감/조명만 살짝 보정. IMPORTANT: Do NOT include ANY text, letters, words, numbers, or typography in the image. The image must contain ZERO text. Only visual elements."
+                                resp = gclient.models.generate_content(
+                                    model="gemini-2.5-flash-image",
+                                    contents=[edit_prompt, img_part],
+                                    config=_gtypes.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
+                                )
+                                for part in resp.candidates[0].content.parts:
+                                    if part.inline_data:
+                                        img_data = part.inline_data.data
+                                        # PIL로 캡션 합성
+                                        img_data = _overlay_text_on_image(img_data, caption)
+                                        img_filename = f"article_{_dt.now().strftime('%Y%m%d_%H%M%S')}_{idx+1}.png"
+                                        img_path = os.path.join(img_dir, img_filename)
+                                        with open(img_path, "wb") as out:
+                                            out.write(img_data)
+                                        image_paths.append(img_path)
+                                        logger.info(f"🖼 실사+편집 이미지 {idx+1} 완료")
+                                        break
+                            except Exception as ge:
+                                logger.warning(f"🖼 실사+편집 이미지 {idx+1} 실패: {ge}")
+                            import time; time.sleep(2)
+                        logger.info(f"🖼 실사+AI편집 이미지 {len(image_paths)}장 완료")
+                    except Exception as e:
+                        logger.warning(f"🖼 실사+편집 실패: {e}")
+
+                # Gemini AI 순수 생성
+                elif image_source == "gemini":
+                    try:
+                        gemini_key = _get_gemini_key()
+                        from google import genai
+                        from google.genai import types as _gtypes
+                        gclient = genai.Client(api_key=gemini_key)
+
+                        # 본문에서 섹션 제목 추출하여 각 섹션에 맞는 이미지 프롬프트 생성
+                        import re as _re_img
+                        sections = _re_img.split(r'-*\s*여기에 이미지\s*\d+\s*-*', content)
+
+                        img_prompts = []
+                        for i, sec in enumerate(sections[:-1]):
+                            if user_image_prompt:
+                                img_prompts.append(
+                                    f"{user_image_prompt}\n\n"
+                                    f"규칙: 현실적인 사진. 실제 촬영한 것처럼. AI 느낌 금지. IMPORTANT: Do NOT include ANY text, letters, words, numbers, or typography in the image. The image must contain ZERO text. Only visual elements."
+                                )
+                            else:
+                                sec_text = sec.strip()[-150:] if len(sec.strip()) > 150 else sec.strip()
+                                img_prompts.append(
+                                    f"다음 내용을 시각적으로 표현하는 고품질 사진:\n{sec_text}\n\n"
+                                    f"규칙: 현실적인 사진. 실제 촬영한 것처럼. AI 느낌 금지. 고급 브랜드 부티크 분위기, 따뜻한 조명. IMPORTANT: Do NOT include ANY text, letters, words, numbers, or typography in the image. The image must contain ZERO text. Only visual elements."
+                                )
+                        if len(img_prompts) < 3:
+                            title_for_img = parsed.get("title", "luxury brand")
+                            default_prompts = [
+                                f"'{title_for_img}' 기사에 어울리는 고급 부티크 매장 내부. 따뜻한 조명, 프리미엄 가방 진열. 현실적 사진. 텍스트 넣지 마세요.",
+                                f"명품 가죽 제품 클로즈업. 대리석 위 고급 가방, 골든 라이트. 현실적 제품 사진. 텍스트 넣지 마세요.",
+                                f"도쿄 긴자 명품 거리 브랜드 매장. 저녁, 따뜻한 쇼윈도. 현실적 스트리트 사진. 텍스트 넣지 마세요.",
+                            ]
+                            img_prompts.extend(default_prompts[:3-len(img_prompts)])
+
+                        for idx, ip in enumerate(img_prompts[:5]):
+                            try:
+                                resp = gclient.models.generate_content(
+                                    model="gemini-2.5-flash-image",
+                                    contents=ip,
+                                    config=_gtypes.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
+                                )
+                                for part in resp.candidates[0].content.parts:
+                                    if part.inline_data:
+                                        img_data = part.inline_data.data
+                                        # PIL로 정확한 한국어 캡션 합성
+                                        caption = _gem_captions[idx] if idx < len(_gem_captions) else ""
+                                        img_data = _overlay_text_on_image(img_data, caption)
+                                        img_filename = f"article_{_dt.now().strftime('%Y%m%d_%H%M%S')}_{idx+1}.png"
+                                        img_path = os.path.join(img_dir, img_filename)
+                                        with open(img_path, "wb") as out:
+                                            out.write(img_data)
+                                        image_paths.append(img_path)
+                                        logger.info(f"🖼 Gemini 이미지 {idx+1} 생성+텍스트 합성 완료")
+                                        break
+                            except Exception as ge:
+                                logger.warning(f"🖼 Gemini 이미지 {idx+1} 실패: {ge}")
+                            import time; time.sleep(2)
+                        logger.info(f"🖼 Gemini AI 이미지 {len(image_paths)}장 완료 (PIL 텍스트 합성)")
+                    except Exception as e:
+                        logger.warning(f"🖼 Gemini 이미지 생성 실패: {e}")
+
+                # Pexels / Unsplash
+                if image_source in ("pexels", "unsplash") or (image_source == "gemini" and not image_paths):
+                    if image_source == "gemini" and not image_paths:
+                        logger.info("🖼 Gemini 실패 → Pexels 폴백")
+
+                for sq in search_queries:
+                    if len(image_paths) >= 5:
+                        break
+                    if image_source == "gemini":
+                        break  # Gemini는 위에서 이미 처리
+                    img_urls = []
+                    try:
+                        if image_source == "pexels":
+                            r = _req_lib.get("https://api.pexels.com/v1/search",
+                                params={"query": sq, "per_page": 1, "orientation": "landscape", "size": "medium"},
+                                headers={"Authorization": PEXELS_API_KEY}, timeout=10)
+                            if r.status_code == 200:
+                                img_urls = [p["src"]["large"] for p in r.json().get("photos", [])]
+
+                        elif image_source == "unsplash":
+                            if not UNSPLASH_ACCESS_KEY:
+                                # Unsplash 키 없으면 Pexels 폴백
+                                r = _req_lib.get("https://api.pexels.com/v1/search",
+                                    params={"query": sq, "per_page": 1, "orientation": "landscape"},
+                                    headers={"Authorization": PEXELS_API_KEY}, timeout=10)
+                                if r.status_code == 200:
+                                    img_urls = [p["src"]["large"] for p in r.json().get("photos", [])]
+                                logger.info(f"🖼 Unsplash 키 미설정 → Pexels 폴백: {sq}")
+                            else:
+                                r = _req_lib.get("https://api.unsplash.com/search/photos",
+                                    params={"query": sq, "per_page": 1, "orientation": "landscape"},
+                                    headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"}, timeout=10)
+                                if r.status_code == 200:
+                                    img_urls = [p["urls"]["regular"] for p in r.json().get("results", [])]
+
+                        elif image_source == "dalle":
+                            oai_key = config.get("openai_key", "")
+                            if not oai_key or len(oai_key) <= 20:
+                                try:
+                                    env_path = os.path.join(os.path.dirname(__file__), ".env")
+                                    with open(env_path, encoding="utf-8") as _ef:
+                                        for _el in _ef:
+                                            if _el.strip().startswith("OPENAI_API_KEY="):
+                                                oai_key = _el.strip().split("=", 1)[1].strip()
+                                                break
+                                except Exception:
+                                    pass
+                            if oai_key and len(oai_key) > 20:
+                                from openai import OpenAI as _OAI
+                                oai = _OAI(api_key=oai_key, timeout=30)
+                                dalle_prompt = user_image_prompt if user_image_prompt else sq
+                                img_resp = oai.images.generate(
+                                    model="dall-e-3",
+                                    prompt=f"Professional editorial magazine photo: {dalle_prompt}. Elegant luxury fashion photography, warm lighting, photorealistic. Do NOT include any text, letters, words, or typography in the image.",
+                                    size="1024x1024", quality="standard", n=1,
+                                )
+                                img_urls = [img_resp.data[0].url]
+
+                    except Exception as ie:
+                        logger.warning(f"🖼 {image_source} 이미지 실패 ({sq}): {ie}")
+
+                    # 다운로드 + PIL 텍스트 합성
+                    for img_url in img_urls:
+                        try:
+                            img_resp = _req_lib.get(img_url, timeout=15)
+                            img_data = img_resp.content
+                            # PIL로 캡션 합성
+                            cap_idx = len(image_paths)
+                            caption = _gem_captions[cap_idx] if cap_idx < len(_gem_captions) else ""
+                            img_data = _overlay_text_on_image(img_data, caption)
+                            img_filename = f"article_{_dt.now().strftime('%Y%m%d_%H%M%S')}_{cap_idx+1}.png"
+                            img_path = os.path.join(img_dir, img_filename)
+                            with open(img_path, "wb") as out:
+                                out.write(img_data)
+                            image_paths.append(img_path)
+                            logger.info(f"🖼 [{image_source}] 이미지 {len(image_paths)}/5: {sq}")
+                        except Exception as de:
+                            logger.warning(f"🖼 다운로드 실패: {de}")
+
+                image_path = ",".join(image_paths) if image_paths else ""
+                logger.info(f"🖼 [{image_source}] 이미지 {len(image_paths)}장 수집 완료")
+            except Exception as e:
+                logger.warning(f"🖼 이미지 수집 실패: {e}")
+                image_path = ""
+
+        # 이미지 파일명 목록 (미리보기용)
+        image_filenames = []
+        if image_path:
+            for p in image_path.split(","):
+                p = p.strip()
+                if p:
+                    image_filenames.append(os.path.basename(p))
+
+        # Bing 검색 이미지 출처 표기
+        if _image_sources:
+            source_domains = []
+            for src_url in _image_sources:
+                try:
+                    domain = src_url.split("/")[2].replace("www.", "")
+                    if domain not in source_domains:
+                        source_domains.append(domain)
+                except Exception:
+                    pass
+            if source_domains:
+                content += "\n\n📸 이미지 출처: " + " / ".join(source_domains)
+
+        return jsonify({
+            "ok": True,
+            "title": parsed.get("title", ""),
+            "content": content,
+            "keywords": keywords,
+            "tags": tags,
+            "trending": trending_keywords[:10],
+            "luxury_suggestions": luxury_suggestions[:8],
+            "image_path": image_path,
+            "image_filenames": image_filenames,
+        })
+    except Exception as e:
+        logger.error(f"기사 생성 오류: {e}")
+        return jsonify({"ok": False, "message": f"AI 생성 오류: {str(e)}"})
+
+
+@app.route(f"{URL_PREFIX}/api/free-board/regenerate-images", methods=["POST"])
+@admin_required
+def regenerate_article_images():
+    """미선택 이미지 재생성"""
+    data = request.json or {}
+    count = data.get("count", 1)
+    image_source = data.get("image_source", "pexels")
+    article_type = data.get("article_type", "brand")
+    title = data.get("title", "luxury brand")
+
+    PEXELS_API_KEY = "ZMFMszrhmZ9oy5UTEC0XKa7h8JGytGpnLWkoFDcE4bdqxLv7r507JHEe"
+    import random
+    from datetime import datetime as _dt
+
+    if article_type == "economy":
+        pool = ["japanese yen currency money", "tokyo luxury shopping street", "stock market finance",
+                "japan city skyline", "business newspaper coffee", "luxury watch closeup",
+                "gold bars investment", "tokyo shibuya night", "currency exchange office"]
+    else:
+        pool = ["luxury designer handbag", "luxury boutique interior", "vintage leather bag",
+                "luxury fashion accessories", "designer shoes closeup", "premium watch display",
+                "luxury brand storefront", "leather goods craftsman", "fashion magazine editorial"]
+    random.shuffle(pool)
+    queries = pool[:count]
+
+    try:
+        import requests as _req_lib
+        import json as _json
+        img_dir = os.path.join(get_path("db"), "article_images")
+        os.makedirs(img_dir, exist_ok=True)
+        image_paths = []
+        image_filenames = []
+
+        for sq in queries:
+            img_urls = []
+            try:
+                if image_source in ("gemini", "gemini_edit", "google_edit"):
+                    try:
+                        gemini_key = ""
+                        env_path = os.path.join(os.path.dirname(__file__), ".env")
+                        with open(env_path, encoding="utf-8") as _ef:
+                            for _el in _ef:
+                                if _el.strip().startswith("GEMINI_API_KEY="):
+                                    gemini_key = _el.strip().split("=", 1)[1].strip()
+                                    break
+                        if gemini_key:
+                            from google import genai
+                            from google.genai import types as _gtypes
+                            gclient = genai.Client(api_key=gemini_key)
+
+                            if image_source in ("gemini_edit", "google_edit"):
+                                # 이미지 소스: google_edit은 Bing, gemini_edit은 Pexels
+                                photo_data = None
+                                if image_source == "google_edit":
+                                    import re as _re_g2
+                                    try:
+                                        bing_url = f"https://www.bing.com/images/search?q={_req_lib.utils.quote(sq)}&form=HDRSC2"
+                                        br = _req_lib.get(bing_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+                                        murls = _re_g2.findall(r'murl&quot;:&quot;(https?://[^&]+?)&quot;', br.text)
+                                        if not murls: murls = _re_g2.findall(r'murl":"(https?://[^"]+?)"', br.text)
+                                        random.shuffle(murls)
+                                        for mu in murls[:5]:
+                                            try:
+                                                dr = _req_lib.get(mu, headers={"User-Agent":"Mozilla/5.0"}, timeout=10)
+                                                if dr.status_code==200 and len(dr.content)>5000:
+                                                    photo_data = dr.content; break
+                                            except: continue
+                                    except: pass
+                                else:
+                                    r = _req_lib.get("https://api.pexels.com/v1/search",
+                                        params={"query": sq, "per_page": 3, "orientation": "landscape"},
+                                        headers={"Authorization": PEXELS_API_KEY}, timeout=10)
+                                    if r.status_code == 200:
+                                        photos = r.json().get("photos", [])
+                                        if photos:
+                                            photo_data = _req_lib.get(random.choice(photos)["src"]["large"], timeout=10).content
+                                if photo_data:
+                                    img_part = _gtypes.Part.from_bytes(data=photo_data, mime_type="image/jpeg")
+                                    resp = gclient.models.generate_content(
+                                        model="gemini-2.5-flash-image",
+                                        contents=[f"이 사진을 고급 매거진 스타일로 보정. IMPORTANT: Do NOT include ANY text in the image.", img_part],
+                                        config=_gtypes.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
+                                    )
+                                    for part in resp.candidates[0].content.parts:
+                                        if part.inline_data:
+                                            fn = f"article_{_dt.now().strftime('%Y%m%d_%H%M%S')}_{len(image_paths)+1}.png"
+                                            fp = os.path.join(img_dir, fn)
+                                            with open(fp, "wb") as out:
+                                                out.write(part.inline_data.data)
+                                            image_paths.append(fp)
+                                            image_filenames.append(fn)
+                                            break
+                            else:
+                                resp = gclient.models.generate_content(
+                                    model="gemini-2.5-flash-image",
+                                    contents=f"'{sq}' 주제의 고급 매거진 사진. 현실적인 사진처럼. 한국어 핵심 텍스트 포함. 따뜻한 조명, 고급스러운 분위기.",
+                                    config=_gtypes.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
+                                )
+                                for part in resp.candidates[0].content.parts:
+                                    if part.inline_data:
+                                        fn = f"article_{_dt.now().strftime('%Y%m%d_%H%M%S')}_{len(image_paths)+1}.png"
+                                        fp = os.path.join(img_dir, fn)
+                                        with open(fp, "wb") as out:
+                                            out.write(part.inline_data.data)
+                                        image_paths.append(fp)
+                                        image_filenames.append(fn)
+                                        break
+                            import time; time.sleep(2)
+                    except Exception as ge:
+                        logger.warning(f"🖼 Gemini 재생성 실패: {ge}")
+                    continue
+                elif image_source == "pexels":
+                    r = _req_lib.get("https://api.pexels.com/v1/search",
+                        params={"query": sq, "per_page": 3, "orientation": "landscape", "size": "medium"},
+                        headers={"Authorization": PEXELS_API_KEY}, timeout=10)
+                    if r.status_code == 200:
+                        photos = r.json().get("photos", [])
+                        if photos:
+                            img_urls = [random.choice(photos)["src"]["large"]]
+                else:  # pexels 폴백
+                    r = _req_lib.get("https://api.pexels.com/v1/search",
+                        params={"query": sq, "per_page": 3, "orientation": "landscape"},
+                        headers={"Authorization": PEXELS_API_KEY}, timeout=10)
+                    if r.status_code == 200:
+                        photos = r.json().get("photos", [])
+                        if photos:
+                            img_urls = [random.choice(photos)["src"]["large"]]
+            except Exception as ie:
+                logger.warning(f"🖼 재생성 실패 ({sq}): {ie}")
+
+            for img_url in img_urls:
+                try:
+                    ext = "png" if image_source == "dalle" else "jpg"
+                    fn = f"article_{_dt.now().strftime('%Y%m%d_%H%M%S')}_{len(image_paths)+1}.{ext}"
+                    fp = os.path.join(img_dir, fn)
+                    resp = _req_lib.get(img_url, timeout=15)
+                    with open(fp, "wb") as out:
+                        out.write(resp.content)
+                    image_paths.append(fp)
+                    image_filenames.append(fn)
+                except Exception:
+                    pass
+
+        return jsonify({"ok": True, "image_filenames": image_filenames, "image_paths": image_paths})
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)})
+
+
+@app.route(f"{URL_PREFIX}/api/article-image/<path:filename>")
+@admin_required
+def serve_article_image(filename):
+    """기사 이미지 파일 서빙"""
+    img_dir = os.path.join(get_path("db"), "article_images")
+    from flask import send_from_directory
+    return send_from_directory(img_dir, filename)
+
+
+@app.route(f"{URL_PREFIX}/api/free-board/<int:post_id>/upload", methods=["POST"])
+@admin_required
+def upload_free_board_to_cafe(post_id):
+    """자유게시판 기사를 네이버 카페에 업로드"""
+    _init_free_board_db()
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        row = conn.execute("SELECT * FROM free_board WHERE id=?", (post_id,)).fetchone()
+        if not row:
+            return jsonify({"ok": False, "message": "기사를 찾을 수 없습니다"})
+
+        title = row["title"]
+        content = row["content"]
+        menu_id = row["cafe_menu_id"] or "126"  # 자유게시판 메뉴 ID
+        try:
+            img_path = row["image_path"] or ""
+        except Exception:
+            img_path = ""
+        try:
+            article_tags = row["tags"] or ""
+        except Exception:
+            article_tags = ""
+
+        def _upload_article():
+            import asyncio
+            from cafe_uploader import upload_article_to_cafe
+            push_log(f"📰 자유게시판 기사 업로드: {title[:30]}...")
+            if img_path:
+                push_log(f"🖼 이미지 첨부: {os.path.basename(img_path)}")
+            try:
+                naver_data = _load_naver_accounts()
+                active_slot = naver_data.get("active", 1)
+                cookie_path = _get_cookie_path(active_slot)
+                result = asyncio.run(upload_article_to_cafe(
+                    title=title, content=content, menu_id=menu_id,
+                    board_name="자유게시판", log=push_log, cookie_path=cookie_path,
+                    image_path=img_path, tags=article_tags,
+                ))
+                if result:
+                    conn2 = user_conn()
+                    conn2.execute("UPDATE free_board SET status='완료' WHERE id=?", (post_id,))
+                    conn2.commit()
+                    conn2.close()
+                    push_log(f"✅ 기사 업로드 완료: {title[:30]}")
+                else:
+                    conn2 = user_conn()
+                    conn2.execute("UPDATE free_board SET status='실패' WHERE id=?", (post_id,))
+                    conn2.commit()
+                    conn2.close()
+                    push_log(f"❌ 기사 업로드 실패: {title[:30]}")
+            except Exception as e:
+                push_log(f"❌ 기사 업로드 오류: {e}")
+
+        import threading
+        threading.Thread(target=_upload_article, daemon=True).start()
+        return jsonify({"ok": True, "message": "업로드 시작"})
+    finally:
+        conn.close()
+
+
+# ── NAS 공유 폴더 상품 동기화 ──────────────────
+NAS_IMPORT_PATH = "/Volumes/파일공유/00 이용아/thone/srv/data/jp_sourcing/db"
+
+def sync_products_from_nas():
+    """NAS 공유 폴더에서 products.db를 읽어 로컬 DB에 병합"""
+    import sqlite3 as _sq
+    nas_db_path = os.path.join(NAS_IMPORT_PATH, "products.db")
+
+    if not os.path.exists(nas_db_path):
+        logger.debug(f"NAS DB 없음: {nas_db_path}")
+        return {"ok": False, "message": "NAS에 products.db 없음"}
+
+    try:
+        # NAS DB 파일 크기/수정 시간 확인
+        nas_stat = os.stat(nas_db_path)
+        nas_mtime = datetime.fromtimestamp(nas_stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        nas_size = nas_stat.st_size
+
+        # 마지막 동기화 시간 확인
+        sync_info_path = os.path.join(get_path("db"), "nas_sync_info.json")
+        last_sync_mtime = ""
+        if os.path.exists(sync_info_path):
+            try:
+                import json as _json
+                with open(sync_info_path, "r") as f:
+                    last_sync_mtime = _json.load(f).get("last_mtime", "")
+            except Exception:
+                pass
+
+        if nas_mtime == last_sync_mtime:
+            logger.debug("NAS DB 변경 없음 — 스킵")
+            return {"ok": True, "message": "변경 없음", "skipped": True}
+
+        push_log(f"📂 NAS 동기화 시작 (파일: {nas_size:,} bytes, 수정: {nas_mtime})")
+
+        # NAS DB 읽기
+        nas_conn = _sq.connect(nas_db_path, timeout=10)
+        nas_conn.row_factory = _sq.Row
+        rows = nas_conn.execute("SELECT * FROM products ORDER BY id").fetchall()
+        nas_conn.close()
+
+        if not rows:
+            push_log("📂 NAS DB에 상품 없음")
+            return {"ok": True, "message": "상품 없음", "count": 0}
+
+        # 로컬 DB에 병합
+        from product_db import _conn as local_conn_fn, init_db as init_product_db
+        init_product_db()
+        local_conn = local_conn_fn()
+
+        inserted = 0
+        updated = 0
+        skipped = 0
+
+        for r in rows:
+            try:
+                rd = dict(r)
+                site_id = rd.get("site_id", "")
+                product_code = rd.get("product_code", "")
+                price_jpy = rd.get("price_jpy", 0)
+
+                if not site_id or not product_code:
+                    skipped += 1
+                    continue
+
+                # 기존 데이터 확인
+                existing = local_conn.execute(
+                    "SELECT id, created_at FROM products WHERE site_id=? AND product_code=?",
+                    (site_id, product_code)
+                ).fetchone()
+
+                if existing:
+                    # 기존 데이터가 있으면 가격/재고 업데이트
+                    local_conn.execute("""
+                        UPDATE products SET price_jpy=?, in_stock=?, original_price=?,
+                        discount_rate=?, scraped_at=? WHERE id=?
+                    """, (price_jpy, rd.get("in_stock", 1), rd.get("original_price", 0),
+                          rd.get("discount_rate", 0), rd.get("scraped_at", ""), existing["id"]))
+                    updated += 1
+                else:
+                    # 새 상품 삽입
+                    cols = ["site_id", "category_id", "product_code", "name", "name_ko",
+                            "brand", "brand_ko", "price_jpy", "link", "img_url",
+                            "description", "description_ko", "sizes", "detail_images",
+                            "original_price", "discount_rate", "in_stock",
+                            "scraped_at", "created_at", "source_type",
+                            "condition_grade", "color", "material"]
+                    vals = []
+                    for c in cols:
+                        vals.append(rd.get(c, ""))
+                    placeholders = ",".join(["?"] * len(cols))
+                    col_names = ",".join(cols)
+                    try:
+                        local_conn.execute(f"INSERT OR IGNORE INTO products ({col_names}) VALUES ({placeholders})", vals)
+                        inserted += 1
+                    except Exception:
+                        skipped += 1
+
+            except Exception as e:
+                skipped += 1
+
+        local_conn.commit()
+        local_conn.close()
+
+        # 동기화 시간 기록
+        import json as _json
+        with open(sync_info_path, "w") as f:
+            _json.dump({"last_mtime": nas_mtime, "last_sync": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, f)
+
+        msg = f"📂 NAS 동기화 완료: 신규 {inserted} / 업데이트 {updated} / 스킵 {skipped} (총 {len(rows)}개)"
+        push_log(msg)
+        logger.info(msg)
+        return {"ok": True, "inserted": inserted, "updated": updated, "skipped": skipped, "total": len(rows)}
+
+    except Exception as e:
+        msg = f"❌ NAS 동기화 오류: {e}"
+        push_log(msg)
+        logger.error(msg)
+        return {"ok": False, "message": str(e)}
+
+
+@app.route(f"{URL_PREFIX}/api/nas-sync", methods=["POST"])
+@admin_required
+def manual_nas_sync():
+    """수동 NAS 동기화"""
+    result = sync_products_from_nas()
+    return jsonify(result)
+
+
+@app.route(f"{URL_PREFIX}/api/nas-sync/status", methods=["GET"])
+@admin_required
+def nas_sync_status():
+    """NAS 동기화 상태 확인"""
+    import json as _json
+    nas_db_path = os.path.join(NAS_IMPORT_PATH, "products.db")
+    info = {
+        "nas_exists": os.path.exists(nas_db_path),
+        "nas_path": NAS_IMPORT_PATH,
+        "last_sync": "",
+        "nas_mtime": "",
+        "nas_size": 0,
+    }
+    if info["nas_exists"]:
+        st = os.stat(nas_db_path)
+        info["nas_mtime"] = datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        info["nas_size"] = st.st_size
+
+    sync_info_path = os.path.join(get_path("db"), "nas_sync_info.json")
+    if os.path.exists(sync_info_path):
+        try:
+            with open(sync_info_path, "r") as f:
+                d = _json.load(f)
+                info["last_sync"] = d.get("last_sync", "")
+        except Exception:
+            pass
+    return jsonify({"ok": True, **info})
 
 
 # ── 빈티지 가격 설정 ─────────────────────
@@ -5675,6 +7228,11 @@ if __name__ == "__main__":
 
     # use_reloader=False일 때 스케줄러 시작 (reloader 사용 시에는 위에서 이미 시작됨)
     _start_scheduler_once()
+    # 자유게시판 스케줄 (모듈 완전 로드 후)
+    try:
+        _register_fb_schedule_jobs()
+    except Exception:
+        pass
 
     print(f"\n  Xebio Dashboard: http://{SERVER_HOST}:{SERVER_PORT}{URL_PREFIX}\n")
 

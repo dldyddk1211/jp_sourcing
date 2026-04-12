@@ -428,9 +428,17 @@
         <span class="nav-icon">&#x1f4cb;</span>
         <span>수집 작업리스트</span>
       </div>
-      <div class="nav-item" data-page="vt-cafe-upload" onclick="showPage('vt-cafe-upload');loadVtCafeProducts()">
+      <div class="nav-item" data-page="vt-cafe-upload" onclick="showPage('vt-cafe-upload');loadVtCafeProducts();loadFreeBoardList();loadFbSchedule()">
         <span class="nav-icon">&#x2615;</span>
         <span>네이버 카페 업로드</span>
+      </div>
+      <div class="nav-item" data-page="vt-blog-upload" onclick="showPage('vt-blog-upload');loadVtBlogProducts()">
+        <span class="nav-icon">&#x1f4dd;</span>
+        <span>네이버 블로그 업로드</span>
+      </div>
+      <div class="nav-item" data-page="nas-sync" onclick="showPage('nas-sync');loadNasStatus()">
+        <span class="nav-icon">&#x1f4c2;</span>
+        <span>상품 리스트 (NAS)</span>
       </div>
     </div>
 
@@ -501,8 +509,19 @@
       &#x23F3; 수집 진행중...
     </div>
     <div class="topbar-right">
+      <button onclick="toggleSchedulePanel()" id="btn-schedule-overview" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:4px 10px;border-radius:6px;font-size:0.72rem;cursor:pointer;position:relative;">
+        📅 예약 <span id="schedule-active-count" style="background:var(--green);color:#000;padding:1px 5px;border-radius:8px;font-size:0.65rem;font-weight:700;margin-left:3px;">0</span>
+      </button>
       <div class="rate-badge">&#x1f4b1; &#xd658;&#xc728; <span id="rate">-</span> / 1&#xc5d4;</div>
       <div style="font-size:0.8rem;color:var(--muted)">{{ session.get('username','') }}</div>
+    </div>
+    <!-- 예약 현황 패널 -->
+    <div id="schedule-overview-panel" style="display:none;position:absolute;top:50px;right:20px;width:380px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.4);z-index:1000;padding:16px;max-height:70vh;overflow-y:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <span style="font-weight:700;font-size:0.9rem;">📅 예약 현황</span>
+        <span onclick="toggleSchedulePanel()" style="cursor:pointer;color:var(--dim);font-size:1.1rem;">✕</span>
+      </div>
+      <div id="schedule-overview-content"></div>
     </div>
   </div>
 
@@ -1709,8 +1728,8 @@
             최대 <input type="number" id="vt-cafe-max" value="5" min="1" max="50" style="width:50px;background:var(--card);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:0.8rem;text-align:center;"> 개
           </label>
           <label style="font-size:0.78rem;color:var(--muted);display:flex;align-items:center;gap:4px;">
-            대기 <input type="number" id="vt-cafe-delay-min" value="8" min="1" max="30" style="width:40px;background:var(--card);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:0.8rem;text-align:center;">
-            ~ <input type="number" id="vt-cafe-delay-max" value="13" min="1" max="30" style="width:40px;background:var(--card);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:0.8rem;text-align:center;"> 분
+            대기 <input type="number" id="vt-cafe-delay-min" value="20" min="1" max="60" style="width:40px;background:var(--card);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:0.8rem;text-align:center;">
+            ~ <input type="number" id="vt-cafe-delay-max" value="30" min="1" max="60" style="width:40px;background:var(--card);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:0.8rem;text-align:center;"> 분
           </label>
           <select id="vt-cafe-brand-filter" onchange="filterVtCafe()" style="background:var(--card);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-size:0.78rem;">
             <option value="">전체 브랜드</option>
@@ -1719,13 +1738,13 @@
             <option value="">전체 카테고리</option>
           </select>
           <select id="vt-cafe-grade-filter" onchange="filterVtCafe()" style="background:var(--card);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-size:0.78rem;">
-            <option value="">전체 상태</option>
-            <option value="NS">신품/미사용</option>
-            <option value="S">중고 S</option>
-            <option value="A">중고 A</option>
-            <option value="B">중고 B</option>
-            <option value="C">중고 C</option>
-            <option value="D">중고 D</option>
+            <option value="">전체 등급</option>
+            <option value="NS">NS 이상 (신품만)</option>
+            <option value="S">S급 이상</option>
+            <option value="A">A급 이상</option>
+            <option value="B">B급 이상</option>
+            <option value="C">C급 이상</option>
+            <option value="D">D급 이상 (전체)</option>
           </select>
         </div>
 
@@ -1770,7 +1789,16 @@
             </tbody>
           </table>
         </div>
-        <div id="vt-cafe-pagination" style="display:flex;justify-content:center;gap:4px;margin-top:12px;"></div>
+        <div style="display:flex;justify-content:center;align-items:center;gap:10px;margin-top:12px;">
+          <div id="vt-cafe-pagination" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
+          <select id="vt-cafe-per-page" onchange="VT_CAFE_PER_PAGE=parseInt(this.value);vtCafePage=1;renderVtCafeTable();"
+            style="background:var(--card);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:6px;font-size:0.72rem;">
+            <option value="10" selected>10개</option>
+            <option value="30">30개</option>
+            <option value="50">50개</option>
+            <option value="100">100개</option>
+          </select>
+        </div>
       </div>
 
       <!-- 빈티지 카페 자동 스케줄 -->
@@ -1788,6 +1816,83 @@
         </div>
       </div>
 
+      <!-- 자유게시판 (중고명품 관련 기사) -->
+      <div class="panel" style="margin-top:16px;">
+        <div class="panel-title">
+          <span>&#x1f4f0; 자유게시판 (중고명품 관련 기사)</span>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <button class="btn b-blue" onclick="aiGenerateArticle('economy')" id="btn-ai-economy" style="padding:6px 12px;font-size:0.78rem;">&#x1f4ca; AI 경제 기사</button>
+            <button class="btn b-blue" onclick="aiGenerateArticle('brand')" id="btn-ai-brand" style="padding:6px 12px;font-size:0.78rem;">&#x1f48e; AI 브랜드 기사</button>
+            <select id="fb-image-source" style="background:var(--card);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.72rem;">
+              <option value="google_edit">🖼 Bing검색+AI편집</option>
+              <option value="gemini">🖼 Gemini AI</option>
+              <option value="gemini_edit">🖼 Pexels+AI편집</option>
+              <option value="unsplash_edit">🖼 Unsplash+AI편집</option>
+              <option value="dalle">🖼 DALL-E 3</option>
+              <option value="pexels">🖼 Pexels 실사</option>
+              <option value="unsplash">🖼 Unsplash 실사</option>
+              <option value="none">이미지 없음</option>
+            </select>
+            <input type="text" id="fb-image-prompt" placeholder="이미지 프롬프트 (예: 구찌 가방 부티크 진열)" style="background:var(--card);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.72rem;width:200px;">
+            <button class="btn b-green" onclick="postFreeBoard()" style="padding:6px 14px;font-size:0.78rem;">&#x1f4be; 저장</button>
+            <button class="btn b-gray" onclick="loadFreeBoardList()" style="padding:6px 14px;font-size:0.78rem;">&#x1f504;</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
+          <input type="text" id="fb-title" placeholder="기사 제목" style="flex:2;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:0.82rem;">
+          <input type="text" id="fb-keyword" placeholder="키워드 (예: 샤넬 가격인상, 엔저 소싱)" style="flex:1;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:0.82rem;">
+          <input type="text" id="fb-url" placeholder="기사 URL (선택)" style="flex:1;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:0.82rem;">
+        </div>
+        <textarea id="fb-content" placeholder="기사 내용을 입력하거나, AI 버튼으로 자동 생성하세요..." style="width:100%;height:120px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:0.82rem;resize:vertical;margin-bottom:10px;line-height:1.6;"></textarea>
+        <!-- 이미지 미리보기 -->
+        <div id="fb-image-preview" style="display:none;margin-bottom:12px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <span style="font-size:0.78rem;font-weight:600;color:var(--muted);">🖼 생성된 이미지 <span style="font-size:0.68rem;color:var(--dim);">(클릭하여 선택/해제, 선택된 이미지만 저장됩니다)</span></span>
+            <div style="display:flex;gap:4px;">
+              <button class="btn b-blue" onclick="regenerateUnselectedImages()" id="btn-regen-img" style="padding:3px 10px;font-size:0.68rem;">🔄 미선택 이미지 재생성</button>
+              <button class="btn b-gray" onclick="document.getElementById('fb-image-preview').style.display='none'" style="padding:3px 8px;font-size:0.68rem;">닫기</button>
+            </div>
+          </div>
+          <div id="fb-image-list" style="display:flex;gap:10px;flex-wrap:wrap;"></div>
+        </div>
+        <!-- 자동 스케줄 설정 -->
+        <div style="margin-bottom:12px;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.78rem;color:var(--muted);cursor:pointer;">
+                <input type="checkbox" id="fb-auto-enabled" style="accent-color:var(--green);width:16px;height:16px;">
+                📅 자동 기사 생성 (매일 새벽 6시)
+              </label>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:0.75rem;color:var(--dim);">
+              <span>경제 기사 → 오전 <input type="number" id="fb-eco-hour" value="8" min="0" max="23" style="width:35px;background:var(--card);border:1px solid var(--border);color:var(--text);padding:2px 4px;border-radius:4px;font-size:0.75rem;text-align:center;">시 업로드</span>
+              <span>브랜드 기사 → 오후 <input type="number" id="fb-brand-hour" value="17" min="0" max="23" style="width:35px;background:var(--card);border:1px solid var(--border);color:var(--text);padding:2px 4px;border-radius:4px;font-size:0.75rem;text-align:center;">시 업로드</span>
+              <button class="btn b-green" onclick="saveFbSchedule()" style="padding:4px 10px;font-size:0.72rem;">저장</button>
+              <span id="fb-schedule-msg" style="color:var(--green);display:none;">저장됨 ✓</span>
+            </div>
+          </div>
+          <div style="margin-top:6px;font-size:0.68rem;color:var(--dim);">※ 새벽 6시에 경제2+브랜드2 자동 생성 → 예약시간 1시간 전까지 컨펌 없으면 자동 업로드</div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="tbl" style="width:100%;font-size:0.78rem;">
+            <thead>
+              <tr>
+                <th style="width:30px;">No</th>
+                <th>제목</th>
+                <th style="width:55px;">유형</th>
+                <th style="width:55px;">상태</th>
+                <th style="width:90px;">등록일</th>
+                <th style="width:120px;">액션</th>
+                <th style="width:35px;">X</th>
+              </tr>
+            </thead>
+            <tbody id="fb-tbody">
+              <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px;">등록된 기사가 없습니다</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- 빈티지 카페 업로드 로그 -->
       <div class="panel" style="margin-top:16px;">
         <div class="panel-title">
@@ -1795,6 +1900,128 @@
           <button class="btn b-gray" onclick="document.getElementById('vt-cafe-log').innerHTML=''" style="padding:4px 10px;font-size:0.72rem;">로그 지우기</button>
         </div>
         <div id="vt-cafe-log" class="log-box" style="height:300px;overflow-y:auto;background:#0a0b0f;border:1px solid var(--border);border-radius:8px;padding:10px;font-family:monospace;font-size:0.75rem;line-height:1.8;color:var(--muted);"></div>
+      </div>
+    </div>
+
+    <!-- ═══ 빈티지 블로그 업로드 ═══ -->
+    <div class="page-section" id="page-vt-blog-upload">
+      <div class="panel">
+        <div class="panel-title">
+          <span>&#x1f4dd; 빈티지 → 네이버 블로그 업로드</span>
+          <div style="display:flex;gap:6px;">
+            <button class="btn b-green" onclick="vtBlogUpload()" id="btn-vt-blog-upload" style="padding:6px 14px;font-size:0.78rem;">&#x1f4e4; 업로드 시작</button>
+            <button class="btn b-red" onclick="vtBlogStop()" style="padding:6px 14px;font-size:0.78rem;display:none;" id="btn-vt-blog-stop">&#x23f9; 중지</button>
+            <button class="btn b-gray" onclick="loadVtBlogProducts()" style="padding:6px 14px;font-size:0.78rem;">&#x1f504; 새로고침</button>
+          </div>
+        </div>
+
+        <!-- 설정 -->
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;">
+          <label style="font-size:0.78rem;color:var(--muted);display:flex;align-items:center;gap:4px;">
+            최대 <input type="number" id="vt-blog-max" value="5" min="1" max="50" style="width:50px;background:var(--card);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:0.8rem;text-align:center;"> 개
+          </label>
+          <select id="vt-blog-brand-filter" style="background:var(--card);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-size:0.78rem;">
+            <option value="">전체 브랜드</option>
+          </select>
+          <select id="vt-blog-grade-filter" style="background:var(--card);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-size:0.78rem;">
+            <option value="">전체 등급</option>
+            <option value="NS">NS 이상</option>
+            <option value="S">S급 이상</option>
+            <option value="A">A급 이상</option>
+            <option value="B">B급 이상</option>
+          </select>
+        </div>
+
+        <!-- 상태 요약 -->
+        <div style="display:flex;gap:16px;margin-bottom:14px;font-size:0.82rem;">
+          <span style="color:var(--muted);">전체: <b id="vt-blog-total" style="color:var(--text);">0</b></span>
+          <span style="color:var(--yellow);">대기: <b id="vt-blog-waiting">0</b></span>
+          <span style="color:var(--green);">완료: <b id="vt-blog-done">0</b></span>
+        </div>
+
+        <!-- 필터 -->
+        <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
+          <input type="text" id="vt-blog-search" placeholder="상품명/브랜드 검색" oninput="filterVtBlog()"
+            style="flex:1;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:0.82rem;">
+          <button class="btn b-gray" onclick="selectAllVtBlog(true)" style="padding:4px 10px;font-size:0.72rem;">전체선택</button>
+          <button class="btn b-gray" onclick="selectAllVtBlog(false)" style="padding:4px 10px;font-size:0.72rem;">해제</button>
+        </div>
+
+        <!-- 상품 목록 -->
+        <div style="overflow-x:auto;">
+          <table class="tbl" style="width:100%;font-size:0.78rem;">
+            <thead>
+              <tr>
+                <th style="width:30px;"><input type="checkbox" onchange="selectAllVtBlog(this.checked)"></th>
+                <th>이미지</th>
+                <th>브랜드</th>
+                <th>상품명</th>
+                <th>가격(¥)</th>
+                <th>판매가</th>
+                <th>등급</th>
+              </tr>
+            </thead>
+            <tbody id="vt-blog-tbody">
+              <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="display:flex;justify-content:center;align-items:center;gap:10px;margin-top:12px;">
+          <div id="vt-blog-pagination" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
+        </div>
+      </div>
+
+      <!-- 블로그 업로드 로그 -->
+      <div class="panel" style="margin-top:16px;">
+        <div class="panel-title">
+          <span>&#x1f4cb; 블로그 업로드 로그</span>
+          <button class="btn b-gray" onclick="document.getElementById('vt-blog-log').innerHTML=''" style="padding:4px 10px;font-size:0.72rem;">로그 지우기</button>
+        </div>
+        <div id="vt-blog-log" class="log-box" style="height:300px;overflow-y:auto;background:#0a0b0f;border:1px solid var(--border);border-radius:8px;padding:10px;font-family:monospace;font-size:0.75rem;line-height:1.8;color:var(--muted);"></div>
+      </div>
+    </div>
+
+    <!-- ═══ NAS 상품 동기화 ═══ -->
+    <div class="page-section" id="page-nas-sync">
+      <div class="panel">
+        <div class="panel-title">
+          <span>&#x1f4c2; 상품 리스트 (NAS 동기화)</span>
+          <div style="display:flex;gap:6px;">
+            <button class="btn b-green" onclick="runNasSync()" id="btn-nas-sync" style="padding:6px 14px;font-size:0.78rem;">&#x1f504; 지금 동기화</button>
+            <button class="btn b-gray" onclick="loadNasStatus()" style="padding:6px 14px;font-size:0.78rem;">새로고침</button>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px;">
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;">
+            <div style="font-size:0.72rem;color:var(--muted);">NAS 경로</div>
+            <div id="nas-path" style="font-size:0.78rem;color:var(--text);margin-top:4px;word-break:break-all;">-</div>
+          </div>
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;">
+            <div style="font-size:0.72rem;color:var(--muted);">NAS DB 상태</div>
+            <div id="nas-db-status" style="font-size:0.78rem;margin-top:4px;">-</div>
+          </div>
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;">
+            <div style="font-size:0.72rem;color:var(--muted);">NAS DB 수정시간</div>
+            <div id="nas-mtime" style="font-size:0.78rem;color:var(--text);margin-top:4px;">-</div>
+          </div>
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;">
+            <div style="font-size:0.72rem;color:var(--muted);">마지막 동기화</div>
+            <div id="nas-last-sync" style="font-size:0.78rem;color:var(--accent);margin-top:4px;">-</div>
+          </div>
+        </div>
+
+        <div style="padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:0.78rem;color:var(--muted);">
+          <b>동기화 방식:</b><br>
+          &#x1f5a5; 윈도우 스크래핑 PC → <code>Z:\VOL1\파일공유\00 이용아\thone\srv\data\jp_sourcing\db\products.db</code> 저장<br>
+          &#x1f4bb; 맥 서버 → 매시 30분 NAS에서 자동 읽어서 로컬 DB 병합<br>
+          &#x2705; 수동 동기화: 위 "지금 동기화" 버튼
+        </div>
+
+        <!-- 동기화 로그 -->
+        <div style="margin-top:12px;">
+          <div id="nas-sync-log" style="font-size:0.78rem;color:var(--muted);"></div>
+        </div>
       </div>
     </div>
 
@@ -2041,11 +2268,11 @@
           </div>
           <div style="display:flex;align-items:center;gap:6px;">
             <span style="font-size:0.8rem;color:var(--muted);">대기시간(분)</span>
-            <input type="number" id="cafe-delay-min" placeholder="13" min="8" max="60" value="13"
+            <input type="number" id="cafe-delay-min" placeholder="20" min="8" max="60" value="20"
               style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:55px;font-size:0.82rem;text-align:center;"
               onchange="saveCafeDelay()">
             <span style="font-size:0.8rem;color:var(--muted);">~</span>
-            <input type="number" id="cafe-delay-max" placeholder="15" min="8" max="60" value="15"
+            <input type="number" id="cafe-delay-max" placeholder="30" min="8" max="60" value="30"
               style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:55px;font-size:0.82rem;text-align:center;"
               onchange="saveCafeDelay()">
           </div>
@@ -2054,19 +2281,30 @@
         <!-- 카페 상품 목록 -->
         <div id="cafe-product-section" style="display:none;margin-bottom:16px;">
           <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
-            <input type="text" id="cafe-search" placeholder="상품명 검색..." oninput="loadCafeProducts(1)"
-              style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;flex:1;min-width:160px;">
-            <select id="cafe-brand-select" onchange="loadCafeProducts(1)"
+            <input type="text" id="cafe-search" placeholder="상품명, 코드 검색..."
+              onkeydown="if(event.key==='Enter')loadCafeProducts(1)"
+              style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;flex:1;min-width:120px;">
+            <select id="cafe-brand-select"
               style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;">
               <option value="ALL">전체 브랜드</option>
             </select>
-            <select id="cafe-status-select" onchange="loadCafeProducts(1)"
+            <select id="cafe-category-select"
+              style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;">
+              <option value="ALL">전체 카테고리</option>
+              <option value="bag">가방</option>
+              <option value="clothing">의류</option>
+              <option value="shoes">신발</option>
+              <option value="watch">시계</option>
+              <option value="accessory">악세서리</option>
+            </select>
+            <select id="cafe-status-select"
               style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;">
               <option value="대기" selected>대기</option>
               <option value="ALL">전체 상태</option>
               <option value="완료">완료</option>
               <option value="중복">중복</option>
             </select>
+            <button class="btn b-blue" onclick="loadCafeProducts(1)" style="padding:6px 14px;font-size:0.82rem;white-space:nowrap;">🔍 검색</button>
             <button class="btn b-gray" onclick="cafeSel(true)" style="padding:5px 10px;font-size:0.78rem;">전체선택</button>
             <button class="btn b-gray" onclick="cafeSel(false)" style="padding:5px 10px;font-size:0.78rem;">선택해제</button>
             <select id="bulk-status-select" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.78rem;">
@@ -2398,6 +2636,8 @@ const pageTitles = {
   "cafe-upload": "Sport \u203A \u2615 \uB124\uC774\uBC84\uCE74\uD398 \uC5C5\uB85C\uB4DC",
   "cafe-schedule": "Sport \u203A \u23F0 \uC790\uB3D9 \uC2A4\uCF00\uC904",
   "vt-cafe-upload": "Vintage \u203A \u2615 \uB124\uC774\uBC84\uCE74\uD398 \uC5C5\uB85C\uB4DC",
+  "vt-blog-upload": "Vintage \u203A \uD83D\uDCDD \uB124\uC774\uBC84\uBE14\uB85C\uADF8 \uC5C5\uB85C\uB4DC",
+  "nas-sync": "Vintage \u203A \uD83D\uDCC2 \uC0C1\uD488 \uB9AC\uC2A4\uD2B8 (NAS)",
 };
 
 function showPage(page, pushHash) {
@@ -2571,7 +2811,7 @@ async function toggleCafeProducts() {
     sec.style.display = "block";
     btn.textContent = "📋 상품목록 닫기";
     await loadCafeBrands();
-    await loadCafeProducts(1);
+    // 필터만 표시, 검색 버튼 클릭 시 로드
   } else {
     sec.style.display = "none";
     btn.textContent = "📋 상품목록 들고 오기";
@@ -2602,7 +2842,8 @@ async function loadCafeProducts(page = 1) {
   try {
     if (isRandom && statusFilter === "대기" && brand === "ALL" && !search) {
       // 브랜드 랜덤 모드: 전체 대기 상품에서 브랜드별 골고루 10개 랜덤 선택
-      const allUrl = `${PREFIX}/products?page=1&per_page=9999&brand=ALL&search=&status=대기&source_type=sports`;
+      const catVal = document.getElementById("cafe-category-select")?.value || "ALL";
+      const allUrl = `${PREFIX}/products?page=1&per_page=9999&brand=ALL&search=&status=대기&category=${encodeURIComponent(catVal)}&source_type=sports`;
       const allData = await fetch(allUrl).then(r => r.json());
       const allProducts = allData.products || [];
       const tb = document.getElementById("cafe-tbody");
@@ -2679,7 +2920,8 @@ async function loadCafeProducts(page = 1) {
 
     // 일반 모드: 페이지네이션 + 필터
     if (randomInfo) randomInfo.style.display = "none";
-    const url = `${PREFIX}/products?page=${page}&per_page=${PER}&brand=${encodeURIComponent(brand)}&search=${encodeURIComponent(search)}&status=${encodeURIComponent(statusFilter)}&source_type=sports`;
+    const category = document.getElementById("cafe-category-select")?.value || "ALL";
+    const url = `${PREFIX}/products?page=${page}&per_page=${PER}&brand=${encodeURIComponent(brand)}&search=${encodeURIComponent(search)}&status=${encodeURIComponent(statusFilter)}&category=${encodeURIComponent(category)}&source_type=sports`;
     const d = await fetch(url).then(r => r.json());
     const tb = document.getElementById("cafe-tbody");
     const cafeSummary = document.getElementById("cafe-product-summary");
@@ -3009,8 +3251,8 @@ async function uploadSelected() {
   const shuffle = document.getElementById("cafe-shuffle-brands").checked;
 
   // 대기시간 검증 (localStorage 우선, 없으면 입력값, 없으면 기본 13~15)
-  let delayMin = parseInt(document.getElementById("cafe-delay-min").value) || parseInt(localStorage.getItem("cafe_delay_min")) || 13;
-  let delayMax = parseInt(document.getElementById("cafe-delay-max").value) || parseInt(localStorage.getItem("cafe_delay_max")) || 15;
+  let delayMin = parseInt(document.getElementById("cafe-delay-min").value) || parseInt(localStorage.getItem("cafe_delay_min")) || 20;
+  let delayMax = parseInt(document.getElementById("cafe-delay-max").value) || parseInt(localStorage.getItem("cafe_delay_max")) || 30;
   if (delayMin < 8) { delayMin = 8; }
   if (delayMax < delayMin) { delayMax = delayMin; }
   // 입력필드 + localStorage 동기화
@@ -6168,7 +6410,7 @@ loadBizInfo();
 // ── 빈티지 카페 업로드 ──
 let vtCafeProducts = [];
 let vtCafePage = 1;
-const VT_CAFE_PER_PAGE = 30;
+let VT_CAFE_PER_PAGE = 10;
 
 async function loadVtCafeProducts() {
   const tbody = document.getElementById("vt-cafe-tbody");
@@ -6218,16 +6460,23 @@ function updateVtCafeSummary() {
 
 function filterVtCafe() { vtCafePage = 1; renderVtCafeTable(); }
 
+// 등급 순서: NS(0, 최상) > S(1) > A(2) > B(3) > C(4) > D(5, 최하)
+const _gradeRank = {"NS":0,"S":1,"A":2,"B":3,"C":4,"D":5};
+
 function getFilteredVtCafe() {
   const search = (document.getElementById("vt-cafe-search")?.value || "").toLowerCase();
   const statusF = document.getElementById("vt-cafe-status-filter")?.value || "";
   const brand = document.getElementById("vt-cafe-brand-filter")?.value || "";
   const cat = document.getElementById("vt-cafe-cat-filter")?.value || "";
   const grade = document.getElementById("vt-cafe-grade-filter")?.value || "";
+  const gradeThreshold = grade ? (_gradeRank[grade] ?? 99) : 99;
   return vtCafeProducts.filter(p => {
     if (statusF && p.cafe_status !== statusF) return false;
     if (brand && p.brand !== brand) return false;
-    if (grade && p.condition_grade !== grade) return false;
+    if (grade) {
+      const pRank = _gradeRank[p.condition_grade] ?? 99;
+      if (pRank > gradeThreshold) return false;  // 선택한 등급보다 낮으면 제외
+    }
     if (cat && !(p.name||"").includes(cat)) return false;
     if (search && !(p.name||"").toLowerCase().includes(search) && !(p.brand||"").toLowerCase().includes(search)) return false;
     return true;
@@ -6253,14 +6502,20 @@ function renderVtCafeTable() {
       <td style="color:${statusColors[p.cafe_status]||'var(--muted)'};font-weight:600;">${p.cafe_status||'대기'}</td>
     </tr>`).join("");
   }
-  // 페이지네이션
+  // 페이지네이션 (컴팩트)
   const totalPages = Math.ceil(filtered.length / VT_CAFE_PER_PAGE);
   const pgEl = document.getElementById("vt-cafe-pagination");
-  if (totalPages <= 1) { pgEl.innerHTML = ""; return; }
-  let pgHtml = "";
-  for (let i = 1; i <= totalPages; i++) {
-    pgHtml += `<button onclick="vtCafePage=${i};renderVtCafeTable()" class="btn ${i===vtCafePage?'b-blue':'b-gray'}" style="padding:3px 8px;font-size:0.72rem;">${i}</button>`;
-  }
+  if (totalPages <= 1) { pgEl.innerHTML = `<span style="font-size:0.72rem;color:var(--dim);">${filtered.length}개</span>`; return; }
+  const bs = "padding:3px 8px;font-size:0.72rem;";
+  let pgHtml = `<button onclick="vtCafePage=${Math.max(1,vtCafePage-1)};renderVtCafeTable()" class="btn b-gray" style="${bs}" ${vtCafePage===1?'disabled':''}>◀</button>`;
+  const range = 3;
+  let startP = Math.max(1, vtCafePage - range);
+  let endP = Math.min(totalPages, vtCafePage + range);
+  if (startP > 1) pgHtml += `<button onclick="vtCafePage=1;renderVtCafeTable()" class="btn b-gray" style="${bs}">1</button><span style="color:var(--dim);">…</span>`;
+  for (let i = startP; i <= endP; i++) pgHtml += `<button onclick="vtCafePage=${i};renderVtCafeTable()" class="btn ${i===vtCafePage?'b-blue':'b-gray'}" style="${bs}">${i}</button>`;
+  if (endP < totalPages) pgHtml += `<span style="color:var(--dim);">…</span><button onclick="vtCafePage=${totalPages};renderVtCafeTable()" class="btn b-gray" style="${bs}">${totalPages}</button>`;
+  pgHtml += `<button onclick="vtCafePage=${Math.min(totalPages,vtCafePage+1)};renderVtCafeTable()" class="btn b-gray" style="${bs}" ${vtCafePage===totalPages?'disabled':''}>▶</button>`;
+  pgHtml += `<span style="font-size:0.7rem;color:var(--dim);margin-left:6px;">${filtered.length}개 / ${totalPages}p</span>`;
   pgEl.innerHTML = pgHtml;
 }
 
@@ -6284,8 +6539,8 @@ async function vtCafeUpload() {
   if (!checked.length) { alert("업로드할 상품을 선택해주세요"); return; }
   const max = parseInt(document.getElementById("vt-cafe-max").value) || 5;
   const shuffle = document.getElementById("vt-cafe-shuffle").checked;
-  const delayMin = parseInt(document.getElementById("vt-cafe-delay-min").value) || 8;
-  const delayMax = parseInt(document.getElementById("vt-cafe-delay-max").value) || 13;
+  const delayMin = parseInt(document.getElementById("vt-cafe-delay-min").value) || 20;
+  const delayMax = parseInt(document.getElementById("vt-cafe-delay-max").value) || 30;
   if (!confirm(`${checked.length}개 상품 중 최대 ${max}개를 카페에 업로드합니다.\n${shuffle?'브랜드 셔플 ON':'순서대로'}\n대기시간: ${delayMin}~${delayMax}분\n\n진행하시겠습니까?`)) return;
 
   vtCafeLog(`🚀 업로드 시작: ${checked.length}개 선택, 최대 ${max}개`, "ok");
@@ -6343,12 +6598,23 @@ async function vtCafeCheck() {
 
 // ── 빈티지 스케줄 ──
 let _vtScheduleSlots = [];
+let _vtBrandList = [];
+const _vtCategoryList = [
+  {id:"ALL", name:"전체"},
+  {id:"bag", name:"가방"}, {id:"clothing", name:"의류"}, {id:"shoes", name:"신발"},
+  {id:"watch", name:"시계"}, {id:"accessory", name:"악세서리"},
+];
+
 async function loadVtCafeSchedule() {
   try {
-    const r = await fetch(PREFIX + "/vt-cafe-schedule");
-    const d = await r.json();
-    if (!d.ok) return;
-    _vtScheduleSlots = d.slots;
+    const [schedRes, brandRes] = await Promise.all([
+      fetch(PREFIX + "/vt-cafe-schedule"),
+      fetch(PREFIX + "/api/vintage-cafe-products"),
+    ]);
+    const schedData = await schedRes.json();
+    const brandData = await brandRes.json();
+    if (schedData.ok) _vtScheduleSlots = schedData.slots;
+    if (brandData.ok) _vtBrandList = brandData.brands || [];
     renderVtScheduleSlots();
   } catch(e) {}
 }
@@ -6358,6 +6624,8 @@ function renderVtScheduleSlots() {
   if (!container) return;
   const colorMap = { vt_morning: "#4CAF50", vt_afternoon: "#2196F3", vt_evening: "#FF9800", vt_night: "#9C27B0" };
   const iconMap  = { vt_morning: "🌅", vt_afternoon: "☀️", vt_evening: "🌇", vt_night: "🌙" };
+  const brandOpts = _vtBrandList.map(b => `<option value="${b}">${b}</option>`).join("");
+  const catOpts = _vtCategoryList.map(c => `<option value="${c.id}">${c.name}</option>`).join("");
   container.innerHTML = _vtScheduleSlots.map((slot, i) => {
     const color = colorMap[slot.id] || "#666";
     const icon  = iconMap[slot.id]  || "⏰";
@@ -6369,7 +6637,7 @@ function renderVtScheduleSlots() {
             <span style="font-weight:600;font-size:0.95rem;">${slot.label}</span>
           </div>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-            <input type="checkbox" class="vt-sch-enabled" data-idx="${i}" ${slot.enabled?"checked":""}
+            <input type="checkbox" id="vt-sch-en-${i}" data-idx="${i}" ${slot.enabled?"checked":""}
               onchange="_vtScheduleSlots[${i}].enabled=this.checked;renderVtScheduleSlots();"
               style="width:18px;height:18px;accent-color:${color};">
             <span style="font-size:0.8rem;color:${slot.enabled?color:'var(--muted)'};">${slot.enabled?"활성":"비활성"}</span>
@@ -6379,11 +6647,11 @@ function renderVtScheduleSlots() {
           <div>
             <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">시간</label>
             <div style="display:flex;gap:4px;">
-              <select class="vt-sch-hour" data-idx="${i}" onchange="_vtScheduleSlots[${i}].hour=parseInt(this.value)"
+              <select id="vt-sch-hour-${i}" onchange="_vtScheduleSlots[${i}].hour=parseInt(this.value)"
                 style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:0.82rem;flex:1;">
                 ${Array.from({length:24},(_,h)=>`<option value="${h}" ${slot.hour===h?"selected":""}>${String(h).padStart(2,"0")}시</option>`).join("")}
               </select>
-              <select class="vt-sch-min" data-idx="${i}" onchange="_vtScheduleSlots[${i}].minute=parseInt(this.value)"
+              <select id="vt-sch-min-${i}" onchange="_vtScheduleSlots[${i}].minute=parseInt(this.value)"
                 style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:0.82rem;width:70px;">
                 ${[0,10,15,20,30,40,45,50].map(m=>`<option value="${m}" ${slot.minute===m?"selected":""}>${String(m).padStart(2,"0")}분</option>`).join("")}
               </select>
@@ -6391,17 +6659,73 @@ function renderVtScheduleSlots() {
           </div>
           <div>
             <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">수량</label>
-            <input type="number" class="vt-sch-qty" data-idx="${i}" value="${slot.quantity||3}" min="1" max="20"
+            <input type="number" id="vt-sch-qty-${i}" value="${slot.quantity||3}" min="1" max="20"
               onchange="_vtScheduleSlots[${i}].quantity=parseInt(this.value)||3"
               style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;width:100%;">
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px;">
+          <div>
+            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">브랜드</label>
+            <select id="vt-sch-brand-${i}" onchange="_vtScheduleSlots[${i}].brand=this.value"
+              style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;width:100%;">
+              <option value="ALL" ${(slot.brand||"ALL")==="ALL"?"selected":""}>전체 브랜드</option>
+              ${brandOpts}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">카테고리</label>
+            <select id="vt-sch-cat-${i}" onchange="_vtScheduleSlots[${i}].category=this.value"
+              style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;width:100%;">
+              ${catOpts}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">최소 등급</label>
+            <select id="vt-sch-grade-${i}" onchange="_vtScheduleSlots[${i}].min_grade=this.value"
+              style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;width:100%;">
+              <option value="">전체</option>
+              <option value="NS">NS (신품만)</option>
+              <option value="S">S급 이상</option>
+              <option value="A">A급 이상</option>
+              <option value="B">B급 이상</option>
+              <option value="C">C급 이상</option>
+            </select>
           </div>
         </div>
         ${slot.next_run ? `<div style="margin-top:10px;font-size:0.75rem;color:var(--accent);">⏰ 다음 실행: ${slot.next_run}</div>` : ''}
       </div>`;
   }).join("");
+
+  // 저장된 값 반영
+  _vtScheduleSlots.forEach((slot, i) => {
+    const brandEl = document.getElementById(`vt-sch-brand-${i}`);
+    const catEl = document.getElementById(`vt-sch-cat-${i}`);
+    const gradeEl = document.getElementById(`vt-sch-grade-${i}`);
+    if (brandEl) brandEl.value = slot.brand || "ALL";
+    if (catEl) catEl.value = slot.category || "ALL";
+    if (gradeEl) gradeEl.value = slot.min_grade || "";
+  });
 }
 
 async function saveVtCafeSchedule() {
+  // UI에서 최신 값 수집
+  _vtScheduleSlots.forEach((slot, i) => {
+    const h = document.getElementById(`vt-sch-hour-${i}`);
+    const m = document.getElementById(`vt-sch-min-${i}`);
+    const q = document.getElementById(`vt-sch-qty-${i}`);
+    const b = document.getElementById(`vt-sch-brand-${i}`);
+    const c = document.getElementById(`vt-sch-cat-${i}`);
+    const g = document.getElementById(`vt-sch-grade-${i}`);
+    const e = document.getElementById(`vt-sch-en-${i}`);
+    if (h) slot.hour = parseInt(h.value);
+    if (m) slot.minute = parseInt(m.value);
+    if (q) slot.quantity = parseInt(q.value) || 3;
+    if (b) slot.brand = b.value;
+    if (c) slot.category = c.value;
+    if (g) slot.min_grade = g.value;
+    if (e) slot.enabled = e.checked;
+  });
   try {
     const r = await fetch(PREFIX + "/vt-cafe-schedule", {
       method: "POST", headers: {"Content-Type":"application/json"},
@@ -6424,6 +6748,636 @@ function vtCafeStop() {
   document.getElementById("btn-vt-cafe-stop").style.display = "none";
   if (_vtCafeLogSSE) { _vtCafeLogSSE.close(); _vtCafeLogSSE = null; }
 }
+
+// ── 자유게시판 (중고명품 기사) ──
+let _fbList = [];
+async function loadFreeBoardList() {
+  try {
+    const r = await fetch(PREFIX + "/api/free-board");
+    const d = await r.json();
+    _fbList = d.ok ? (d.posts || []) : [];
+    renderFreeBoardTable();
+  } catch(e) { console.error("자유게시판 로드 실패", e); }
+}
+
+function renderFreeBoardTable() {
+  const tbody = document.getElementById("fb-tbody");
+  if (!_fbList.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px;">등록된 기사가 없습니다</td></tr>';
+    return;
+  }
+  const statusColors = {"대기":"var(--yellow)","승인":"var(--accent)","완료":"var(--green)","실패":"var(--red)","취소":"var(--dim)"};
+  const typeColors = {"economy":"#4f8ef7","brand":"#e879a0"};
+  tbody.innerHTML = _fbList.map((p, i) => {
+    const artType = p.article_type || (p.title.startsWith("[") ? "brand" : "economy");
+    const typeLabel = artType === "economy" ? "경제" : "브랜드";
+    const typeColor = typeColors[artType] || "var(--muted)";
+
+    let actionBtns = "";
+    if (p.status === "대기") {
+      actionBtns = `<button class="btn b-green" onclick="confirmFbArticle(${p.id})" style="padding:2px 6px;font-size:0.68rem;">✓ 승인</button> <button class="btn b-gray" onclick="changeFbStatus(${p.id},'취소')" style="padding:2px 6px;font-size:0.68rem;">취소</button>`;
+    } else if (p.status === "승인") {
+      actionBtns = `<button class="btn b-green" onclick="uploadFreeBoardToCafe(${p.id})" style="padding:2px 6px;font-size:0.68rem;">업로드</button> <button class="btn b-gray" onclick="changeFbStatus(${p.id},'취소')" style="padding:2px 6px;font-size:0.68rem;">취소</button>`;
+    } else if (p.status === "완료") {
+      actionBtns = `<span style="color:var(--green);font-size:0.68rem;">업로드됨</span>`;
+    } else if (p.status === "실패") {
+      actionBtns = `<button class="btn b-yellow" onclick="uploadFreeBoardToCafe(${p.id})" style="padding:2px 6px;font-size:0.68rem;">재시도</button>`;
+    } else if (p.status === "취소") {
+      actionBtns = `<button class="btn b-gray" onclick="changeFbStatus(${p.id},'대기')" style="padding:2px 6px;font-size:0.68rem;">복원</button>`;
+    }
+
+    return `<tr style="${p.status==='취소'?'opacity:0.4;':''}">
+      <td style="text-align:center;">${i+1}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" onclick="previewFreeBoard(${i})" title="${p.title}">
+        ${p.image_path ? '🖼 ' : ''}${p.title}
+      </td>
+      <td style="text-align:center;"><span style="padding:1px 6px;border-radius:4px;background:${typeColor}22;color:${typeColor};font-size:0.65rem;font-weight:600;">${typeLabel}</span></td>
+      <td style="text-align:center;"><select onchange="changeFbStatus(${p.id},this.value)" style="padding:1px 3px;border-radius:4px;border:1px solid ${statusColors[p.status]||'var(--border)'};background:transparent;color:${statusColors[p.status]||'var(--muted)'};font-size:0.65rem;font-weight:600;cursor:pointer;">
+        <option value="대기" ${p.status==='대기'?'selected':''}>대기</option>
+        <option value="승인" ${p.status==='승인'?'selected':''}>승인</option>
+        <option value="완료" ${p.status==='완료'?'selected':''}>완료</option>
+        <option value="실패" ${p.status==='실패'?'selected':''}>실패</option>
+        <option value="취소" ${p.status==='취소'?'selected':''}>취소</option>
+      </select></td>
+      <td style="text-align:center;font-size:0.65rem;color:var(--dim);">${(p.created_at||'').substring(5)}</td>
+      <td style="text-align:center;">${actionBtns}</td>
+      <td style="text-align:center;"><button class="btn b-red" onclick="deleteFreeBoard(${p.id})" style="padding:1px 5px;font-size:0.65rem;">X</button></td>
+    </tr>`;
+  }).join("");
+}
+
+async function confirmFbArticle(id) {
+  await changeFbStatus(id, "승인");
+  vtCafeLog("✓ 기사 승인 완료 — 예약 시간에 업로드됩니다", "ok");
+}
+
+window._fbImgPath = "";       // AI 생성 시 이미지 경로 저장
+window._fbTags = "";          // AI 생성 태그
+window._fbArticleType = "";   // economy / brand
+
+async function postFreeBoard() {
+  const title = document.getElementById("fb-title").value.trim();
+  const content = document.getElementById("fb-content").value.trim();
+  const url = document.getElementById("fb-url").value.trim();
+  if (!title) { alert("제목을 입력해주세요"); return; }
+  if (!content) { alert("내용을 입력해주세요"); return; }
+  try {
+    const imgPath = window._fbImgPath || "";
+    console.log("저장 요청:", {title: title.substring(0,30), imgPath: imgPath.substring(0,50)});
+    const r = await fetch(PREFIX + "/api/free-board", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({title, content, url, image_path: imgPath, tags: window._fbTags || "", article_type: window._fbArticleType || ""})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      vtCafeLog("📰 자유게시판 기사 등록: " + title, "ok");
+      document.getElementById("fb-title").value = "";
+      document.getElementById("fb-content").value = "";
+      document.getElementById("fb-url").value = "";
+      window._fbImgPath = "";
+      window._fbTags = "";
+      loadFreeBoardList();
+    } else {
+      alert(d.message || "등록 실패");
+    }
+  } catch(e) { alert("등록 오류: " + e); }
+}
+
+async function saveFbSchedule() {
+  const enabled = document.getElementById("fb-auto-enabled").checked;
+  const ecoHour = parseInt(document.getElementById("fb-eco-hour").value) || 8;
+  const brandHour = parseInt(document.getElementById("fb-brand-hour").value) || 17;
+  try {
+    const r = await fetch(PREFIX + "/api/free-board/schedule", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({enabled, eco_hour: ecoHour, brand_hour: brandHour})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      const msg = document.getElementById("fb-schedule-msg");
+      msg.style.display = ""; setTimeout(() => msg.style.display = "none", 3000);
+      vtCafeLog(`📅 자유게시판 스케줄 ${enabled?'활성':'비활성'} (경제:${ecoHour}시/브랜드:${brandHour}시)`, "ok");
+    }
+  } catch(e) {}
+}
+
+async function loadFbSchedule() {
+  try {
+    const r = await fetch(PREFIX + "/api/free-board/schedule");
+    const d = await r.json();
+    if (d.ok) {
+      document.getElementById("fb-auto-enabled").checked = d.schedule.enabled || false;
+      document.getElementById("fb-eco-hour").value = d.schedule.eco_hour || 8;
+      document.getElementById("fb-brand-hour").value = d.schedule.brand_hour || 17;
+    }
+  } catch(e) {}
+}
+
+async function changeFbStatus(id, status) {
+  try {
+    const r = await fetch(PREFIX + "/api/free-board/" + id + "/status", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({status})
+    });
+    const d = await r.json();
+    if (d.ok) loadFreeBoardList();
+  } catch(e) {}
+}
+
+async function deleteFreeBoard(id) {
+  if (!confirm("삭제하시겠습니까?")) return;
+  try {
+    const r = await fetch(PREFIX + "/api/free-board/" + id, {method: "DELETE"});
+    const d = await r.json();
+    if (d.ok) loadFreeBoardList();
+  } catch(e) { alert("삭제 실패"); }
+}
+
+async function aiGenerateArticle(type) {
+  const btn = document.getElementById(type === "economy" ? "btn-ai-economy" : "btn-ai-brand");
+  const origText = btn.textContent;
+  btn.textContent = "⏳ 생성중...";
+  btn.disabled = true;
+  try {
+    const keyword = document.getElementById("fb-keyword").value.trim();
+    const imageSource = document.getElementById("fb-image-source").value;
+    const imagePrompt = document.getElementById("fb-image-prompt").value.trim();
+    const r = await fetch(PREFIX + "/api/free-board/generate", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({type, keyword, image_source: imageSource, image_prompt: imagePrompt})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      document.getElementById("fb-title").value = d.title || "";
+      document.getElementById("fb-content").value = d.content || "";
+      window._fbArticleType = type;
+      vtCafeLog(`📰 AI 기사 생성 완료: ${(d.title||"").substring(0,30)}...`, "ok");
+      window._fbImgPath = d.image_path || "";
+      // 실시간 트렌드 표시
+      if (d.trending && d.trending.length > 0) vtCafeLog(`📊 실시간 인기검색어: ${d.trending.join(", ")}`, "info");
+      if (d.luxury_suggestions && d.luxury_suggestions.length > 0) vtCafeLog(`💎 명품 추천검색어: ${d.luxury_suggestions.join(", ")}`, "info");
+      if (d.tags && d.tags.length > 0) {
+        window._fbTags = d.tags.join(",");
+        vtCafeLog(`🏷 태그 (${d.tags.length}개): ${d.tags.join(", ")}`, "ok");
+      }
+      // 이미지 미리보기 (선택/해제 가능)
+      window._fbImageFiles = d.image_filenames || [];
+      window._fbImageSelected = new Set(window._fbImageFiles.map((_,i) => i));  // 전체 선택 기본
+      renderFbImagePreview();
+      if (window._fbImageFiles.length > 0) {
+        vtCafeLog(`🖼 이미지 ${window._fbImageFiles.length}장 생성 완료`, "ok");
+      } else {
+        vtCafeLog(`⚠️ 이미지 미생성`, "info");
+      }
+    } else {
+      alert(d.message || "생성 실패");
+    }
+  } catch(e) { alert("AI 생성 오류: " + e); }
+  finally { btn.textContent = origText; btn.disabled = false; }
+}
+
+function previewFreeBoard(idx) {
+  const p = _fbList[idx];
+  if (!p) return;
+  document.getElementById("fb-title").value = p.title;
+  document.getElementById("fb-content").value = p.content;
+  document.getElementById("fb-url").value = p.url || "";
+  window._fbImgPath = p.image_path || "";
+  if (p.image_path) {
+    window._fbImageFiles = p.image_path.split(",").map(s => s.trim().split("/").pop()).filter(Boolean);
+    window._fbImageSelected = new Set(window._fbImageFiles.map((_,i) => i));
+    renderFbImagePreview();
+  } else {
+    window._fbImageFiles = [];
+    window._fbImageSelected = new Set();
+    document.getElementById("fb-image-preview").style.display = "none";
+  }
+}
+
+function renderFbImagePreview() {
+  const previewEl = document.getElementById("fb-image-preview");
+  const imgListEl = document.getElementById("fb-image-list");
+  if (!window._fbImageFiles || window._fbImageFiles.length === 0) {
+    previewEl.style.display = "none";
+    return;
+  }
+  imgListEl.innerHTML = window._fbImageFiles.map((fn, i) => {
+    const selected = window._fbImageSelected.has(i);
+    return `<div onclick="toggleFbImage(${i})" style="cursor:pointer;position:relative;border:3px solid ${selected ? 'var(--accent)' : 'transparent'};border-radius:10px;overflow:hidden;transition:all .2s;">
+      <img src="${PREFIX}/api/article-image/${fn}" style="width:160px;height:160px;object-fit:cover;${selected ? '' : 'opacity:0.35;filter:grayscale(100%);'}" onerror="this.parentElement.style.display='none'"
+        ondblclick="event.stopPropagation();showFbImageFull('${fn}')">
+      <div style="position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;background:${selected ? 'var(--accent)' : 'rgba(0,0,0,0.5)'};display:flex;align-items:center;justify-content:center;font-size:0.7rem;color:${selected ? '#000' : '#fff'};">${selected ? '✓' : ''}</div>
+      <div style="text-align:center;font-size:0.6rem;color:var(--dim);padding:2px;">${i+1}</div>
+    </div>`;
+  }).join("");
+  previewEl.style.display = "block";
+  // 선택된 이미지만 _fbImgPath에 반영
+  updateFbImgPath();
+}
+
+function showFbImageFull(fn) {
+  const files = window._fbImageFiles || [];
+  let curIdx = files.indexOf(fn);
+  if (curIdx < 0) curIdx = 0;
+
+  const overlay = document.createElement("div");
+  overlay.id = "fb-img-fullscreen";
+  overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:99999;display:flex;align-items:center;justify-content:center;";
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+  function render() {
+    const f = files[curIdx];
+    const sel = window._fbImageSelected.has(curIdx);
+    overlay.innerHTML = `
+      <div style="position:absolute;top:20px;right:30px;color:#fff;font-size:1.8rem;cursor:pointer;z-index:10;" onclick="document.getElementById('fb-img-fullscreen').remove()">✕</div>
+      <div style="position:absolute;top:20px;left:50%;transform:translateX(-50%);color:#fff;font-size:0.9rem;">${curIdx+1} / ${files.length}</div>
+      <div onclick="event.stopPropagation();fbFullPrev()" style="position:absolute;left:20px;top:50%;transform:translateY(-50%);color:#fff;font-size:3rem;cursor:pointer;padding:10px;${curIdx===0?'opacity:0.3;pointer-events:none;':''}">◀</div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px;">
+        <img src="${PREFIX}/api/article-image/${f}" style="max-width:85%;max-height:75vh;border-radius:12px;box-shadow:0 0 30px rgba(0,0,0,0.5);">
+        <button onclick="event.stopPropagation();fbFullToggle()" style="padding:8px 24px;border-radius:8px;border:2px solid ${sel?'var(--accent)':'#666'};background:${sel?'var(--accent)':'transparent'};color:${sel?'#000':'#fff'};font-size:0.85rem;font-weight:700;cursor:pointer;">
+          ${sel ? '✓ 선택됨' : '선택하기'}
+        </button>
+      </div>
+      <div onclick="event.stopPropagation();fbFullNext()" style="position:absolute;right:20px;top:50%;transform:translateY(-50%);color:#fff;font-size:3rem;cursor:pointer;padding:10px;${curIdx===files.length-1?'opacity:0.3;pointer-events:none;':''}">▶</div>
+    `;
+  }
+
+  window.fbFullPrev = () => { if (curIdx > 0) { curIdx--; render(); } };
+  window.fbFullNext = () => { if (curIdx < files.length-1) { curIdx++; render(); } };
+  window.fbFullToggle = () => { toggleFbImage(curIdx); render(); };
+
+  // 키보드 좌우 화살표
+  const keyHandler = (e) => {
+    if (e.key === "ArrowLeft") window.fbFullPrev();
+    else if (e.key === "ArrowRight") window.fbFullNext();
+    else if (e.key === "Escape") { overlay.remove(); document.removeEventListener("keydown", keyHandler); }
+  };
+  document.addEventListener("keydown", keyHandler);
+
+  render();
+  document.body.appendChild(overlay);
+}
+
+function toggleFbImage(idx) {
+  if (window._fbImageSelected.has(idx)) {
+    window._fbImageSelected.delete(idx);
+  } else {
+    window._fbImageSelected.add(idx);
+  }
+  renderFbImagePreview();
+}
+
+function updateFbImgPath() {
+  // 선택된 이미지의 전체 경로를 재구성
+  const allPaths = (window._fbImgPath || "").split(",").map(s => s.trim()).filter(Boolean);
+  if (allPaths.length === window._fbImageFiles.length) {
+    const selected = [...window._fbImageSelected].sort().map(i => allPaths[i]);
+    window._fbImgPath = selected.join(",");
+  }
+}
+
+async function regenerateUnselectedImages() {
+  const unselected = [];
+  for (let i = 0; i < window._fbImageFiles.length; i++) {
+    if (!window._fbImageSelected.has(i)) unselected.push(i);
+  }
+  if (unselected.length === 0) { alert("재생성할 이미지가 없습니다. 먼저 이미지를 클릭하여 해제하세요."); return; }
+
+  const btn = document.getElementById("btn-regen-img");
+  btn.textContent = `⏳ ${unselected.length}장 재생성중...`;
+  btn.disabled = true;
+
+  try {
+    const imageSource = document.getElementById("fb-image-source").value;
+    const r = await fetch(PREFIX + "/api/free-board/regenerate-images", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        count: unselected.length,
+        image_source: imageSource,
+        article_type: document.getElementById("fb-content").value.includes("환율") ? "economy" : "brand",
+        title: document.getElementById("fb-title").value,
+      })
+    });
+    const d = await r.json();
+    if (d.ok && d.image_filenames) {
+      // 미선택 슬롯에 새 이미지 교체
+      const allPaths = (window._fbImgPath || "").split(",").map(s => s.trim()).filter(Boolean);
+      let newIdx = 0;
+      for (const i of unselected) {
+        if (newIdx < d.image_filenames.length) {
+          window._fbImageFiles[i] = d.image_filenames[newIdx];
+          if (i < allPaths.length) allPaths[i] = d.image_paths[newIdx] || "";
+          else allPaths.push(d.image_paths[newIdx] || "");
+          newIdx++;
+        }
+      }
+      window._fbImgPath = allPaths.join(",");
+      window._fbImageSelected = new Set(window._fbImageFiles.map((_,i) => i)); // 전체 선택
+      renderFbImagePreview();
+      vtCafeLog(`🖼 ${d.image_filenames.length}장 이미지 재생성 완료`, "ok");
+    } else {
+      vtCafeLog(`❌ 이미지 재생성 실패: ${d.message || ""}`, "err");
+    }
+  } catch(e) { vtCafeLog(`❌ 재생성 오류: ${e}`, "err"); }
+  finally { btn.textContent = "🔄 미선택 이미지 재생성"; btn.disabled = false; }
+}
+
+async function uploadFreeBoardToCafe(id) {
+  if (!confirm("이 기사를 네이버 카페 자유게시판에 업로드하시겠습니까?")) return;
+  vtCafeLog("📰 카페 자유게시판 업로드 시작...", "ok");
+  try {
+    const r = await fetch(PREFIX + "/api/free-board/" + id + "/upload", {
+      method: "POST", headers: {"Content-Type":"application/json"}
+    });
+    const d = await r.json();
+    if (d.ok) {
+      vtCafeLog("📰 " + (d.message || "업로드 요청 완료"), "ok");
+      setTimeout(loadFreeBoardList, 10000);
+    } else {
+      vtCafeLog("❌ " + (d.message || "업로드 실패"), "err");
+    }
+  } catch(e) { vtCafeLog("❌ 업로드 오류: " + e, "err"); }
+}
+
+// ── 예약 현황 패널 ──
+function toggleSchedulePanel() {
+  const panel = document.getElementById("schedule-overview-panel");
+  if (panel.style.display === "none") {
+    loadScheduleOverview();
+    panel.style.display = "block";
+  } else {
+    panel.style.display = "none";
+  }
+}
+
+async function loadScheduleOverview() {
+  const el = document.getElementById("schedule-overview-content");
+  el.innerHTML = '<div style="color:var(--dim);text-align:center;padding:10px;">로딩중...</div>';
+
+  try {
+    const [schedRes, vtRes, taskRes, checkRes] = await Promise.all([
+      fetch(PREFIX + "/cafe-schedule").then(r=>r.json()).catch(()=>({})),
+      fetch(PREFIX + "/vt-cafe-schedule").then(r=>r.json()).catch(()=>({})),
+      fetch(PREFIX + "/task-schedule").then(r=>r.json()).catch(()=>({})),
+      fetch(PREFIX + "/check-schedule").then(r=>r.json()).catch(()=>({})),
+    ]);
+
+    let html = "";
+    let activeCount = 0;
+
+    // 스포츠 카페 업로드
+    const schedSlots = schedRes.slots || [];
+    const schedActive = schedSlots.filter(s => s.enabled);
+    activeCount += schedActive.length;
+    html += `<div style="margin-bottom:14px;">
+      <div style="font-weight:600;font-size:0.8rem;color:var(--text);margin-bottom:6px;">☕ 스포츠 카페 업로드</div>`;
+    if (schedActive.length) {
+      schedActive.forEach(s => {
+        html += `<div style="display:flex;justify-content:space-between;padding:3px 8px;font-size:0.75rem;color:var(--green);"><span>${s.label} ${String(s.hour).padStart(2,'0')}:${String(s.minute).padStart(2,'0')}</span><span>${s.brand||'ALL'} / ${s.quantity||5}개</span></div>`;
+      });
+    } else {
+      html += `<div style="padding:3px 8px;font-size:0.75rem;color:var(--dim);">비활성</div>`;
+    }
+    html += `</div>`;
+
+    // 빈티지 카페 업로드
+    const vtSlots = vtRes.slots || [];
+    const vtActive = vtSlots.filter(s => s.enabled);
+    activeCount += vtActive.length;
+    html += `<div style="margin-bottom:14px;">
+      <div style="font-weight:600;font-size:0.8rem;color:var(--text);margin-bottom:6px;">🏷 빈티지 카페 업로드</div>`;
+    if (vtActive.length) {
+      vtActive.forEach(s => {
+        html += `<div style="display:flex;justify-content:space-between;padding:3px 8px;font-size:0.75rem;color:var(--green);"><span>${s.label} ${String(s.hour).padStart(2,'0')}:${String(s.minute).padStart(2,'0')}</span><span>${s.brand||'ALL'} / ${s.category||'ALL'} / ${s.min_grade||'전체'}</span></div>`;
+      });
+    } else {
+      html += `<div style="padding:3px 8px;font-size:0.75rem;color:var(--dim);">비활성</div>`;
+    }
+    html += `</div>`;
+
+    // 자동 작업 (수집/체크/콤보)
+    const taskSlots = taskRes.slots || [];
+    const taskActive = taskSlots.filter(s => s.enabled);
+    activeCount += taskActive.length;
+    html += `<div style="margin-bottom:14px;">
+      <div style="font-weight:600;font-size:0.8rem;color:var(--text);margin-bottom:6px;">🔄 자동 작업 스케줄</div>`;
+    if (taskActive.length) {
+      taskActive.forEach(s => {
+        html += `<div style="display:flex;justify-content:space-between;padding:3px 8px;font-size:0.75rem;color:var(--green);"><span>${s.label} ${String(s.hour).padStart(2,'0')}:${String(s.minute).padStart(2,'0')}</span><span>${s.type} / ${s.site_id||''}</span></div>`;
+      });
+    } else {
+      html += `<div style="padding:3px 8px;font-size:0.75rem;color:var(--dim);">비활성</div>`;
+    }
+    html += `</div>`;
+
+    // 업로드 체크
+    const checkData = checkRes.schedule || {};
+    if (checkData.enabled) {
+      activeCount++;
+      html += `<div style="margin-bottom:14px;">
+        <div style="font-weight:600;font-size:0.8rem;color:var(--text);margin-bottom:6px;">🔍 업로드 체크</div>
+        <div style="padding:3px 8px;font-size:0.75rem;color:var(--green);">${String(checkData.hour||9).padStart(2,'0')}:${String(checkData.minute||0).padStart(2,'0')} 매일</div>
+      </div>`;
+    } else {
+      html += `<div style="margin-bottom:14px;">
+        <div style="font-weight:600;font-size:0.8rem;color:var(--text);margin-bottom:6px;">🔍 업로드 체크</div>
+        <div style="padding:3px 8px;font-size:0.75rem;color:var(--dim);">비활성</div>
+      </div>`;
+    }
+
+    // 활성 카운트 업데이트
+    document.getElementById("schedule-active-count").textContent = activeCount;
+    document.getElementById("schedule-active-count").style.background = activeCount > 0 ? "var(--green)" : "var(--border)";
+
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = `<div style="color:var(--red);font-size:0.78rem;">로드 실패: ${e}</div>`;
+  }
+}
+
+// 초기 로드 시 활성 카운트 표시
+loadScheduleOverview().then(() => {
+  document.getElementById("schedule-overview-panel").style.display = "none";
+});
+
+// ── NAS 상품 동기화 ──
+async function loadNasStatus() {
+  try {
+    const r = await fetch(PREFIX + "/api/nas-sync/status");
+    const d = await r.json();
+    if (d.ok) {
+      document.getElementById("nas-path").textContent = d.nas_path || "-";
+      document.getElementById("nas-db-status").innerHTML = d.nas_exists
+        ? `<span style="color:var(--green);">연결됨 (${(d.nas_size/1024/1024).toFixed(1)}MB)</span>`
+        : `<span style="color:var(--red);">없음 — NAS 마운트 확인 필요</span>`;
+      document.getElementById("nas-mtime").textContent = d.nas_mtime || "-";
+      document.getElementById("nas-last-sync").textContent = d.last_sync || "동기화 기록 없음";
+    }
+  } catch(e) { console.error(e); }
+}
+
+async function runNasSync() {
+  const btn = document.getElementById("btn-nas-sync");
+  btn.textContent = "⏳ 동기화 중...";
+  btn.disabled = true;
+  const logEl = document.getElementById("nas-sync-log");
+  logEl.innerHTML = '<span style="color:var(--accent);">동기화 진행 중...</span>';
+  try {
+    const r = await fetch(PREFIX + "/api/nas-sync", {method: "POST"});
+    const d = await r.json();
+    if (d.ok) {
+      if (d.skipped) {
+        logEl.innerHTML = `<span style="color:var(--dim);">변경 없음 — 이미 최신 상태</span>`;
+      } else {
+        logEl.innerHTML = `<span style="color:var(--green);">✅ 동기화 완료: 신규 ${d.inserted||0}개 / 업데이트 ${d.updated||0}개 / 스킵 ${d.skipped||0}개 (총 ${d.total||0}개)</span>`;
+      }
+    } else {
+      logEl.innerHTML = `<span style="color:var(--red);">❌ ${d.message||'동기화 실패'}</span>`;
+    }
+    loadNasStatus();
+  } catch(e) {
+    logEl.innerHTML = `<span style="color:var(--red);">❌ 오류: ${e}</span>`;
+  } finally {
+    btn.textContent = "🔄 지금 동기화";
+    btn.disabled = false;
+  }
+}
+
+// ── 빈티지 블로그 업로드 ──
+let vtBlogProducts = [];
+let vtBlogPage = 1;
+const VT_BLOG_PER_PAGE = 10;
+
+async function loadVtBlogProducts() {
+  const tbody = document.getElementById("vt-blog-tbody");
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr>';
+  try {
+    const res = await fetch(PREFIX + "/api/vintage-cafe-products");
+    const d = await res.json();
+    if (!d.ok) return;
+    vtBlogProducts = d.products || [];
+    // 브랜드 필터
+    const brands = d.brands || [];
+    const sel = document.getElementById("vt-blog-brand-filter");
+    if (sel) {
+      sel.innerHTML = '<option value="">전체 브랜드</option>' + brands.map(b => `<option value="${b}">${b}</option>`).join("");
+    }
+    updateVtBlogSummary();
+    renderVtBlogTable();
+  } catch(e) { console.error(e); }
+}
+
+function updateVtBlogSummary() {
+  document.getElementById("vt-blog-total").textContent = vtBlogProducts.length;
+  document.getElementById("vt-blog-waiting").textContent = vtBlogProducts.filter(p => (p.blog_status||"대기") === "대기").length;
+  document.getElementById("vt-blog-done").textContent = vtBlogProducts.filter(p => p.blog_status === "완료").length;
+}
+
+function filterVtBlog() { vtBlogPage = 1; renderVtBlogTable(); }
+
+function getFilteredVtBlog() {
+  const search = (document.getElementById("vt-blog-search")?.value || "").toLowerCase();
+  const brand = document.getElementById("vt-blog-brand-filter")?.value || "";
+  const grade = document.getElementById("vt-blog-grade-filter")?.value || "";
+  const gradeRank = {"NS":0,"S":1,"A":2,"B":3,"C":4,"D":5};
+  const threshold = grade ? (gradeRank[grade] ?? 99) : 99;
+  return vtBlogProducts.filter(p => {
+    if (brand && p.brand !== brand) return false;
+    if (grade) { const r = gradeRank[p.condition_grade] ?? 99; if (r > threshold) return false; }
+    if (search && !(p.name||"").toLowerCase().includes(search) && !(p.brand||"").toLowerCase().includes(search)) return false;
+    return true;
+  });
+}
+
+function renderVtBlogTable() {
+  const filtered = getFilteredVtBlog();
+  const start = (vtBlogPage - 1) * VT_BLOG_PER_PAGE;
+  const page = filtered.slice(start, start + VT_BLOG_PER_PAGE);
+  const tbody = document.getElementById("vt-blog-tbody");
+  if (!page.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px;">상품이 없습니다</td></tr>';
+  } else {
+    const gradeColors = {"NS":"var(--green)","S":"var(--accent)","A":"var(--blue)","B":"var(--yellow)","C":"var(--muted)","D":"var(--red)"};
+    tbody.innerHTML = page.map(p => `<tr>
+      <td style="text-align:center;"><input type="checkbox" class="vt-blog-chk" data-code="${p.product_code||''}" ${(p.blog_status||'대기')==='대기'?'':'disabled'}></td>
+      <td><img src="${p.img_url||''}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;" onerror="this.style.display='none'"></td>
+      <td style="font-weight:600;">${p.brand||''}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name||''}</td>
+      <td>¥${(p.price_jpy||0).toLocaleString()}</td>
+      <td style="color:var(--accent);font-weight:700;">${p.price_krw ? p.price_krw.toLocaleString()+'원' : ''}</td>
+      <td style="color:${gradeColors[p.condition_grade]||'var(--muted)'};font-weight:600;">${p.condition_grade||'-'}</td>
+    </tr>`).join("");
+  }
+  // 페이지네이션
+  const totalPages = Math.ceil(filtered.length / VT_BLOG_PER_PAGE);
+  const pgEl = document.getElementById("vt-blog-pagination");
+  if (totalPages <= 1) { pgEl.innerHTML = `<span style="font-size:0.72rem;color:var(--dim);">${filtered.length}개</span>`; return; }
+  const bs = "padding:3px 8px;font-size:0.72rem;";
+  let ph = `<button onclick="vtBlogPage=${Math.max(1,vtBlogPage-1)};renderVtBlogTable()" class="btn b-gray" style="${bs}" ${vtBlogPage===1?'disabled':''}>◀</button>`;
+  const range = 3, startP = Math.max(1,vtBlogPage-range), endP = Math.min(totalPages,vtBlogPage+range);
+  if (startP>1) ph+=`<button onclick="vtBlogPage=1;renderVtBlogTable()" class="btn b-gray" style="${bs}">1</button><span style="color:var(--dim)">…</span>`;
+  for(let i=startP;i<=endP;i++) ph+=`<button onclick="vtBlogPage=${i};renderVtBlogTable()" class="btn ${i===vtBlogPage?'b-blue':'b-gray'}" style="${bs}">${i}</button>`;
+  if(endP<totalPages) ph+=`<span style="color:var(--dim)">…</span><button onclick="vtBlogPage=${totalPages};renderVtBlogTable()" class="btn b-gray" style="${bs}">${totalPages}</button>`;
+  ph+=`<button onclick="vtBlogPage=${Math.min(totalPages,vtBlogPage+1)};renderVtBlogTable()" class="btn b-gray" style="${bs}" ${vtBlogPage===totalPages?'disabled':''}>▶</button>`;
+  pgEl.innerHTML = ph;
+}
+
+function selectAllVtBlog(checked) {
+  document.querySelectorAll(".vt-blog-chk:not(:disabled)").forEach(c => c.checked = checked);
+}
+
+function vtBlogLog(msg, cls="") {
+  const el = document.getElementById("vt-blog-log");
+  if (!el) return;
+  const t = new Date().toLocaleTimeString();
+  const d = document.createElement("div");
+  d.style.color = cls === "ok" ? "var(--green)" : cls === "err" ? "var(--red)" : "var(--muted)";
+  d.textContent = `[${t}] ${msg}`;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function vtBlogUpload() {
+  const checked = [...document.querySelectorAll(".vt-blog-chk:checked")].map(c => c.dataset.code);
+  if (!checked.length) { alert("업로드할 상품을 선택해주세요"); return; }
+  const max = parseInt(document.getElementById("vt-blog-max").value) || 5;
+  if (!confirm(`${checked.length}개 상품 중 최대 ${max}개를 블로그에 업로드합니다.\n진행하시겠습니까?`)) return;
+
+  vtBlogLog("🚀 블로그 업로드 시작", "ok");
+  document.getElementById("btn-vt-blog-stop").style.display = "";
+
+  try {
+    const r = await fetch(PREFIX + "/run/blog-upload", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({checked_codes: checked.slice(0, max)})
+    });
+    const d = await r.json();
+    vtBlogLog("🚀 " + (d.message || "업로드 요청 완료"), d.ok ? "ok" : "err");
+    // SSE 로그
+    if (window._vtBlogSSE) window._vtBlogSSE.close();
+    window._vtBlogSSE = new EventSource(PREFIX + "/logs/stream");
+    window._vtBlogSSE.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.message && !data.message.includes("heartbeat")) {
+          vtBlogLog(data.message);
+          if (data.message.includes("완료") || data.message.includes("중단")) {
+            document.getElementById("btn-vt-blog-stop").style.display = "none";
+            loadVtBlogProducts();
+          }
+        }
+      } catch(ex) { if (e.data && !e.data.includes("heartbeat")) vtBlogLog(e.data); }
+    };
+  } catch(e) { vtBlogLog("❌ 업로드 요청 실패: " + e, "err"); }
+}
+
+function vtBlogStop() {
+  fetch(PREFIX + "/run/blog-upload-stop", {method: "POST"}).catch(()=>{});
+  vtBlogLog("⏹ 블로그 업로드 중지 요청", "err");
+  document.getElementById("btn-vt-blog-stop").style.display = "none";
+  if (window._vtBlogSSE) { window._vtBlogSSE.close(); window._vtBlogSSE = null; }
+}
+
 loadSites();
 loadScrapeHistory();
 loadCheckSchedule();
