@@ -18,8 +18,11 @@ logger = logging.getLogger(__name__)
 
 PROJECT_NAME = "jp_sourcing"
 
-# NAS 공유 폴더 경로
-NAS_SHARED_PATH = "/Volumes/파일공유/00 이용아/thone/srv/data/jp_sourcing"
+# NAS 공유 폴더 경로 (OS별)
+if platform.system() == "Darwin":
+    NAS_SHARED_PATH = "/Volumes/파일공유/00 이용아/thone/srv/data/jp_sourcing"
+else:
+    NAS_SHARED_PATH = r"Z:\VOL1\파일공유\00 이용아\thone\srv\data\jp_sourcing"
 
 # OS별 기본 경로 (로컬 — users.db 전용 폴백)
 _home = os.path.expanduser("~")
