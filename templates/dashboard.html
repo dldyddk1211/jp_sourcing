@@ -1987,6 +1987,20 @@
         </div>
       </div>
 
+      <!-- 이미지 순서 편집 패널 -->
+      <div id="blog-img-panel" class="panel" style="margin-top:16px;display:none;">
+        <div class="panel-title">
+          <span>🖼 이미지 순서 편집 <span id="blog-img-product-name" style="font-size:0.78rem;color:var(--accent);margin-left:8px;"></span></span>
+          <div style="display:flex;gap:4px;">
+            <button class="btn b-green" onclick="saveBlogImageOrder()" style="padding:4px 12px;font-size:0.72rem;">✓ 순서 저장</button>
+            <button class="btn b-gray" onclick="document.getElementById('blog-img-panel').style.display='none'" style="padding:4px 8px;font-size:0.72rem;">닫기</button>
+          </div>
+        </div>
+        <div style="font-size:0.7rem;color:var(--dim);margin-bottom:8px;">◀ ▶ 버튼으로 순서 변경 | 클릭하여 선택/해제 | 최소 5개 이상 선택</div>
+        <div id="blog-img-list" style="display:flex;gap:8px;flex-wrap:wrap;padding:8px;min-height:120px;background:var(--bg);border:1px solid var(--border);border-radius:8px;"></div>
+        <div id="blog-img-count" style="margin-top:6px;font-size:0.72rem;color:var(--muted);"></div>
+      </div>
+
       <!-- 블로그 업로드 로그 -->
       <div class="panel" style="margin-top:16px;">
         <div class="panel-title">
@@ -7365,9 +7379,9 @@ function renderVtBlogTable() {
     const gradeColors = {"NS":"var(--green)","S":"var(--accent)","A":"var(--blue)","B":"var(--yellow)","C":"var(--muted)","D":"var(--red)"};
     tbody.innerHTML = page.map(p => `<tr>
       <td style="text-align:center;"><input type="checkbox" class="vt-blog-chk" data-code="${p.product_code||''}" ${(p.blog_status||'대기')==='대기'?'':'disabled'}></td>
-      <td><img src="${p.img_url||''}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;" onerror="this.style.display='none'"></td>
+      <td><img src="${p.img_url||''}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;cursor:pointer;" onerror="this.style.display='none'" onclick="openBlogImageEditor('${(p.product_code||'').replace(/'/g,'')}')"></td>
       <td style="font-weight:600;">${p.brand||''}</td>
-      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name||''}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" onclick="openBlogImageEditor('${(p.product_code||'').replace(/'/g,'')}')">${p.name||''}</td>
       <td>¥${(p.price_jpy||0).toLocaleString()}</td>
       <td style="color:var(--accent);font-weight:700;">${p.price_krw ? p.price_krw.toLocaleString()+'원' : ''}</td>
       <td style="color:${gradeColors[p.condition_grade]||'var(--muted)'};font-weight:600;">${p.condition_grade||'-'}</td>
@@ -7434,6 +7448,78 @@ async function vtBlogUpload() {
       } catch(ex) { if (e.data && !e.data.includes("heartbeat")) vtBlogLog(e.data); }
     };
   } catch(e) { vtBlogLog("❌ 업로드 요청 실패: " + e, "err"); }
+}
+
+// ── 블로그 이미지 순서 편집 ──
+window._blogImgCode = "";
+window._blogImgList = [];  // [{url, selected}]
+
+async function openBlogImageEditor(code) {
+  window._blogImgCode = code;
+  const p = vtBlogProducts.find(x => x.product_code === code);
+  if (!p) return;
+  document.getElementById("blog-img-product-name").textContent = `[${p.brand}] ${(p.name||'').substring(0,30)}`;
+
+  // 이미지 목록 로드
+  try {
+    const r = await fetch(PREFIX + `/api/product-images?code=${encodeURIComponent(code)}`);
+    const d = await r.json();
+    window._blogImgList = (d.images || []).map(url => ({url, selected: true}));
+  } catch(e) {
+    window._blogImgList = [];
+    if (p.img_url) window._blogImgList.push({url: p.img_url, selected: true});
+  }
+  renderBlogImageEditor();
+  document.getElementById("blog-img-panel").style.display = "block";
+  document.getElementById("blog-img-panel").scrollIntoView({behavior:"smooth"});
+}
+
+function renderBlogImageEditor() {
+  const el = document.getElementById("blog-img-list");
+  const list = window._blogImgList;
+  el.innerHTML = list.map((img, i) => `
+    <div style="position:relative;border:3px solid ${img.selected?'var(--accent)':'transparent'};border-radius:8px;overflow:hidden;transition:all .2s;">
+      <img src="${img.url}" style="width:120px;height:120px;object-fit:cover;cursor:pointer;${img.selected?'':'opacity:0.3;filter:grayscale(100%);'}"
+        onclick="toggleBlogImg(${i})" onerror="this.parentElement.style.display='none'">
+      <div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.6);color:#fff;padding:1px 6px;border-radius:4px;font-size:0.65rem;">${i+1}</div>
+      <div style="position:absolute;top:4px;right:4px;display:flex;gap:2px;">
+        ${i > 0 ? `<button onclick="event.stopPropagation();moveBlogImg(${i},-1)" style="background:rgba(0,0,0,0.6);border:none;color:#fff;padding:2px 5px;border-radius:3px;cursor:pointer;font-size:0.7rem;">◀</button>` : ''}
+        ${i < list.length-1 ? `<button onclick="event.stopPropagation();moveBlogImg(${i},1)" style="background:rgba(0,0,0,0.6);border:none;color:#fff;padding:2px 5px;border-radius:3px;cursor:pointer;font-size:0.7rem;">▶</button>` : ''}
+      </div>
+    </div>
+  `).join("");
+  const selectedCount = list.filter(x => x.selected).length;
+  document.getElementById("blog-img-count").innerHTML = `선택: <b>${selectedCount}</b>개 / 전체: ${list.length}개 ${selectedCount < 5 ? '<span style="color:var(--red);">(최소 5개 필요)</span>' : ''}`;
+}
+
+function toggleBlogImg(idx) {
+  window._blogImgList[idx].selected = !window._blogImgList[idx].selected;
+  renderBlogImageEditor();
+}
+
+function moveBlogImg(idx, dir) {
+  const list = window._blogImgList;
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= list.length) return;
+  [list[idx], list[newIdx]] = [list[newIdx], list[idx]];
+  renderBlogImageEditor();
+}
+
+async function saveBlogImageOrder() {
+  const selected = window._blogImgList.filter(x => x.selected);
+  if (selected.length < 5) { alert("최소 5개 이상 선택해주세요"); return; }
+  const urls = selected.map(x => x.url);
+  try {
+    const r = await fetch(PREFIX + "/api/product-images/order", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({code: window._blogImgCode, images: urls})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      vtBlogLog("✅ 이미지 순서 저장: " + window._blogImgCode, "ok");
+      document.getElementById("blog-img-panel").style.display = "none";
+    }
+  } catch(e) { alert("저장 실패: " + e); }
 }
 
 function vtBlogStop() {

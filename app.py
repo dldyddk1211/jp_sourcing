@@ -1806,6 +1806,61 @@ def shop_image_search():
         return jsonify({"ok": False, "message": f"처리 오류: {str(e)}"})
 
 
+@app.route(f"{URL_PREFIX}/api/product-images")
+@admin_required
+def api_product_images():
+    """상품 이미지 목록 반환"""
+    code = request.args.get("code", "").strip()
+    if not code:
+        return jsonify({"ok": False, "images": []})
+    from product_db import _conn
+    conn = _conn()
+    try:
+        row = conn.execute("SELECT img_url, detail_images FROM products WHERE product_code=? OR internal_code=? LIMIT 1",
+                           (code, code)).fetchone()
+        if not row:
+            return jsonify({"ok": False, "images": []})
+        images = []
+        thumb = row["img_url"] or ""
+        if thumb:
+            images.append(thumb)
+        try:
+            import json as _j
+            detail = _j.loads(row["detail_images"] or "[]")
+            for u in detail:
+                if u and u not in images:
+                    images.append(u)
+        except Exception:
+            pass
+        return jsonify({"ok": True, "images": images})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/api/product-images/order", methods=["POST"])
+@admin_required
+def api_save_product_image_order():
+    """상품 이미지 순서 저장"""
+    data = request.json or {}
+    code = data.get("code", "").strip()
+    images = data.get("images", [])
+    if not code or not images:
+        return jsonify({"ok": False, "message": "코드/이미지 필요"})
+    from product_db import _conn
+    import json as _j
+    conn = _conn()
+    try:
+        # 첫 번째 이미지를 썸네일로, 나머지를 detail_images로 저장
+        thumb = images[0] if images else ""
+        detail = _j.dumps(images)
+        conn.execute("UPDATE products SET img_url=?, detail_images=? WHERE product_code=? OR internal_code=?",
+                     (thumb, detail, code, code))
+        conn.commit()
+        return jsonify({"ok": True, "message": f"이미지 순서 저장 ({len(images)}개)"})
+    finally:
+        conn.close()
+
+
 @app.route(f"{URL_PREFIX}/shop/api/product-by-code")
 def shop_api_product_by_code():
     """internal_code(고유번호)로 상품 1건 정확 조회"""

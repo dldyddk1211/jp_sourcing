@@ -1360,4 +1360,7 @@ def get_detail_image_urls(product: dict) -> list:
         # detail_images가 아예 없으면 썸네일을 대표 이미지로 사용
         images.append(thumb)
 
-    return images[:8]
+    # 썸네일도 포함 (최소 이미지 확보)
+    if thumb and thumb not in images:
+        images.insert(0, thumb)
+    return images[:10]
