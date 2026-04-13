@@ -6369,8 +6369,7 @@ def sync_products_from_nas():
         push_log(f"📂 NAS → 로컬 동기화 시작 ({nas_size/1024/1024:.1f}MB)")
 
         # 1단계: NAS 파일을 임시 폴더로 복사 (NAS DB 직접 열기 금지)
-        import tempfile
-        tmp_db_path = os.path.join(tempfile.gettempdir(), "products_nas_tmp.db")
+        tmp_db_path = "/tmp/products_nas_tmp.db"
         shutil.copy2(nas_db_path, tmp_db_path)
         push_log(f"📂 NAS 파일 복사 완료 → 로컬 임시 DB")
 
