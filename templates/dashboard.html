@@ -1247,9 +1247,22 @@
           <p style="color:var(--muted);font-size:0.8rem;margin-bottom:12px">
             NAS 공유 폴더를 통해 Mac 서버와 Windows 작업PC 간 상품 DB를 동기화합니다.
           </p>
+          <div style="margin-bottom:10px;">
+            <label style="font-size:0.78rem;color:var(--muted);display:block;margin-bottom:6px;">동기화 대상 선택:</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <label style="font-size:0.75rem;color:var(--text);cursor:pointer;"><input type="checkbox" class="sync-file-chk" value="products.db" checked> 상품 DB</label>
+              <label style="font-size:0.75rem;color:var(--text);cursor:pointer;"><input type="checkbox" class="sync-file-chk" value="users.db" checked> 회원/작업 DB</label>
+              <label style="font-size:0.75rem;color:var(--text);cursor:pointer;"><input type="checkbox" class="sync-file-chk" value="scrape_history.json"> 수집 이력</label>
+              <label style="font-size:0.75rem;color:var(--text);cursor:pointer;"><input type="checkbox" class="sync-file-chk" value="cafe_schedule.json"> 카페 스케줄</label>
+              <label style="font-size:0.75rem;color:var(--text);cursor:pointer;"><input type="checkbox" class="sync-file-chk" value="vt_cafe_schedule.json"> 빈티지 스케줄</label>
+              <label style="font-size:0.75rem;color:var(--text);cursor:pointer;"><input type="checkbox" class="sync-file-chk" value="uploaded_history.json"> 업로드 이력</label>
+              <label style="font-size:0.75rem;color:var(--text);cursor:pointer;"><input type="checkbox" class="sync-file-chk" value="translation_dict.json"> 번역 사전</label>
+              <label style="font-size:0.75rem;color:var(--text);cursor:pointer;"><input type="checkbox" class="sync-file-chk" value="price_config.json"> 가격 설정</label>
+            </div>
+          </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap;">
-            <button class="btn b-green" onclick="settingSyncDown()" id="btn-setting-sync" style="padding:8px 16px;">📥 서버 동기화 다운 (NAS → 로컬)</button>
-            <button class="btn b-blue" onclick="settingSyncUp()" id="btn-setting-export" style="padding:8px 16px;">📤 서버 동기화 업 (로컬 → NAS)</button>
+            <button class="btn b-green" onclick="settingSyncDown()" id="btn-setting-sync" style="padding:8px 16px;">📥 선택 파일 동기화 다운 (NAS → 로컬)</button>
+            <button class="btn b-blue" onclick="settingSyncUp()" id="btn-setting-export" style="padding:8px 16px;">📤 선택 파일 동기화 업 (로컬 → NAS)</button>
           </div>
           <div id="setting-sync-result" style="margin-top:10px;font-size:0.8rem;"></div>
         </div>
@@ -7233,35 +7246,51 @@ loadScheduleOverview().then(() => {
 });
 
 // ── 설정 페이지 동기화 버튼 ──
+function _getSelectedSyncFiles() {
+  return [...document.querySelectorAll(".sync-file-chk:checked")].map(c => c.value);
+}
+
 async function settingSyncDown() {
+  const files = _getSelectedSyncFiles();
+  if (!files.length) { alert("동기화할 파일을 선택해주세요"); return; }
   const btn = document.getElementById("btn-setting-sync");
   const el = document.getElementById("setting-sync-result");
   btn.textContent = "⏳ 동기화 중..."; btn.disabled = true;
-  el.innerHTML = '<span style="color:var(--accent);">NAS → 로컬 동기화 진행 중...</span>';
+  el.innerHTML = `<span style="color:var(--accent);">NAS → 로컬: ${files.join(", ")} 동기화 중...</span>`;
   try {
-    const r = await fetch(PREFIX + "/api/nas-sync", {method: "POST"});
+    const r = await fetch(PREFIX + "/api/nas-sync", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({files})
+    });
     const d = await r.json();
     if (d.ok) {
-      el.innerHTML = d.skipped
-        ? '<span style="color:var(--dim);">변경 없음 — 이미 최신</span>'
-        : `<span style="color:var(--green);">✅ 신규 ${d.inserted||0} / 업데이트 ${d.updated||0} / 전체 ${d.total||0}개</span>`;
+      let msg = [];
+      if (d.copied_files && d.copied_files.length) msg.push(`파일: ${d.copied_files.join(", ")}`);
+      if (d.inserted || d.updated) msg.push(`상품: 신규 ${d.inserted||0} / 업데이트 ${d.updated||0}`);
+      if (d.skipped && !msg.length) msg.push("변경 없음");
+      el.innerHTML = `<span style="color:var(--green);">✅ ${msg.join(" | ") || "완료"}</span>`;
     } else {
       el.innerHTML = `<span style="color:var(--red);">❌ ${d.message}</span>`;
     }
   } catch(e) { el.innerHTML = `<span style="color:var(--red);">❌ ${e}</span>`; }
-  finally { btn.textContent = "📥 서버 동기화 다운 (NAS → 로컬)"; btn.disabled = false; }
+  finally { btn.textContent = "📥 선택 파일 동기화 다운 (NAS → 로컬)"; btn.disabled = false; }
 }
 
 async function settingSyncUp() {
+  const files = _getSelectedSyncFiles();
+  if (!files.length) { alert("내보낼 파일을 선택해주세요"); return; }
   const btn = document.getElementById("btn-setting-export");
   const el = document.getElementById("setting-sync-result");
   btn.textContent = "⏳ 내보내기 중..."; btn.disabled = true;
   try {
-    const r = await fetch(PREFIX + "/api/nas-export", {method: "POST"});
+    const r = await fetch(PREFIX + "/api/nas-export", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({files})
+    });
     const d = await r.json();
     el.innerHTML = d.ok ? `<span style="color:var(--green);">✅ ${d.message}</span>` : `<span style="color:var(--red);">❌ ${d.message}</span>`;
   } catch(e) { el.innerHTML = `<span style="color:var(--red);">❌ ${e}</span>`; }
-  finally { btn.textContent = "📤 서버 동기화 업 (로컬 → NAS)"; btn.disabled = false; }
+  finally { btn.textContent = "📤 선택 파일 동기화 업 (로컬 → NAS)"; btn.disabled = false; }
 }
 
 // ── NAS 상품 동기화 ──

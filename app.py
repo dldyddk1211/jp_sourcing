@@ -6301,36 +6301,40 @@ def upload_free_board_to_cafe(post_id):
 from data_manager import NAS_SHARED_PATH, get_nas_path
 NAS_IMPORT_PATH = os.path.join(NAS_SHARED_PATH, "db")
 
-def sync_all_from_nas():
-    """NAS의 모든 DB/설정 파일을 로컬로 복사 (products.db는 병합, 나머지는 덮어쓰기)"""
-    import shutil
+def sync_all_from_nas(selected_files=None):
+    """NAS → 로컬 동기화 (선택된 파일만, products.db는 병합)"""
     nas_db_dir = get_nas_path("db")
     local_db_dir = get_path("db")
     copied = []
-    try:
-        # users.db, scrape_history.json 등 설정 파일 복사 (products.db 제외)
-        sync_files = ["users.db", "scrape_history.json", "cafe_schedule.json",
+    result = {"ok": True}
+
+    # 기본 파일 목록
+    all_sync_files = ["users.db", "scrape_history.json", "cafe_schedule.json",
                        "vt_cafe_schedule.json", "check_schedule.json", "fb_schedule.json",
                        "uploaded_history.json", "translation_dict.json",
                        "naver_accounts.json", "blog_accounts.json",
                        "price_config.json", "vintage_price.json", "biz_info.json"]
+    sync_files = [f for f in all_sync_files if not selected_files or f in selected_files]
+
+    try:
         for fn in sync_files:
             nas_file = os.path.join(nas_db_dir, fn)
             local_file = os.path.join(local_db_dir, fn)
             if os.path.exists(nas_file):
-                nas_mtime = os.path.getmtime(nas_file)
-                local_mtime = os.path.getmtime(local_file) if os.path.exists(local_file) else 0
-                if nas_mtime > local_mtime:
+                try:
                     with open(nas_file, "rb") as _sf, open(local_file, "wb") as _df:
                         _df.write(_sf.read())
                     copied.append(fn)
+                except Exception as e:
+                    push_log(f"⚠️ {fn} 복사 실패: {e}")
         if copied:
-            push_log(f"📂 NAS → 로컬 파일 복사: {', '.join(copied)}")
-            logger.info(f"📂 NAS 파일 복사: {copied}")
+            push_log(f"📂 NAS → 로컬 복사: {', '.join(copied)}")
     except Exception as e:
         logger.warning(f"NAS 파일 복사 실패: {e}")
-    # products.db 병합
-    result = sync_products_from_nas()
+
+    # products.db는 병합 방식
+    if not selected_files or "products.db" in selected_files:
+        result = sync_products_from_nas()
     result["copied_files"] = copied
     return result
 
@@ -6401,7 +6405,10 @@ def sync_products_from_nas():
 
         # 로컬 DB에 병합
         from product_db import _conn as local_conn_fn, init_db as init_product_db
-        init_product_db()
+        try:
+            init_product_db()
+        except Exception:
+            pass  # 이미 존재하는 테이블/인덱스 에러 무시
         local_conn = local_conn_fn()
         inserted = 0
         updated = 0
@@ -6470,32 +6477,34 @@ def sync_products_from_nas():
         return {"ok": False, "message": str(e)}
 
 
-def export_all_to_nas():
-    """로컬 모든 DB/설정 → NAS 공유 폴더로 복사"""
-    import shutil
+def export_all_to_nas(selected_files=None):
+    """로컬 → NAS 공유 폴더로 복사 (선택 파일)"""
     try:
         local_db_dir = get_path("db")
         nas_db_dir = get_nas_path("db")
         if not os.path.isdir(nas_db_dir):
             return {"ok": False, "message": "NAS 경로 접근 불가"}
 
-        export_files = ["products.db", "users.db", "scrape_history.json",
-                        "cafe_schedule.json", "vt_cafe_schedule.json", "check_schedule.json",
-                        "fb_schedule.json", "uploaded_history.json", "translation_dict.json",
-                        "naver_accounts.json", "blog_accounts.json",
-                        "price_config.json", "vintage_price.json", "biz_info.json"]
+        all_files = ["products.db", "users.db", "scrape_history.json",
+                     "cafe_schedule.json", "vt_cafe_schedule.json", "check_schedule.json",
+                     "fb_schedule.json", "uploaded_history.json", "translation_dict.json",
+                     "naver_accounts.json", "blog_accounts.json",
+                     "price_config.json", "vintage_price.json", "biz_info.json"]
+        export_files = [f for f in all_files if not selected_files or f in selected_files]
         copied = []
         for fn in export_files:
             local_file = os.path.join(local_db_dir, fn)
             nas_file = os.path.join(nas_db_dir, fn)
             if os.path.exists(local_file):
-                with open(local_file, "rb") as _sf, open(nas_file, "wb") as _df:
-                    _df.write(_sf.read())
-                copied.append(fn)
+                try:
+                    with open(local_file, "rb") as _sf, open(nas_file, "wb") as _df:
+                        _df.write(_sf.read())
+                    copied.append(fn)
+                except Exception as e:
+                    push_log(f"⚠️ {fn} 내보내기 실패: {e}")
 
-        msg = f"📤 로컬 → NAS 복사 완료 ({len(copied)}개 파일)"
+        msg = f"📤 로컬 → NAS ({len(copied)}개: {', '.join(copied)})"
         push_log(msg)
-        logger.info(f"📤 NAS 내보내기: {copied}")
         return {"ok": True, "message": msg, "files": copied}
     except Exception as e:
         logger.error(f"NAS 내보내기 실패: {e}")
@@ -6505,16 +6514,20 @@ def export_all_to_nas():
 @app.route(f"{URL_PREFIX}/api/nas-export", methods=["POST"])
 @admin_required
 def manual_nas_export():
-    """수동: 로컬 모든 파일 → NAS 복사"""
-    result = export_all_to_nas()
+    """수동: 선택 파일 → NAS 복사"""
+    data = request.json or {}
+    selected_files = data.get("files", None)
+    result = export_all_to_nas(selected_files=selected_files)
     return jsonify(result)
 
 
 @app.route(f"{URL_PREFIX}/api/nas-sync", methods=["POST"])
 @admin_required
 def manual_nas_sync():
-    """수동 NAS 동기화 (모든 파일 + products.db)"""
-    result = sync_all_from_nas()
+    """수동 NAS 동기화 (선택 파일)"""
+    data = request.json or {}
+    selected_files = data.get("files", None)
+    result = sync_all_from_nas(selected_files=selected_files)
     return jsonify(result)
 
 
