@@ -6368,9 +6368,9 @@ def sync_products_from_nas():
 
         push_log(f"📂 NAS → 로컬 동기화 시작 ({nas_size/1024/1024:.1f}MB)")
 
-        # 1단계: NAS 파일을 로컬 임시 파일로 복사 (NAS DB 직접 열기 금지)
-        local_db_dir = get_path("db")
-        tmp_db_path = os.path.join(local_db_dir, "products_nas_tmp.db")
+        # 1단계: NAS 파일을 임시 폴더로 복사 (NAS DB 직접 열기 금지)
+        import tempfile
+        tmp_db_path = os.path.join(tempfile.gettempdir(), "products_nas_tmp.db")
         shutil.copy2(nas_db_path, tmp_db_path)
         push_log(f"📂 NAS 파일 복사 완료 → 로컬 임시 DB")
 
@@ -6458,7 +6458,8 @@ def sync_products_from_nas():
 
     except Exception as e:
         # 임시 파일 정리
-        tmp_path = os.path.join(get_path("db"), "products_nas_tmp.db")
+        import tempfile
+        tmp_path = os.path.join(tempfile.gettempdir(), "products_nas_tmp.db")
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
         msg = f"❌ NAS 동기화 오류: {e}"
