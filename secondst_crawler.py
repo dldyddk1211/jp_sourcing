@@ -153,7 +153,7 @@ async def scrape_2ndstreet(
         await force_close_browser()
         _playwright = await async_playwright().start()
         _browser = await _playwright.chromium.launch(
-            headless=False,
+            headless=True,
             slow_mo=300,
             args=[
                 "--disable-blink-features=AutomationControlled",
@@ -708,7 +708,7 @@ async def rescrape_details(log=None):
 
         pw = await async_playwright().start()
         browser = await pw.chromium.launch(
-            headless=False,
+            headless=True,
             slow_mo=200,
             args=[
                 "--disable-blink-features=AutomationControlled",

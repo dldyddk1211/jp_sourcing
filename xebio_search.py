@@ -119,7 +119,7 @@ async def scrape_nike_sale(status_callback=None,
         global _browser, _playwright
         _playwright = p
         browser = await p.chromium.launch(
-            headless=False,          # 브라우저 창이 보이게
+            headless=True,           # 백그라운드 실행
             slow_mo=300,             # 동작 사이 딜레이(ms)
             args=["--no-sandbox", "--disable-dev-shm-usage",
                   "--window-size=1280,900"]
