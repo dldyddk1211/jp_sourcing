@@ -6437,7 +6437,7 @@ def sync_products_from_nas():
                             "condition_grade","color","material"]
                     vals = [rd.get(c, "") for c in cols]
                     try:
-                        local_conn.execute(f"INSERT OR IGNORE INTO products ({','.join(cols)}) VALUES ({','.join(['?']*len(cols))})", vals)
+                        local_conn.execute(f"INSERT OR REPLACE INTO products ({','.join(cols)}) VALUES ({','.join(['?']*len(cols))})", vals)
                         inserted += 1
                     except Exception:
                         skipped += 1
