@@ -4044,14 +4044,18 @@ def _start_queue_worker():
 
                 push_log(f"✅ 큐 완료: {r['brand_name'] or '전체'} — {count}개")
 
-                # 수집 완료 → NAS 자동 내보내기 (윈도우에서만)
+                # 수집 완료 → 300개마다 NAS 자동 내보내기 (윈도우에서만)
                 import platform as _pf
-                if _pf.system() == "Windows":
-                    try:
-                        export_all_to_nas()
-                        push_log(f"📤 수집 완료 → NAS 자동 내보내기")
-                    except Exception:
-                        pass
+                if _pf.system() == "Windows" and count > 0:
+                    _nas_export_acc = getattr(_worker, '_nas_acc', 0) + count
+                    _worker._nas_acc = _nas_export_acc
+                    if _nas_export_acc >= 300:
+                        try:
+                            export_all_to_nas()
+                            push_log(f"📤 {_nas_export_acc}개 수집 → NAS 자동 내보내기")
+                            _worker._nas_acc = 0
+                        except Exception:
+                            pass
 
             except Exception as e:
                 conn = sqlite3.connect(db_path)
@@ -7774,6 +7778,9 @@ if __name__ == "__main__":
         _register_fb_schedule_jobs()
     except Exception:
         pass
+
+    # 큐 워커 자동 시작 (예약 작업 복구 포함)
+    _start_queue_worker()
 
     print(f"\n  Xebio Dashboard: http://{SERVER_HOST}:{SERVER_PORT}{URL_PREFIX}\n")
 
