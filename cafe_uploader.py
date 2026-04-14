@@ -2779,15 +2779,15 @@ async def upload_image_from_url_iframe(page, frame_locator, img_url: str, log=No
     except Exception as e:
         logger.warning(f"얼굴 감지 처리 오류 (원본 유지): {e}")
 
-    # 이미지 리사이즈 (가로 최대 800px)
+    # 이미지 리사이즈 (가로 최대 1200px — 카페 에디터 표시 크기 확보)
     try:
         from PIL import Image
         with Image.open(tmp_path) as img:
-            if img.width > 800:
-                ratio = 800 / img.width
-                new_size = (800, int(img.height * ratio))
+            if img.width > 1200:
+                ratio = 1200 / img.width
+                new_size = (1200, int(img.height * ratio))
                 img = img.resize(new_size, Image.LANCZOS)
-                img.save(tmp_path, quality=85)
+                img.save(tmp_path, quality=90)
                 logger.info(f"이미지 리사이즈: → {new_size[0]}x{new_size[1]}")
     except ImportError:
         logger.warning("Pillow 미설치 — 이미지 리사이즈 건너뜀")

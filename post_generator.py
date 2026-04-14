@@ -1342,25 +1342,37 @@ def _make_fallback_content(product: dict, price_info: dict) -> str:
 
 # ── 이미지 URL ─────────────────────────────
 
+def _normalize_img_url(url: str) -> str:
+    """URL 비교용 정규화: 쿼리스트링/프로토콜 차이 무시"""
+    from urllib.parse import urlparse
+    p = urlparse(url)
+    # 경로만 비교 (쿼리스트링, http/https 차이 무시)
+    return p.netloc + p.path
+
+
 def get_detail_image_urls(product: dict) -> list:
-    """상세 이미지 URL 목록 (detail_images 우선, 없으면 img_url 폴백)"""
+    """상세 이미지 URL 목록 (detail_images 우선, 없으면 img_url 폴백)
+    썸네일(img_url)은 제외 — 대표 이미지와 본문 이미지 중복 방지"""
     images = []
     thumb = product.get("img_url", "")
     detail = product.get("detail_images", [])
+    thumb_norm = _normalize_img_url(thumb) if thumb else ""
 
     if detail:
-        # detail_images가 있으면 썸네일 제외한 나머지 사용
+        seen = set()
         for url in detail:
-            if url and url != thumb:
+            if not url:
+                continue
+            norm = _normalize_img_url(url)
+            # 썸네일과 동일한 이미지 제외 (URL 정규화 비교)
+            if norm == thumb_norm:
+                continue
+            if norm not in seen:
+                seen.add(norm)
                 images.append(url)
-        # detail_images에 썸네일만 있었으면 (전부 필터됨) 썸네일이라도 사용
-        if not images and thumb:
-            images.append(thumb)
-    elif thumb:
-        # detail_images가 아예 없으면 썸네일을 대표 이미지로 사용
+
+    # 상세 이미지가 하나도 없으면 썸네일이라도 사용
+    if not images and thumb:
         images.append(thumb)
 
-    # 썸네일도 포함 (최소 이미지 확보)
-    if thumb and thumb not in images:
-        images.insert(0, thumb)
     return images[:10]
