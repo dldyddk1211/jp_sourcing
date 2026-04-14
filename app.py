@@ -6433,6 +6433,109 @@ def upload_free_board_to_cafe(post_id):
 from data_manager import NAS_SHARED_PATH, get_nas_path
 NAS_IMPORT_PATH = os.path.join(NAS_SHARED_PATH, "db")
 
+def _merge_users_db(nas_users_path):
+    """NAS users.db → 로컬 users.db 병합 (덮어쓰기 아닌 병합)"""
+    import sqlite3 as _sq
+    result = {"users_merged": 0, "tasks_merged": 0, "orders_merged": 0}
+    try:
+        # NAS 파일을 임시로 복사
+        tmp_path = "/tmp/users_nas_tmp.db"
+        with open(nas_users_path, "rb") as s, open(tmp_path, "wb") as d:
+            d.write(s.read())
+
+        nas_conn = _sq.connect(tmp_path, timeout=10)
+        nas_conn.row_factory = _sq.Row
+
+        from user_db import _conn as local_conn_fn
+        local_conn = local_conn_fn()
+
+        # NAS 테이블 목록 확인
+        nas_tables = {r[0] for r in nas_conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        local_tables = {r[0] for r in local_conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+
+        # 회원 (users) 병합 — username 기준
+        if "users" in nas_tables and "users" in local_tables:
+            nas_users = nas_conn.execute("SELECT * FROM users").fetchall()
+            for r in nas_users:
+                rd = dict(r)
+                existing = local_conn.execute("SELECT id FROM users WHERE username=?", (rd.get("username",""),)).fetchone()
+                if not existing:
+                    cols = [k for k in rd.keys() if k != "id"]
+                    vals = [rd[k] for k in cols]
+                    try:
+                        local_conn.execute(f"INSERT INTO users ({','.join(cols)}) VALUES ({','.join(['?']*len(cols))})", vals)
+                        result["users_merged"] += 1
+                    except Exception:
+                        pass
+
+        # 수집 작업 (scrape_tasks) 병합 — site+brand+cat 기준
+        if "scrape_tasks" in nas_tables and "scrape_tasks" in local_tables:
+            nas_tasks = nas_conn.execute("SELECT * FROM scrape_tasks").fetchall()
+            for r in nas_tasks:
+                rd = dict(r)
+                existing = local_conn.execute(
+                    "SELECT id FROM scrape_tasks WHERE site=? AND brand=? AND cat=?",
+                    (rd.get("site",""), rd.get("brand",""), rd.get("cat",""))
+                ).fetchone()
+                if not existing:
+                    cols = [k for k in rd.keys() if k != "id"]
+                    vals = [rd[k] for k in cols]
+                    try:
+                        local_conn.execute(f"INSERT INTO scrape_tasks ({','.join(cols)}) VALUES ({','.join(['?']*len(cols))})", vals)
+                        result["tasks_merged"] += 1
+                    except Exception:
+                        pass
+
+        # 주문 (orders) 병합 — order_number 기준
+        if "orders" in nas_tables and "orders" in local_tables:
+            nas_orders = nas_conn.execute("SELECT * FROM orders").fetchall()
+            for r in nas_orders:
+                rd = dict(r)
+                on = rd.get("order_number", "")
+                if on:
+                    existing = local_conn.execute("SELECT id FROM orders WHERE order_number=?", (on,)).fetchone()
+                    if not existing:
+                        cols = [k for k in rd.keys() if k != "id"]
+                        vals = [rd[k] for k in cols]
+                        try:
+                            local_conn.execute(f"INSERT INTO orders ({','.join(cols)}) VALUES ({','.join(['?']*len(cols))})", vals)
+                            result["orders_merged"] += 1
+                        except Exception:
+                            pass
+
+        # 게시판/리뷰/공지 등 기타 테이블도 병합
+        for tbl in ["board", "notices", "reviews", "free_board"]:
+            if tbl in nas_tables and tbl in local_tables:
+                nas_rows = nas_conn.execute(f"SELECT * FROM {tbl}").fetchall()
+                local_ids = {r[0] for r in local_conn.execute(f"SELECT id FROM {tbl}").fetchall()}
+                for r in nas_rows:
+                    rd = dict(r)
+                    if rd.get("id") not in local_ids:
+                        cols = [k for k in rd.keys()]
+                        vals = [rd[k] for k in cols]
+                        try:
+                            local_conn.execute(f"INSERT OR IGNORE INTO {tbl} ({','.join(cols)}) VALUES ({','.join(['?']*len(cols))})", vals)
+                        except Exception:
+                            pass
+
+        local_conn.commit()
+        local_conn.close()
+        nas_conn.close()
+        os.remove(tmp_path)
+
+        msg = f"📂 users.db 병합: 회원 {result['users_merged']} / 작업 {result['tasks_merged']} / 주문 {result['orders_merged']}"
+        push_log(msg)
+        logger.info(msg)
+        result["ok"] = True
+        return result
+    except Exception as e:
+        push_log(f"⚠️ users.db 병합 오류: {e}")
+        logger.warning(f"users.db 병합 오류: {e}")
+        if os.path.exists("/tmp/users_nas_tmp.db"):
+            os.remove("/tmp/users_nas_tmp.db")
+        return {"ok": False, "message": str(e)}
+
+
 def sync_all_from_nas(selected_files=None):
     """NAS → 로컬 동기화 (선택된 파일만, products.db는 병합)"""
     nas_db_dir = get_nas_path("db")
@@ -6440,13 +6543,13 @@ def sync_all_from_nas(selected_files=None):
     copied = []
     result = {"ok": True}
 
-    # 기본 파일 목록
-    all_sync_files = ["users.db", "scrape_history.json", "cafe_schedule.json",
-                       "vt_cafe_schedule.json", "check_schedule.json", "fb_schedule.json",
-                       "uploaded_history.json", "translation_dict.json",
-                       "naver_accounts.json", "blog_accounts.json",
-                       "price_config.json", "vintage_price.json", "biz_info.json", "admin_config.json"]
-    sync_files = [f for f in all_sync_files if not selected_files or f in selected_files]
+    # 기본 파일 목록 (JSON 설정 — 덮어쓰기)
+    json_sync_files = ["scrape_history.json", "cafe_schedule.json",
+                        "vt_cafe_schedule.json", "check_schedule.json", "fb_schedule.json",
+                        "uploaded_history.json", "translation_dict.json",
+                        "naver_accounts.json", "blog_accounts.json",
+                        "price_config.json", "vintage_price.json", "biz_info.json", "admin_config.json"]
+    sync_files = [f for f in json_sync_files if not selected_files or f in selected_files]
 
     try:
         for fn in sync_files:
@@ -6464,7 +6567,16 @@ def sync_all_from_nas(selected_files=None):
     except Exception as e:
         logger.warning(f"NAS 파일 복사 실패: {e}")
 
-    # products.db는 병합 방식
+    # users.db 병합 (회원/주문/작업 데이터 보존)
+    if not selected_files or "users.db" in selected_files:
+        try:
+            nas_users = os.path.join(nas_db_dir, "users.db")
+            if os.path.exists(nas_users):
+                result.update(_merge_users_db(nas_users))
+        except Exception as e:
+            push_log(f"⚠️ users.db 병합 실패: {e}")
+
+    # products.db 병합
     if not selected_files or "products.db" in selected_files:
         result = sync_products_from_nas()
     result["copied_files"] = copied
