@@ -648,6 +648,7 @@
   </div>
   <div class="topbar-right">
     {% if logged_in %}
+    <button class="topbar-btn" onclick="openCalcModal()" style="cursor:pointer;">&#x1f4b0; 계산기</button>
     <a href="{{ url_prefix }}/shop/mypage#cart" class="topbar-btn" style="position:relative;">
       &#x1f6d2; 장바구니 <span id="cart-badge" style="display:none;position:absolute;top:-6px;right:-8px;background:var(--red);color:#fff;font-size:0.6rem;padding:1px 5px;border-radius:10px;font-weight:700;">0</span>
     </a>
@@ -666,6 +667,7 @@
       </div>
     </div>
     {% else %}
+    <button class="topbar-btn" onclick="openCalcModal()" style="cursor:pointer;">&#x1f4b0; 계산기</button>
     <a href="{{ url_prefix }}/login" class="topbar-btn" style="background:rgba(212,165,74,0.12);color:var(--accent);font-weight:700;">로그인</a>
     <a href="{{ url_prefix }}/auth/naver" class="topbar-btn" style="background:#03C75A;color:#fff;font-weight:700;border-color:#03C75A;">N 로그인</a>
     <a href="{{ url_prefix }}/signup" class="topbar-btn">회원가입</a>
@@ -733,6 +735,16 @@
       </div>
       <div class="filter-dropdown" id="bagtype-dropdown">
         <label class="filter-chk-item"><input type="checkbox" value="" onchange="toggleDropFilter('bag_type',this)" checked> 전체</label>
+      </div>
+    </div>
+
+    <!-- 컬러 -->
+    <div class="sidebar-section">
+      <div class="sidebar-title" onclick="this.nextElementSibling.classList.toggle('open')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+        컬러 <span id="color-sel-label" style="font-size:0.7rem;color:var(--accent);font-weight:400;">전체</span>
+      </div>
+      <div class="filter-dropdown" id="color-dropdown">
+        <label class="filter-chk-item"><input type="checkbox" value="" onchange="toggleDropFilter('color',this)" checked> 전체</label>
       </div>
     </div>
 
@@ -923,7 +935,11 @@
       <div class="modal-detail">
         <div class="modal-brand" id="modal-brand"></div>
         <div class="modal-name" id="modal-name"></div>
-        <div class="modal-price" id="modal-price"></div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <div class="modal-price" id="modal-price"></div>
+          <button onclick="showCostBreakdown()" id="btn-cost-breakdown" style="padding:5px 12px;border-radius:6px;border:1px solid var(--accent);background:rgba(212,165,74,0.1);color:var(--accent);font-size:0.75rem;font-weight:600;cursor:pointer;white-space:nowrap;">총 예상비용</button>
+        </div>
+        <div id="cost-breakdown-panel" style="display:none;margin-bottom:6px;padding:12px;background:var(--bg);border:1px solid var(--accent);border-radius:10px;font-size:0.8rem;"></div>
         <div class="modal-detail-table" id="modal-detail-table"></div>
         <div class="modal-desc" id="modal-desc"></div>
         {% if is_admin %}<a class="modal-link" id="modal-link" href="#" target="_blank">상품 상세보기</a>{% endif %}
@@ -931,6 +947,7 @@
     </div>
     <div class="modal-bottom">
       <div class="modal-btn-row">
+        <button class="modal-close" onclick="closeModal()">&#x2190; 목록화면</button>
         {% if logged_in %}
         <button class="modal-order-btn primary" onclick="orderProduct()">주문하기</button>
         <button class="modal-order-btn" onclick="addToCart()">장바구니</button>
@@ -938,24 +955,62 @@
         <a href="{{ url_prefix }}/login" class="modal-order-btn primary" style="text-align:center;">로그인 후 주문</a>
         <button class="modal-order-btn" disabled style="opacity:0.5;">장바구니</button>
         {% endif %}
-        <button class="modal-order-btn" onclick="showCostBreakdown()" id="btn-cost-breakdown">총 예상비용</button>
       </div>
       <div class="modal-btn-row">
         <button class="modal-order-btn" onclick="inquiryProduct()">카카오 문의</button>
         <button class="modal-order-btn" onclick="shareProduct()">공유</button>
         <button class="modal-order-btn" onclick="aiAnalyze()" id="btn-ai-analyze">AI 상품분석</button>
       </div>
-      <div class="modal-btn-row">
-        <button class="modal-close" onclick="closeModal()">&#x2190; 목록화면</button>
+    </div>
+  </div>
+</div>
+
+<!-- 계산기 모달 -->
+<div class="modal-overlay" id="calc-modal" onclick="if(event.target===this)closeCalcModal()" style="z-index:300;">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;max-width:420px;width:92%;box-shadow:0 16px 48px rgba(0,0,0,0.5);overflow:hidden;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);">
+      <span style="font-size:1rem;font-weight:700;color:var(--accent);">&#x1f4b0; 구매비용 계산기</span>
+      <button onclick="closeCalcModal()" style="background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer;">&times;</button>
+    </div>
+    <div style="padding:20px;">
+      <div style="margin-bottom:14px;">
+        <label style="font-size:0.78rem;color:var(--muted);display:block;margin-bottom:4px;">상품 구매금액 (원)</label>
+        <input type="text" id="calc-price" placeholder="예: 500,000" oninput="calcCost()" onkeydown="if(event.key==='Enter')calcCost()"
+          style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:1rem;font-weight:600;">
       </div>
-      <!-- 총 예상비용 패널 -->
-      <div id="cost-breakdown-panel" style="display:none;margin-top:6px;padding:12px;background:var(--bg);border:1px solid var(--accent);border-radius:10px;font-size:0.8rem;"></div>
+      <div id="calc-result" style="display:none;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+          <tr>
+            <td style="padding:8px 0;color:var(--muted);">상품가격</td>
+            <td id="calc-r-price" style="text-align:right;font-weight:600;"></td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0;color:var(--muted);">국제배송비</td>
+            <td id="calc-r-ship" style="text-align:right;"></td>
+          </tr>
+          <tr id="calc-r-duty-row">
+            <td style="padding:8px 0;color:var(--muted);">관부가세 (약 20%)</td>
+            <td id="calc-r-duty" style="text-align:right;"></td>
+          </tr>
+          <tr style="border-top:2px solid var(--border);">
+            <td style="padding:10px 0;font-weight:700;color:var(--accent);font-size:0.9rem;">총 예상비용</td>
+            <td id="calc-r-total" style="text-align:right;font-weight:800;color:var(--accent);font-size:1.05rem;"></td>
+          </tr>
+        </table>
+        <div id="calc-r-free" style="display:none;margin-top:8px;padding:8px 12px;background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.3);border-radius:6px;font-size:0.75rem;color:var(--green);font-weight:600;">
+          &#x2705; $150 이하 — 관부가세 면제 대상
+        </div>
+        <div style="margin-top:10px;font-size:0.68rem;color:var(--dim);line-height:1.6;">
+          * 개인통관 시 미화 $150 이하 관부가세 면제 가능<br>
+          * 실제 비용은 환율 및 통관 방식에 따라 달라질 수 있습니다
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
 <!-- 이미지 팝업 -->
-<div class="img-popup-overlay" id="img-popup" onclick="if(event.target===this)closeImgPopup()">
+<div class="img-popup-overlay" id="img-popup" onclick="if(event.target===this)closeImgPopup()"
   <button class="img-popup-close" onclick="closeImgPopup()">&times;</button>
   <button class="img-popup-nav img-popup-prev" onclick="navImgPopup(-1)">&#x276E;</button>
   <button class="img-popup-nav img-popup-next" onclick="navImgPopup(1)">&#x276F;</button>
@@ -965,12 +1020,12 @@
 
 <script>
 const PREFIX = "{{ url_prefix }}";
-let filters = { site: "", brand: "", condition: "", bag_type: "", keyword: "" };
+let filters = { site: "", brand: "", condition: "", bag_type: "", color: "", keyword: "" };
 let currentPage = 1;
 let allProducts = [];
 let currentModalIdx = -1;
 // 필터: 다중 선택 지원 (배열)
-let multiFilters = { brand: [], condition: [], bag_type: [] };
+let multiFilters = { brand: [], condition: [], bag_type: [], color: [] };
 
 // 일본어 → 한국어 사전 (전역)
 const jaKoDict = {
@@ -1178,19 +1233,20 @@ async function handleImageSearch(input) {
 }
 
 function resetFilters() {
-  filters = { site: "", brand: "", condition: "", bag_type: "", keyword: "" };
-  multiFilters = { brand: [], condition: [], bag_type: [] };
+  filters = { site: "", brand: "", condition: "", bag_type: "", color: "", keyword: "" };
+  multiFilters = { brand: [], condition: [], bag_type: [], color: [] };
   document.getElementById("keyword-input").value = "";
   document.getElementById("price-min").value = "";
   document.getElementById("price-max").value = "";
   document.getElementById("sort-select").value = "newest";
   // 드롭다운 체크박스 리셋
-  ["condition-dropdown","bagtype-dropdown"].forEach(id => {
+  ["condition-dropdown","bagtype-dropdown","color-dropdown"].forEach(id => {
     const dd = document.getElementById(id);
     if (dd) dd.querySelectorAll('input[type="checkbox"]').forEach((c,i) => c.checked = i===0);
   });
   document.getElementById("cond-sel-label").textContent = "전체";
   document.getElementById("bag-sel-label").textContent = "전체";
+  document.getElementById("color-sel-label").textContent = "전체";
   document.querySelectorAll(".filter-list").forEach(list => {
     list.querySelectorAll(".filter-item").forEach((item, i) => {
       item.classList.toggle("active", i === 0);
@@ -1212,6 +1268,7 @@ async function loadShop(page = 1) {
     if (filters.brand) params.set("brand", filters.brand);
     if (filters.condition) params.set("condition", filters.condition);
     if (filters.bag_type) params.set("bag_type", filters.bag_type);
+    if (filters.color) params.set("color", filters.color);
     if (filters.keyword) params.set("keyword", filters.keyword);
     const priceMin = document.getElementById("price-min").value;
     const priceMax = document.getElementById("price-max").value;
@@ -1227,6 +1284,7 @@ async function loadShop(page = 1) {
     // 사이드바 목록 갱신
     renderBrandList(d.brands || []);
     renderBagTypeList(d.bag_types || []);
+    renderColorList(d.colors || []);
     // 히어로 + 브랜드 스트립 (첫 로드 시)
     if (page === 1) { fillBrandStrip(d.brands || []); }
 
@@ -1339,9 +1397,20 @@ function renderBagTypeList(types) {
   el.innerHTML = html;
 }
 
+function renderColorList(colors) {
+  const el = document.getElementById("color-dropdown");
+  if (!el) return;
+  const selected = filters.color ? filters.color.split(",") : [];
+  let html = `<label class="filter-chk-item"><input type="checkbox" value="" onchange="toggleDropFilter('color',this)" ${!selected.length?'checked':''}> 전체</label>`;
+  colors.forEach(c => {
+    html += `<label class="filter-chk-item"><input type="checkbox" value="${c.name}" onchange="toggleDropFilter('color',this)" ${selected.includes(c.name)?'checked':''}> ${c.name} (${c.count})</label>`;
+  });
+  el.innerHTML = html;
+}
+
 function renderActiveTags() {
   const el = document.getElementById("active-filters");
-  const labels = { site: "사이트", brand: "브랜드", condition: "컨디션", bag_type: "종류", keyword: "검색" };
+  const labels = { site: "사이트", brand: "브랜드", condition: "컨디션", bag_type: "종류", color: "컬러", keyword: "검색" };
   const condNames = { NS: "신품/미사용", A: "중고 A", B: "중고 B" };
   let html = "";
   for (const [k, v] of Object.entries(filters)) {
@@ -1355,12 +1424,13 @@ function renderActiveTags() {
 function clearFilter(type) {
   filters[type] = "";
   if (type === "keyword") document.getElementById("keyword-input").value = "";
-  if (type === "condition" || type === "bag_type") {
-    const ddId = type === "condition" ? "condition-dropdown" : "bagtype-dropdown";
-    const dd = document.getElementById(ddId);
+  if (type === "condition" || type === "bag_type" || type === "color") {
+    const ddMap = { condition: "condition-dropdown", bag_type: "bagtype-dropdown", color: "color-dropdown" };
+    const lblMap = { condition: "cond-sel-label", bag_type: "bag-sel-label", color: "color-sel-label" };
+    const dd = document.getElementById(ddMap[type]);
     if (dd) dd.querySelectorAll('input[type="checkbox"]').forEach((c,i) => c.checked = i===0);
-    const lblId = type === "condition" ? "cond-sel-label" : "bag-sel-label";
-    document.getElementById(lblId).textContent = "전체";
+    const lbl = document.getElementById(lblMap[type]);
+    if (lbl) lbl.textContent = "전체";
   }
   // 사이드바 UI 리셋
   const listId = { site: "site-list", brand: "brand-list" }[type];
@@ -1538,8 +1608,8 @@ function toggleDropFilter(type, el) {
   const vals = [...dropdown.querySelectorAll('input[type="checkbox"]:checked')].filter(c => c.value).map(c => c.value);
   filters[type] = vals.join(",");
   // 라벨 업데이트
-  const labelId = type === "condition" ? "cond-sel-label" : "bag-sel-label";
-  const label = document.getElementById(labelId);
+  const labelMap = { condition: "cond-sel-label", bag_type: "bag-sel-label", color: "color-sel-label" };
+  const label = document.getElementById(labelMap[type]);
   if (label) label.textContent = vals.length ? vals.join(", ") : "전체";
   loadShop(1);
 }
@@ -1676,6 +1746,42 @@ function showCostBreakdown() {
     <div style="font-size:0.68rem;color:var(--dim);">* 실제 비용은 환율 및 통관 방식에 따라 달라질 수 있습니다</div>
   `;
   panel.style.display = "block";
+}
+
+// ── 구매비용 계산기 ──
+function openCalcModal() {
+  document.getElementById("calc-modal").classList.add("show");
+  document.getElementById("calc-price").value = "";
+  document.getElementById("calc-result").style.display = "none";
+  setTimeout(() => document.getElementById("calc-price").focus(), 100);
+}
+
+function closeCalcModal() {
+  document.getElementById("calc-modal").classList.remove("show");
+}
+
+function calcCost() {
+  const raw = document.getElementById("calc-price").value.replace(/[^0-9]/g, "");
+  const price = parseInt(raw) || 0;
+  if (!price) { document.getElementById("calc-result").style.display = "none"; return; }
+
+  // 포맷팅 (콤마 추가)
+  document.getElementById("calc-price").value = price.toLocaleString();
+
+  const intlShip = 20000;
+  const rate = window._cachedRate || 9.23;
+  const usd = price / 1350;  // 대략적 USD 환산
+  const dutyFree = usd <= 150;
+  const duty = dutyFree ? 0 : Math.round(price * 0.20);
+  const total = price + intlShip + duty;
+
+  document.getElementById("calc-r-price").textContent = price.toLocaleString() + "원";
+  document.getElementById("calc-r-ship").textContent = intlShip.toLocaleString() + "원";
+  document.getElementById("calc-r-duty").textContent = duty.toLocaleString() + "원";
+  document.getElementById("calc-r-total").textContent = total.toLocaleString() + "원";
+  document.getElementById("calc-r-duty-row").style.display = dutyFree ? "none" : "";
+  document.getElementById("calc-r-free").style.display = dutyFree ? "block" : "none";
+  document.getElementById("calc-result").style.display = "block";
 }
 
 function inquiryProduct() {

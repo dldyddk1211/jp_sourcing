@@ -1987,6 +1987,7 @@ def shop_api_products():
     brand = request.args.get("brand", "").strip()
     condition = request.args.get("condition", "").strip()
     bag_type = request.args.get("bag_type", "").strip()
+    color_filter = request.args.get("color", "").strip()
     keyword = request.args.get("keyword", "").strip()
     site = request.args.get("site", "").strip()
     price_min = request.args.get("price_min", 0, type=int)
@@ -2047,6 +2048,30 @@ def shop_api_products():
                     break
         bag_types = [{"name": k, "count": v} for k, v in sorted(bag_counts.items(), key=lambda x: -x[1])]
 
+        # 컬러 목록 (상품명에서 추출)
+        _color_map = {
+            "BLK": "블랙", "WHT": "화이트", "RED": "레드", "BLU": "블루",
+            "GRN": "그린", "NVY": "네이비", "BRW": "브라운", "GRY": "그레이",
+            "PNK": "핑크", "YLW": "옐로우", "ORG": "오렌지", "PPL": "퍼플",
+            "GLD": "골드", "SLV": "실버", "BGE": "베이지", "CRM": "크림",
+            "KHK": "카키", "ボルドー": "보르도",
+            "ブラック": "블랙", "ホワイト": "화이트", "レッド": "레드", "ブルー": "블루",
+            "グリーン": "그린", "ネイビー": "네이비", "ブラウン": "브라운", "グレー": "그레이",
+            "ピンク": "핑크", "イエロー": "옐로우", "オレンジ": "오렌지", "パープル": "퍼플",
+            "ゴールド": "골드", "シルバー": "실버", "ベージュ": "베이지", "クリーム": "크림",
+            "カーキ": "카키", "マルチカラー": "멀티컬러",
+        }
+        _color_keys = set(_color_map.keys())
+        color_counts = {}
+        for r in bag_rows:  # bag_rows 재사용
+            n = r["name"] or ""
+            for part in n.split("/"):
+                p = part.strip()
+                if p in _color_keys:
+                    ko = _color_map[p]
+                    color_counts[ko] = color_counts.get(ko, 0) + 1
+        colors = [{"name": k, "count": v} for k, v in sorted(color_counts.items(), key=lambda x: -x[1])]
+
         # 상품 조회
         sql = f"SELECT * FROM products WHERE {base_where}"
         params = list(base_params)
@@ -2082,6 +2107,22 @@ def shop_api_products():
             elif len(ja_keys) > 1:
                 sql += " AND (" + " OR ".join(["name LIKE ?"] * len(ja_keys)) + ")"
                 params.extend([f"%{k}%" for k in ja_keys])
+        if color_filter:
+            color_list = [c.strip() for c in color_filter.split(",") if c.strip()]
+            # 한국어 → 일본어/영문 코드 역매핑
+            _color_reverse = {}
+            for k, v in _color_map.items():
+                _color_reverse.setdefault(v, []).append(k)
+            color_ja_keys = []
+            for cf in color_list:
+                color_ja_keys.extend(_color_reverse.get(cf, []))
+            if len(color_ja_keys) == 1:
+                sql += " AND name LIKE ?"
+                params.append(f"%{color_ja_keys[0]}%")
+            elif len(color_ja_keys) > 1:
+                sql += " AND (" + " OR ".join(["name LIKE ?"] * len(color_ja_keys)) + ")"
+                params.extend([f"%{k}%" for k in color_ja_keys])
+
         if keyword:
             # 여러 키워드 지원 (공백 구분 → AND 조건)
             words = keyword.split()
@@ -2173,6 +2214,7 @@ def shop_api_products():
             "sites": sites,
             "brands": brands,
             "bag_types": bag_types,
+            "colors": colors,
             "conditions": ["NS", "S", "A", "B", "C", "D"],
             "total": total,
             "page": page,

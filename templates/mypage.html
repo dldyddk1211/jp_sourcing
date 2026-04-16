@@ -433,6 +433,39 @@
     justify-content:center; align-items:center; backdrop-filter:blur(4px);
   }
   .pay-modal-overlay.show { display:flex; }
+
+  /* 이미지 팝업 */
+  .mp-img-popup {
+    display:none; position:fixed; top:0; left:0; width:100%; height:100%;
+    background:rgba(0,0,0,0.92); z-index:2000;
+    justify-content:center; align-items:center; cursor:zoom-out;
+  }
+  .mp-img-popup.show { display:flex; }
+  .mp-img-popup img {
+    max-width:90vw; max-height:90vh; min-width:min(1000px, 90vw);
+    object-fit:contain; border-radius:4px;
+  }
+  .mp-img-popup-close {
+    position:fixed; top:16px; right:24px; z-index:2001;
+    background:rgba(30,30,30,0.8); border:1px solid rgba(255,255,255,0.2);
+    color:#fff; font-size:1.8rem; width:44px; height:44px;
+    border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  .mp-img-popup-close:hover { background:rgba(212,165,74,0.4); }
+  .mp-img-popup-nav {
+    position:fixed; top:50%; transform:translateY(-50%);
+    background:rgba(30,30,30,0.8); border:1px solid rgba(255,255,255,0.2);
+    color:#fff; font-size:2rem; width:48px; height:72px;
+    border-radius:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:2001;
+  }
+  .mp-img-popup-nav:hover { background:rgba(212,165,74,0.4); }
+  .mp-img-popup-prev { left:16px; }
+  .mp-img-popup-next { right:16px; }
+  .mp-img-popup-counter {
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    color:rgba(255,255,255,0.7); font-size:0.85rem; z-index:2001;
+  }
+  @media(max-width:768px) { .mp-img-popup img { min-width:auto; } }
   .pay-modal {
     background:var(--card); border:1px solid var(--border); border-radius:16px;
     max-width:520px; width:95%; max-height:90vh; overflow-y:auto;
@@ -532,6 +565,15 @@
     padding:3px 8px; font-size:0.65rem; border-radius:4px; border:none; cursor:pointer;
   }
 </style>
+
+<!-- 이미지 팝업 -->
+<div class="mp-img-popup" id="mp-img-popup" onclick="if(event.target===this)closeMpImgPopup()">
+  <button class="mp-img-popup-close" onclick="closeMpImgPopup()">&times;</button>
+  <button class="mp-img-popup-nav mp-img-popup-prev" onclick="navMpImgPopup(-1)">&#x276E;</button>
+  <button class="mp-img-popup-nav mp-img-popup-next" onclick="navMpImgPopup(1)">&#x276F;</button>
+  <img id="mp-img-popup-img" src="" alt="">
+  <div class="mp-img-popup-counter" id="mp-img-popup-counter"></div>
+</div>
 
 <script>
 const PREFIX = "{{ url_prefix }}";
@@ -860,11 +902,14 @@ async function openCartDetail(code) {
       }
     }
 
+    // 이미지 목록을 전역에 저장 (팝업용)
+    window._cartDetailImgs = imgs;
+
     body.innerHTML = `
       <div style="display:flex;gap:20px;flex-wrap:wrap;">
         <div style="flex:0 0 220px;">
-          <img id="cart-detail-main-img" src="${imgs[0]||''}" style="width:100%;border-radius:8px;aspect-ratio:1;object-fit:cover;cursor:pointer;" onerror="this.style.display='none'">
-          ${imgs.length > 1 ? `<div style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;">${imgs.map((img, i) => `<img src="${img}" onclick="document.getElementById('cart-detail-main-img').src='${img}'" style="width:48px;height:48px;object-fit:cover;border-radius:5px;cursor:pointer;border:2px solid ${i===0?'var(--accent)':'transparent'};opacity:${i===0?'1':'0.5'};transition:all .2s;" onmouseover="this.style.opacity='1';this.style.borderColor='var(--accent)'" onmouseout="this.style.opacity='${i===0?'1':'0.5'}'" onerror="this.style.display='none'">`).join("")}</div>` : ""}
+          <img id="cart-detail-main-img" src="${imgs[0]||''}" style="width:100%;border-radius:8px;aspect-ratio:1;object-fit:cover;cursor:pointer;" onclick="openMpImgPopup(window._cartDetailImgs, 0)" onerror="this.style.display='none'">
+          ${imgs.length > 1 ? `<div style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;">${imgs.map((img, i) => `<img src="${img}" onclick="document.getElementById('cart-detail-main-img').src='${img}'; openMpImgPopup(window._cartDetailImgs, ${i})" style="width:48px;height:48px;object-fit:cover;border-radius:5px;cursor:pointer;border:2px solid ${i===0?'var(--accent)':'transparent'};opacity:${i===0?'1':'0.5'};transition:all .2s;" onmouseover="this.style.opacity='1';this.style.borderColor='var(--accent)'" onmouseout="this.style.opacity='${i===0?'1':'0.5'}'" onerror="this.style.display='none'">`).join("")}</div>` : ""}
         </div>
         <div style="flex:1;min-width:200px;">
           <div style="font-size:0.82rem;color:var(--accent);font-weight:600;margin-bottom:4px;">${p.brand}</div>
@@ -885,6 +930,43 @@ function closeCartDetail() {
   document.getElementById("cart-detail-modal").classList.remove("show");
   document.body.style.overflow = "";
 }
+
+// ── 이미지 팝업 ──
+let _mpImgList = [];
+let _mpImgIdx = 0;
+
+function openMpImgPopup(imgs, startIdx) {
+  _mpImgList = imgs || [];
+  if (!_mpImgList.length) return;
+  _mpImgIdx = startIdx || 0;
+  _renderMpImgPopup();
+  document.getElementById("mp-img-popup").classList.add("show");
+}
+
+function _renderMpImgPopup() {
+  document.getElementById("mp-img-popup-img").src = _mpImgList[_mpImgIdx] || "";
+  document.getElementById("mp-img-popup-counter").textContent =
+    _mpImgList.length > 1 ? `${_mpImgIdx + 1} / ${_mpImgList.length}` : "";
+  document.querySelector(".mp-img-popup-prev").style.display = _mpImgIdx > 0 ? "" : "none";
+  document.querySelector(".mp-img-popup-next").style.display = _mpImgIdx < _mpImgList.length - 1 ? "" : "none";
+}
+
+function navMpImgPopup(dir) {
+  _mpImgIdx = Math.max(0, Math.min(_mpImgList.length - 1, _mpImgIdx + dir));
+  _renderMpImgPopup();
+}
+
+function closeMpImgPopup() {
+  document.getElementById("mp-img-popup").classList.remove("show");
+}
+
+document.addEventListener("keydown", e => {
+  if (document.getElementById("mp-img-popup").classList.contains("show")) {
+    if (e.key === "Escape") closeMpImgPopup();
+    if (e.key === "ArrowLeft") navMpImgPopup(-1);
+    if (e.key === "ArrowRight") navMpImgPopup(1);
+  }
+});
 
 // ── 주문 상세 모달 ──
 async function openOrderDetail(orderNumber) {
@@ -912,11 +994,12 @@ async function openOrderDetail(orderNumber) {
     let productHtml = "";
     if (p) {
       const imgs = (p.detail_images && p.detail_images.length) ? p.detail_images : (p.img_url ? [p.img_url] : []);
+      window._orderDetailImgs = imgs;
       productHtml = `
         <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
           <div style="font-size:0.82rem;font-weight:700;color:var(--accent);margin-bottom:10px;">상품 정보</div>
           <div style="display:flex;gap:14px;">
-            <img src="${imgs[0]||''}" style="width:100px;height:100px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.style.display='none'">
+            <img src="${imgs[0]||''}" style="width:100px;height:100px;object-fit:cover;border-radius:6px;flex-shrink:0;cursor:pointer;" onclick="openMpImgPopup(window._orderDetailImgs, 0)" onerror="this.style.display='none'">
             <div style="flex:1;min-width:0;">
               <div style="font-size:0.78rem;color:var(--accent);font-weight:600;">${p.brand||''}</div>
               <div style="font-size:0.88rem;font-weight:600;margin:4px 0;line-height:1.4;">${transJa(p.name||'')}</div>
@@ -927,7 +1010,7 @@ async function openOrderDetail(orderNumber) {
               ${p.color_raw ? `<div style="font-size:0.75rem;color:var(--dim);margin-top:2px;">사이즈: ${transJa(p.color_raw)}</div>` : ''}
             </div>
           </div>
-          ${imgs.length > 1 ? `<div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;">${imgs.slice(1,6).map(i => `<img src="${i}" style="width:48px;height:48px;object-fit:cover;border-radius:4px;border:1px solid var(--border);" onerror="this.style.display='none'">`).join("")}</div>` : ""}
+          ${imgs.length > 1 ? `<div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;">${imgs.slice(1,6).map((img, idx) => `<img src="${img}" style="width:48px;height:48px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:pointer;" onclick="openMpImgPopup(window._orderDetailImgs, ${idx+1})" onerror="this.style.display='none'">`).join("")}</div>` : ""}
         </div>`;
     }
 
