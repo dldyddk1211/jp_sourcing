@@ -3433,9 +3433,162 @@ def _start_scheduler_once():
     )
     logger.info("🔄 Git 자동 풀 등록 (매시 정각)")
 
+    # ── 자동 백업 (OS별) ──
+    if is_mac:
+        # Mac → NAS: users.db(하루 2회) + config(하루 1회)
+        scheduler.add_job(
+            func=_backup_users_db,
+            trigger="cron", hour="0,12", minute=0,
+            id="backup_users", replace_existing=True,
+            name="users.db 백업 (00:00, 12:00)",
+        )
+        scheduler.add_job(
+            func=_backup_config_files,
+            trigger="cron", hour=1, minute=0,
+            id="backup_config", replace_existing=True,
+            name="설정파일 백업 (01:00)",
+        )
+        logger.info("💾 [Mac] 백업: users.db(00:00,12:00) + config(01:00) → NAS")
+
+    if is_windows:
+        # Windows → NAS: products.db(하루 1회, 새벽 2시)
+        # (매시 정각 NAS 내보내기 + 300개 단위 내보내기는 기존 유지)
+        scheduler.add_job(
+            func=_backup_products_db,
+            trigger="cron", hour=2, minute=0,
+            id="backup_products", replace_existing=True,
+            name="products.db 백업 (02:00)",
+        )
+        logger.info("💾 [Windows] 백업: products.db(02:00) → NAS")
+
     scheduler.start()
     _scheduler_started = True
     logger.info(f"📅 스케줄러 시작 완료 ({env_label}, PID: {os.getpid()})")
+
+
+def _backup_db_file(db_name, subfolder, max_backups=60):
+    """DB 파일 백업 공통 함수 (로컬 + NAS)"""
+    import shutil
+    import sqlite3 as _sq
+    db_dir = get_path("db")
+    src = os.path.join(db_dir, db_name)
+    if not os.path.exists(src):
+        logger.warning(f"[백업] {db_name} 없음 — 스킵")
+        return
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M")
+    prefix = db_name.replace(".db", "")
+
+    # 로컬 백업
+    local_bk = os.path.join(db_dir, "backups", subfolder)
+    os.makedirs(local_bk, exist_ok=True)
+    dst = os.path.join(local_bk, f"{prefix}_{ts}.db")
+    try:
+        conn = _sq.connect(src)
+        bk = _sq.connect(dst)
+        conn.backup(bk)
+        bk.close()
+        conn.close()
+        logger.info(f"[백업] 로컬 {subfolder}/{prefix}_{ts}.db 완료")
+    except Exception:
+        shutil.copy2(src, dst)
+        logger.info(f"[백업] 로컬 {subfolder}/{prefix}_{ts}.db 완료 (복사)")
+
+    _cleanup_old_backups(local_bk, prefix, max_backups)
+
+    # NAS 백업
+    from data_manager import NAS_SHARED_PATH
+    nas_bk = os.path.join(NAS_SHARED_PATH, "backups", subfolder)
+    if os.path.isdir(NAS_SHARED_PATH):
+        try:
+            os.makedirs(nas_bk, exist_ok=True)
+            shutil.copy2(dst, os.path.join(nas_bk, f"{prefix}_{ts}.db"))
+            logger.info(f"[백업] NAS {subfolder}/{prefix}_{ts}.db 완료")
+            _cleanup_old_backups(nas_bk, prefix, max_backups)
+        except Exception as e:
+            logger.warning(f"[백업] NAS {subfolder} 실패: {e}")
+    else:
+        logger.warning("[백업] NAS 미연결 — NAS 백업 스킵")
+
+
+def _cleanup_old_backups(bk_dir, prefix, max_count):
+    """오래된 백업 파일 삭제"""
+    files = sorted(
+        [f for f in os.listdir(bk_dir) if f.startswith(prefix + "_") and f.endswith(".db")],
+        reverse=True
+    )
+    for f in files[max_count:]:
+        try:
+            os.remove(os.path.join(bk_dir, f))
+        except Exception:
+            pass
+
+
+def _backup_users_db():
+    """[Mac] users.db 백업 → NAS/backups/users/"""
+    _backup_db_file("users.db", "users", max_backups=60)
+
+
+def _backup_config_files():
+    """[Mac] 설정파일 백업 → NAS/backups/config/"""
+    import shutil
+    db_dir = get_path("db")
+    ts = datetime.now().strftime("%Y%m%d_%H%M")
+    max_backups = 30  # 1달분
+
+    config_files = [
+        "cafe_schedule.json", "vt_cafe_schedule.json", "check_schedule.json",
+        "fb_schedule.json", "db_update_schedule.json", "task_schedule.json",
+        "price_config.json", "vintage_price.json", "biz_info.json",
+        "naver_accounts.json", "blog_accounts.json",
+        "translation_dict.json", "uploaded_history.json",
+        "scrape_history.json", "ai_settings.db",
+    ]
+
+    # 로컬 백업
+    local_bk = os.path.join(db_dir, "backups", "config", ts)
+    os.makedirs(local_bk, exist_ok=True)
+    count = 0
+    for fn in config_files:
+        src = os.path.join(db_dir, fn)
+        if os.path.exists(src):
+            shutil.copy2(src, os.path.join(local_bk, fn))
+            count += 1
+    logger.info(f"[백업] 로컬 config/{ts}/ — {count}개 파일")
+
+    # 오래된 폴더 삭제
+    config_root = os.path.join(db_dir, "backups", "config")
+    dirs = sorted([d for d in os.listdir(config_root) if os.path.isdir(os.path.join(config_root, d))], reverse=True)
+    for d in dirs[max_backups:]:
+        try:
+            shutil.rmtree(os.path.join(config_root, d))
+        except Exception:
+            pass
+
+    # NAS 백업
+    from data_manager import NAS_SHARED_PATH
+    if os.path.isdir(NAS_SHARED_PATH):
+        nas_bk = os.path.join(NAS_SHARED_PATH, "backups", "config", ts)
+        try:
+            os.makedirs(nas_bk, exist_ok=True)
+            for fn in os.listdir(local_bk):
+                shutil.copy2(os.path.join(local_bk, fn), os.path.join(nas_bk, fn))
+            logger.info(f"[백업] NAS config/{ts}/ — {count}개 파일")
+            # NAS 오래된 폴더 삭제
+            nas_root = os.path.join(NAS_SHARED_PATH, "backups", "config")
+            nas_dirs = sorted([d for d in os.listdir(nas_root) if os.path.isdir(os.path.join(nas_root, d))], reverse=True)
+            for d in nas_dirs[max_backups:]:
+                try:
+                    shutil.rmtree(os.path.join(nas_root, d))
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"[백업] NAS config 실패: {e}")
+
+
+def _backup_products_db():
+    """[Windows] products.db 백업 → NAS/backups/products/"""
+    _backup_db_file("products.db", "products", max_backups=30)
 
 
 def _auto_git_pull():
@@ -3963,6 +4116,26 @@ def _init_scrape_tasks_db():
         conn.commit()
     except Exception:
         pass
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/api/vintage-db-stats", methods=["GET"])
+@admin_required
+def vintage_db_stats():
+    """빈티지 DB 총 수집량 통계"""
+    from product_db import _conn
+    conn = _conn()
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM products WHERE source_type='vintage'").fetchone()[0]
+        brands = conn.execute("""
+            SELECT brand, COUNT(*) as cnt FROM products
+            WHERE source_type='vintage' GROUP BY brand ORDER BY cnt DESC
+        """).fetchall()
+        brand_list = [{"name": r[0], "count": r[1]} for r in brands]
+        return jsonify({"ok": True, "total": total, "brands": brand_list})
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)})
     finally:
         conn.close()
 

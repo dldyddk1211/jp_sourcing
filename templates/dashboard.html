@@ -1721,6 +1721,10 @@
             <div style="font-size:0.7rem;color:var(--muted);">예약 큐</div>
             <div style="font-size:1.3rem;font-weight:800;color:var(--yellow);" id="st-queue">0</div>
           </div>
+          <div style="background:rgba(212,165,74,0.06);border:1px solid var(--accent);border-radius:8px;padding:12px 18px;text-align:center;min-width:140px;">
+            <div style="font-size:0.7rem;color:var(--accent);">빈티지 DB 총량</div>
+            <div style="font-size:1.3rem;font-weight:800;color:var(--accent);" id="st-db-total">-</div>
+          </div>
         </div>
         <!-- 프로그레스 바 -->
         <div style="background:#0d0d0a;border-radius:6px;height:8px;overflow:hidden;border:1px solid var(--border);">
@@ -3672,11 +3676,25 @@ async function loadScrapeTasks() {
     scrapeTaskList = d.tasks || [];
     renderTaskList();
     updateTaskStats();
+    // 빈티지 DB 총량 로드
+    loadVintageDbTotal();
   } catch(e) {
     console.warn("작업리스트 로드 오류:", e);
     const tbody = document.getElementById("scrape-task-body");
     if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--red);padding:20px;">로드 실패 — 새로고침 해주세요</td></tr>';
   }
+}
+
+async function loadVintageDbTotal() {
+  try {
+    const r = await fetch(PREFIX + "/api/vintage-db-stats");
+    const ct = r.headers.get("content-type") || "";
+    if (!ct.includes("application/json")) return;
+    const d = await r.json();
+    if (!d.ok) return;
+    const el = document.getElementById("st-db-total");
+    if (el) el.textContent = (d.total || 0).toLocaleString();
+  } catch(e) {}
 }
 
 function updateTaskStats() {
