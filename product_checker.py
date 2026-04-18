@@ -161,17 +161,22 @@ async def check_products_batch(products, status_callback=None):
                 elif resp.status == 200:
                     # 페이지 존재 확인 — 실제 상품이 있는지 체크
                     is_sold = await page.evaluate("""() => {
-                        // 2ndstreet: 판매 종료 시 특정 문구 표시
                         const body = document.body.innerText || '';
-                        // 상품 상세 영역의 SOLD OUT만 체크 (추천상품 영역 오탐 방지)
-                        const modal = document.querySelector('.modal_cont, .itemDetail, .goodsDetail, [class*="detail"]');
-                        const target = modal ? modal.innerText : body;
-                        if (target.includes('SOLD OUT')) return true;
                         // 페이지 자체가 없는 경우
                         if (body.includes('ページが見つかりません')) return true;
-                        // 메인 가격 요소가 없으면 품절
+                        // 확실한 품절 문구 (메인 상품에만 나타남)
+                        if (body.includes('※申し訳ございません。この商品は売切れ') ||
+                            body.includes('※申し訳ございません。この商品は売り切れ') ||
+                            body.includes('この商品は現在販売しておりません')) return true;
+                        // SOLD OUT 텍스트가 메인 가격 근처에 있는지 체크 (추천상품 영역 오탐 방지)
                         const price = document.querySelector('[itemprop="price"], .priceMain, .priceNum');
                         if (!price) return true;
+                        // 가격 요소 주변(부모의 부모)에서 SOLD OUT 텍스트 검색
+                        let parent = price.parentElement;
+                        for (let i = 0; i < 4 && parent; i++) {
+                            if ((parent.innerText || '').includes('SOLD OUT')) return true;
+                            parent = parent.parentElement;
+                        }
                         return false;
                     }""")
                     # 가격 로드 실패 시 한번 더 대기 후 재확인 (오탐 방지)
@@ -211,7 +216,9 @@ async def check_products_batch(products, status_callback=None):
                             update_sql = "UPDATE products SET product_status='available', checked_at=?, price_jpy=? WHERE id=?"
                             update_params = [now, new_price, pid]
                             result["price_changed"] += 1
-                            log(f"   가격변동: {p['brand']} ¥{p['price_jpy']:,} → ¥{new_price:,}")
+                            log(f"   [{i+1}] 가격변동: {p['brand']} {(p.get('name') or '')[:25]} ¥{p['price_jpy']:,} → ¥{new_price:,}")
+                        else:
+                            log(f"   [{i+1}] 판매중: {p['brand']} {(p.get('name') or '')[:30]} ¥{new_price or p['price_jpy']:,}")
 
                         conn.execute(update_sql, update_params)
 
@@ -238,14 +245,14 @@ async def check_products_batch(products, status_callback=None):
                     err_type = "기타"
                 log(f"   [{i+1}] 오류({err_type}): {p['brand']} {(p.get('name') or '')[:25]} | {err_msg[:80]}")
 
-            # 진행률 (10개마다 로그)
-            if (i + 1) % 10 == 0 or i == len(products) - 1:
+            # 진행률 요약 (30개마다)
+            if (i + 1) % 30 == 0 or i == len(products) - 1:
                 elapsed = time.time() - _batch_start if '_batch_start' in dir() else 0
                 avg = elapsed / (i + 1) if i > 0 else 0
                 remain = avg * (len(products) - i - 1)
                 remain_min = int(remain // 60)
                 remain_sec = int(remain % 60)
-                log(f"   진행: {i+1}/{len(products)} | 판매중:{result['checked']-result['sold_out']} 품절:{result['sold_out']} 가격변동:{result['price_changed']} 오류:{result['errors']} | 남은시간: ~{remain_min}분{remain_sec}초")
+                log(f"   ━━━ 진행: {i+1}/{len(products)} | 판매중:{result['checked']-result['sold_out']} 품절:{result['sold_out']} 가격변동:{result['price_changed']} 오류:{result['errors']} | 남은시간: ~{remain_min}분{remain_sec}초 ━━━")
             if (i + 1) % 50 == 0:
                 conn.commit()
 
