@@ -2033,24 +2033,54 @@ def shop_api_products():
             "セカンドバッグ": "세컨드백", "バッグ": "가방",
             # 의류
             "スカート": "스커트", "ジャケット": "자켓", "コート": "코트",
-            "シャツ": "셔츠", "ブラウス": "블라우스", "ワンピース": "원피스",
-            "パンツ": "팬츠", "スラックス": "슬랙스", "ニット": "니트",
-            "セーター": "스웨터", "カーディガン": "가디건", "パーカー": "후드",
-            "スウェット": "스웨트", "ベスト": "베스트", "Tシャツ": "T셔츠",
+            "Tシャツ": "T셔츠", "シャツ": "셔츠", "ブラウス": "블라우스",
+            "ワンピース": "원피스", "パンツ": "팬츠", "スラックス": "슬랙스",
+            "ニット": "니트", "セーター": "스웨터", "カーディガン": "가디건",
+            "パーカー": "후드", "スウェット": "스웨트", "ベスト": "베스트",
             "ドレス": "드레스",
-            # 소품
+            # 신발
+            "パンプス": "펌프스", "スニーカー": "스니커즈", "ブーツ": "부츠",
+            "サンダル": "샌들", "ローファー": "로퍼", "ミュール": "뮬",
+            "スリッポン": "슬립온", "シューズ": "슈즈",
+            # 소품/악세서리
             "財布": "지갑", "ベルト": "벨트", "マフラー": "머플러",
-            "帽子": "모자", "サングラス": "선글라스", "ネックレス": "목걸이",
-            "ブレスレット": "팔찌", "リング": "반지",
+            "帽子": "모자", "キャップ": "캡", "サングラス": "선글라스",
+            "ネックレス": "목걸이", "ブレスレット": "팔찌", "リング": "반지",
+            "ピアス": "피어싱", "イヤリング": "이어링",
+            "スカーフ": "스카프", "ストール": "스톨",
+            "キーケース": "키케이스", "キーリング": "키링",
+            "コインケース": "코인케이스", "カードケース": "카드케이스",
+            "手袋": "장갑", "腕時計": "시계", "ウォッチ": "시계",
+            # 기타 가방류
+            "ブリーフケース": "브리프케이스", "ビジネスバッグ": "비즈니스백",
+            "トラベル": "트래블백", "キャリー": "캐리어",
+            "メッセンジャー": "메신저백", "キーポル": "키폴(여행백)",
+            # 넥타이/하의
+            "ネクタイ": "넥타이", "ボトム": "하의",
+            # LV 모델명 (가방으로 분류)
+            "ポシェット": "포셰트(미니백)", "アルマ": "가방", "ダヌーブ": "가방",
+            "リポーター": "가방", "アマゾン": "가방", "ジェロニモス": "가방",
+            "ルーピング": "가방", "ブルームズベリ": "가방", "ナイル": "가방",
+            "カバ": "가방", "サック": "가방", "ミュゼット": "가방",
+            "ヴィバ": "가방", "アクセサリー": "악세서리",
         }
-        bag_rows = conn.execute(f"SELECT name FROM products WHERE {base_where}", base_params).fetchall()
+        bag_rows = conn.execute(f"SELECT name, brand FROM products WHERE {base_where}", base_params).fetchall()
         bag_counts = {}
         for r in bag_rows:
             n = r["name"] or ""
+            brand_name = r["brand"] or ""
+            matched = False
             for ja, ko in bag_type_map.items():
                 if ja in n:
                     bag_counts[ko] = bag_counts.get(ko, 0) + 1
+                    matched = True
                     break
+            if not matched:
+                # LV 모델명 등 브랜드 고유 모델 → 가방으로 자동 분류
+                if "_モノグラム" in n or "_ダミエ" in n or "_エピ" in n or "_タイガ" in n or "_ヴェルニ" in n:
+                    bag_counts["가방"] = bag_counts.get("가방", 0) + 1
+                else:
+                    bag_counts["기타"] = bag_counts.get("기타", 0) + 1
         bag_types = [{"name": k, "count": v} for k, v in sorted(bag_counts.items(), key=lambda x: -x[1])]
 
         # 컬러 목록 (상품명에서 추출)
@@ -2100,13 +2130,28 @@ def shop_api_products():
                 params.extend(cond_list)
         if bag_type:
             bag_list = [b.strip() for b in bag_type.split(",") if b.strip()]
+            has_etc = "기타" in bag_list
             ja_keys = []
             for bt in bag_list:
+                if bt == "기타":
+                    continue
                 for ja, ko in bag_type_map.items():
                     if ko == bt:
                         ja_keys.append(ja)
                         break
-            if len(ja_keys) == 1:
+            if has_etc and not ja_keys:
+                # "기타"만 선택 → 모든 매핑 키워드에 안 걸리는 상품
+                not_clauses = " AND ".join(["name NOT LIKE ?" for _ in bag_type_map])
+                sql += f" AND ({not_clauses})"
+                params.extend([f"%{k}%" for k in bag_type_map.keys()])
+            elif has_etc and ja_keys:
+                # "기타" + 다른 종류 함께 선택
+                like_clauses = " OR ".join(["name LIKE ?"] * len(ja_keys))
+                not_clauses = " AND ".join(["name NOT LIKE ?" for _ in bag_type_map])
+                sql += f" AND (({like_clauses}) OR ({not_clauses}))"
+                params.extend([f"%{k}%" for k in ja_keys])
+                params.extend([f"%{k}%" for k in bag_type_map.keys()])
+            elif len(ja_keys) == 1:
                 sql += " AND name LIKE ?"
                 params.append(f"%{ja_keys[0]}%")
             elif len(ja_keys) > 1:
