@@ -409,7 +409,7 @@
         <span>대행사이트</span>
         <span style="font-size:0.6rem;color:var(--accent);margin-left:auto;">&#x2197;</span>
       </div>
-      <div class="nav-item" data-page="members" onclick="showPage('members');loadMembers()">
+      <div class="nav-item" data-page="members" onclick="showPage('members');loadMembers(true)">
         <span class="nav-icon">&#x1f465;</span>
         <span>회원관리</span>
       </div>
@@ -696,10 +696,10 @@
       <div class="panel">
         <div class="panel-title">
           <span>&#x1f465; 회원 목록</span>
-          <button onclick="loadMembers()" class="btn b-gray" style="padding:4px 10px;font-size:0.75rem">&#x1f504; 새로고침</button>
+          <button onclick="loadMembers(true)" class="btn b-gray" style="padding:4px 10px;font-size:0.75rem">&#x1f504; 새로고침</button>
         </div>
         <div style="margin-bottom:12px;display:flex;gap:10px;align-items:center;">
-          <input type="text" id="member-search" placeholder="아이디, 이름, 연락처 검색..." onkeyup="loadMembers()"
+          <input type="text" id="member-search" placeholder="아이디, 이름, 연락처 검색..." onkeyup="loadMembers(true)"
                  style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:0.82rem;flex:1;max-width:300px;">
           <span id="member-count" style="font-size:0.8rem;color:var(--muted);">총 0명</span>
         </div>
@@ -819,12 +819,12 @@
         <div class="panel-title">
           <span>&#x1f4e6; 주문/문의 리스트</span>
           <div style="display:flex;gap:8px;">
-            <select id="order-filter" onchange="loadOrders()" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.78rem;">
+            <select id="order-filter" onchange="loadOrders(true)" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.78rem;">
               <option value="">전체</option>
               <option value="order">주문</option>
               <option value="inquiry">문의</option>
             </select>
-            <select id="order-status-filter" onchange="loadOrders()" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.78rem;">
+            <select id="order-status-filter" onchange="loadOrders(true)" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.78rem;">
               <option value="">전체 상태</option>
               <option value="new">신규</option>
               <option value="confirmed">확인</option>
@@ -834,7 +834,7 @@
               <option value="sold_out">품절취소</option>
               <option value="cancelled">취소</option>
             </select>
-            <button class="btn b-gray" onclick="loadOrders()" style="padding:5px 12px;font-size:0.78rem">&#x1f504; 새로고침</button>
+            <button class="btn b-gray" onclick="loadOrders(true)" style="padding:5px 12px;font-size:0.78rem">&#x1f504; 새로고침</button>
           </div>
         </div>
         <!-- 일괄 작업 -->
@@ -2498,12 +2498,21 @@
           </div>
           <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:0.72rem;color:var(--muted);">
             <span id="sms-byte-count">0 byte (SMS)</span>
-            <div style="display:flex;gap:6px;">
-              <button onclick="smsTemplate('signup')" style="padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--muted);font-size:0.7rem;cursor:pointer;">가입확인</button>
-              <button onclick="smsTemplate('order')" style="padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--muted);font-size:0.7rem;cursor:pointer;">주문확인</button>
-              <button onclick="smsTemplate('ship')" style="padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--muted);font-size:0.7rem;cursor:pointer;">배송안내</button>
-              <button onclick="smsTemplate('soldout')" style="padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--muted);font-size:0.7rem;cursor:pointer;">품절취소</button>
-              <button onclick="smsTemplate('promo')" style="padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--muted);font-size:0.7rem;cursor:pointer;">프로모션</button>
+            <button onclick="openTemplateModal()" style="padding:3px 12px;border:1px solid var(--accent);border-radius:4px;background:rgba(212,165,74,0.1);color:var(--accent);font-size:0.72rem;cursor:pointer;font-weight:600;">&#x1f4cb; 템플릿</button>
+          </div>
+        </div>
+
+        <!-- 템플릿 모달 -->
+        <div id="sms-tpl-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:1000;justify-content:center;align-items:center;" onclick="if(event.target===this)closeTemplateModal()">
+          <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;max-width:640px;width:95%;max-height:85vh;overflow-y:auto;box-shadow:0 16px 48px rgba(0,0,0,0.5);">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);">
+              <span style="font-size:1rem;font-weight:700;color:var(--accent);">&#x1f4cb; 문자 템플릿</span>
+              <button onclick="closeTemplateModal()" style="background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer;">&times;</button>
+            </div>
+            <div style="padding:16px 20px;" id="sms-tpl-list"></div>
+            <div style="padding:10px 20px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;">
+              <button onclick="saveAllTemplates()" class="btn b-green" style="padding:6px 16px;font-size:0.78rem;">전체 저장</button>
+              <button onclick="closeTemplateModal()" class="btn b-gray" style="padding:6px 16px;font-size:0.78rem;">닫기</button>
             </div>
           </div>
         </div>
@@ -3085,10 +3094,10 @@ function showPage(page, pushHash) {
   if (navItem) navItem.classList.add("active");
   document.getElementById("topbar-title").textContent = pageTitles[page] || page;
 
-  // 페이지 전환 시 데이터 로드
-  if (page === "scrape-tasks") { loadScrapeTasks(); startTaskLog(); } else { stopTaskLog(); }
-  if (page === "products") { loadProducts(curPage); loadBrands(); }
-  if (page === "members") { loadMembers(); }
+  // 페이지 전환 시 데이터 로드 (캐시 있으면 스킵)
+  if (page === "scrape-tasks") { if (!scrapeTaskList.length) loadScrapeTasks(); startTaskLog(); } else { stopTaskLog(); }
+  if (page === "products") { if (!document.getElementById("product-tbody")?.rows?.length) { loadProducts(curPage); loadBrands(); } }
+  if (page === "members") { if (!_memberList.length) loadMembers(true); else renderMemberTable(); }
   if (page === "dictionary") loadDict();
   if (page === "data-path") loadDataPath();
   if (page === "ai-settings") { loadAiSettings(); loadNaverAccounts(); loadTelegramSettings(); }
@@ -5508,9 +5517,14 @@ function renderMemberTable() {
       <td>${m.name || '-'}</td>
       <td>${m.phone || '-'}</td>
       <td>
-        <span style="color:${stColor};font-weight:600;font-size:0.72rem;">${stLabel}</span>
+        <select onchange="changeMemberStatus('${m.username}', this.value)" style="background:#1a1a1a;border:1px solid var(--border);color:${stColor};padding:2px 6px;border-radius:4px;font-size:0.7rem;font-weight:600;">
+          <option value="approved" ${st==='approved'?'selected':''} style="color:var(--green);">승인</option>
+          <option value="pending" ${st==='pending'?'selected':''} style="color:var(--yellow);">승인대기</option>
+          <option value="suspended" ${st==='suspended'?'selected':''} style="color:var(--red);">사용불가</option>
+          <option value="rejected" ${st==='rejected'?'selected':''} style="color:var(--red);">거절</option>
+        </select>
         ${st === 'pending' ? `
-          <select id="period-${m.username}" style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:2px 4px;border-radius:3px;font-size:0.62rem;margin-left:4px;">
+          <select id="period-${m.username}" style="background:#1a1a1a;border:1px solid var(--border);color:var(--text);padding:2px 4px;border-radius:3px;font-size:0.62rem;margin-top:3px;">
             <option value="1m" selected>1개월</option>
             <option value="3m">3개월</option>
             <option value="6m">6개월</option>
@@ -5518,7 +5532,6 @@ function renderMemberTable() {
             <option value="free">무제한</option>
           </select>
           <button onclick="approveMember('${m.username}')" class="btn b-green" style="padding:2px 6px;font-size:0.65rem;">승인</button>
-          <button onclick="rejectMember('${m.username}')" class="btn b-red" style="padding:2px 6px;font-size:0.65rem;">거절</button>
         ` : ''}
         ${st === 'approved' ? `
           <div style="display:flex;align-items:center;gap:4px;margin-top:3px;">
@@ -5543,8 +5556,9 @@ function renderMemberTable() {
   }).join("");
 }
 
-async function loadMembers() {
+async function loadMembers(force) {
   const search = (document.getElementById("member-search")?.value || "").trim();
+  if (!force && !search && _memberList.length) { renderMemberTable(); return; }
   try {
     const params = new URLSearchParams();
     if (search) params.set("q", search);
@@ -5608,9 +5622,12 @@ async function showBatchOrders(orderId, title) {
   } catch(e) { content.innerHTML = `<div style="color:var(--red);">로드 실패: ${e}</div>`; }
 }
 
-async function loadOrders() {
+var _ordersLoaded = false;
+async function loadOrders(force) {
   const tbody = document.getElementById("order-tbody");
   if (!tbody) return;
+  if (_ordersLoaded && !force) return;
+  _ordersLoaded = true;
   const typeFilter = document.getElementById("order-filter")?.value || "";
   const statusFilter = document.getElementById("order-status-filter")?.value || "";
   try {
@@ -5743,7 +5760,7 @@ async function bulkChangeOrderStatus() {
   }
   addLog(`\u2705 ${ids.length}건 주문 상태 → ${labels[st]}`, "ok");
   document.getElementById("bulk-order-status").value = "";
-  loadOrders();
+  loadOrders(true);
 }
 
 function updateOrderBadge(count) {
@@ -5757,7 +5774,7 @@ function updateOrderBadge(count) {
 async function updateOrderStatus(id, status) {
   try {
     await fetch(PREFIX + "/orders/" + id, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({status})});
-    loadOrders();
+    loadOrders(true);
   } catch(e) { addLog("❌ 상태 변경 실패", "err"); }
 }
 
@@ -5773,7 +5790,7 @@ async function updateOrderField(id, field, value) {
     // 송장번호 입력 시 자동으로 배송중 상태 변경
     if (field === 'tracking_no' && value) {
       await fetch(PREFIX + "/orders/" + id, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({status: 'shipped'})});
-      loadOrders();
+      loadOrders(true);
     }
   } catch(e) {}
 }
@@ -6012,7 +6029,7 @@ async function saveMemberDetail(username) {
         if (d2.ok) addLog("\u2705 사업자등록증 업로드 완료", "ok");
         else addLog("\u274C " + d2.message, "err");
       }
-      loadMembers();
+      loadMembers(true);
       openMemberDetail(username);
     } else {
       addLog("\u274C " + d.message, "err");
@@ -6047,7 +6064,7 @@ async function bulkChangeLevel() {
   }
   addLog(`\u2705 ${users.length}명 레벨 → ${level.toUpperCase()} 변경`, "ok");
   document.getElementById("bulk-level").value = "";
-  loadMembers();
+  loadMembers(true);
 }
 
 async function bulkChangeExpiry() {
@@ -6072,7 +6089,7 @@ async function bulkChangeExpiry() {
   }
   addLog(`\u2705 ${users.length}명 만료일 ${label} 변경`, "ok");
   document.getElementById("bulk-period").value = "";
-  loadMembers();
+  loadMembers(true);
 }
 
 async function bulkDeleteMembers() {
@@ -6083,7 +6100,7 @@ async function bulkDeleteMembers() {
     await fetch(PREFIX + "/members/" + encodeURIComponent(u), {method: "DELETE"}).catch(()=>{});
   }
   addLog(`\u2705 ${users.length}명 삭제 완료`, "ok");
-  loadMembers();
+  loadMembers(true);
 }
 
 async function deleteMember(username) {
@@ -6091,9 +6108,25 @@ async function deleteMember(username) {
   try {
     const res = await fetch(PREFIX + "/members/" + encodeURIComponent(username), {method: "DELETE"});
     const d = await res.json();
-    if (d.ok) loadMembers();
+    if (d.ok) loadMembers(true);
     else alert(d.message || "삭제 실패");
   } catch(e) { alert("삭제 실패: " + e); }
+}
+
+async function changeMemberStatus(username, newStatus) {
+  const labels = {approved:"승인", pending:"승인대기", suspended:"사용불가", rejected:"거절"};
+  if (!confirm(`'${username}' 상태를 '${labels[newStatus]}'(으)로 변경하시겠습니까?`)) {
+    loadMembers(true); return;
+  }
+  try {
+    const res = await fetch(PREFIX + "/members/" + encodeURIComponent(username) + "/status", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({status: newStatus})
+    });
+    const d = await res.json();
+    if (d.ok) loadMembers(true);
+    else alert(d.message || "변경 실패");
+  } catch(e) { alert("변경 실패: " + e); }
 }
 
 async function approveMember(username) {
@@ -6105,7 +6138,7 @@ async function approveMember(username) {
       body: JSON.stringify({status: "approved", period})
     });
     const d = await res.json();
-    if (d.ok) loadMembers();
+    if (d.ok) loadMembers(true);
     else alert(d.message || "승인 실패");
   } catch(e) { alert("승인 실패: " + e); }
 }
@@ -6118,7 +6151,7 @@ async function rejectMember(username) {
       body: JSON.stringify({status: "rejected"})
     });
     const d = await res.json();
-    if (d.ok) loadMembers();
+    if (d.ok) loadMembers(true);
     else alert(d.message || "거절 실패");
   } catch(e) { alert("거절 실패: " + e); }
 }
@@ -6130,7 +6163,7 @@ async function changeExpiry(username, date) {
       body: JSON.stringify({expires_at: date})
     });
     const d = await res.json();
-    if (d.ok) { addLog("\u2705 " + d.message, "ok"); loadMembers(); }
+    if (d.ok) { addLog("\u2705 " + d.message, "ok"); loadMembers(true); }
     else addLog("\u274C " + (d.message||"변경 실패"), "err");
   } catch(e) { addLog("\u274C 만료일 변경 실패", "err"); }
 }
@@ -6144,7 +6177,7 @@ async function extendMember(username) {
       body: JSON.stringify({period})
     });
     const d = await res.json();
-    if (d.ok) { alert(d.message); loadMembers(); }
+    if (d.ok) { alert(d.message); loadMembers(true); }
     else alert(d.message || "연장 실패");
   } catch(e) { alert("연장 실패: " + e); }
 }
@@ -6157,7 +6190,7 @@ async function changeMemberLevel(username, level) {
       body: JSON.stringify({level})
     });
     const d = await res.json();
-    if (d.ok) loadMembers();
+    if (d.ok) loadMembers(true);
     else alert(d.message || "변경 실패");
   } catch(e) { alert("레벨 변경 실패: " + e); }
 }
@@ -8061,16 +8094,72 @@ function updateSmsCount() {
   document.getElementById("sms-byte-count").textContent = `${bytes} byte (${type})`;
 }
 
-function smsTemplate(type) {
-  const templates = {
-    signup: "[TheOne Vintage] 회원가입이 확인되었습니다.\n관리자 승인이 완료되어야 상품 조회 및 주문 등 사이트 이용이 가능합니다.\n승인 완료 시 별도 안내드리겠습니다.\n감사합니다.",
-    order: "[TheOne Vintage] 고객님의 주문이 확인되었습니다.\n빠른 시일 내 처리하겠습니다.\n감사합니다.",
-    ship: "[TheOne Vintage] 상품이 발송되었습니다!\n배송 추적은 마이페이지에서 확인하세요.\nhttps://vintage.theone-biz.com/shop/mypage",
-    soldout: "[TheOne Vintage] 죄송합니다.\n현지 사이트에서 해당 상품이 품절되어 발송이 어렵게 되었습니다.\n불편을 드려 죄송합니다.",
-    promo: "[TheOne Vintage] 신규 입고 안내\n일본 직소싱 명품 빈티지 신상품이 입고되었습니다.\nhttps://vintage.theone-biz.com",
-  };
-  document.getElementById("sms-msg").value = templates[type] || "";
+var _smsTemplates = {
+  signup: {label:"가입확인", msg:"[TheOne Vintage] 회원가입이 확인되었습니다.\n관리자 승인이 완료되어야 상품 조회 및 주문 등 사이트 이용이 가능합니다.\n승인 완료 시 별도 안내드리겠습니다.\n감사합니다."},
+  approved: {label:"가입승인", msg:"[TheOne Vintage] 회원가입 승인이 완료되었습니다.\n현재 B2C 등급으로 승인되었습니다.\nB2B 승인을 위해서는 요청/문의 게시판을 통해 문의 부탁드리겠습니다.\n감사합니다.\nhttps://vintage.theone-biz.com"},
+  suspended: {label:"사용불가", msg:"[TheOne Vintage] 계정이 사용불가 상태로 변경되었습니다.\n사유 확인은 관리자에게 문의해주세요."},
+  order_new: {label:"주문접수", msg:"[TheOne Vintage] 주문이 접수되었습니다.\n확인 후 안내드리겠습니다."},
+  order: {label:"주문확인", msg:"[TheOne Vintage] 고객님의 주문이 확인되었습니다.\n빠른 시일 내 처리하겠습니다.\n감사합니다."},
+  processing: {label:"처리중", msg:"[TheOne Vintage] 상품을 처리 중입니다.\n진행 상황은 마이페이지에서 확인하세요."},
+  ship: {label:"배송안내", msg:"[TheOne Vintage] 상품이 발송되었습니다!\n배송 추적은 마이페이지에서 확인하세요.\nhttps://vintage.theone-biz.com/shop/mypage"},
+  completed: {label:"배송완료", msg:"[TheOne Vintage] 배송이 완료되었습니다.\n이용해 주셔서 감사합니다."},
+  soldout: {label:"품절취소", msg:"[TheOne Vintage] 죄송합니다.\n현지 사이트에서 해당 상품이 품절되어 발송이 어렵게 되었습니다.\n불편을 드려 죄송합니다."},
+  expiry_3d: {label:"만료3일전", msg:"[TheOne Vintage] 고객님, 사용기간이 3일 후 만료됩니다.\n연장을 원하시면 관리자에게 문의해주세요.\n감사합니다."},
+  expiry_1d: {label:"만료1일전", msg:"[TheOne Vintage] 고객님, 사용기간이 내일 만료됩니다.\n연장을 원하시면 관리자에게 문의해주세요.\n감사합니다."},
+  promo: {label:"프로모션", msg:"[TheOne Vintage] 신규 입고 안내\n일본 직소싱 명품 빈티지 신상품이 입고되었습니다.\nhttps://vintage.theone-biz.com"},
+};
+
+function loadSavedTemplates() {
+  try {
+    const saved = localStorage.getItem("sms_templates");
+    if (saved) {
+      const d = JSON.parse(saved);
+      for (const [k, v] of Object.entries(d)) {
+        if (_smsTemplates[k]) _smsTemplates[k].msg = v;
+      }
+    }
+  } catch(e) {}
+}
+loadSavedTemplates();
+
+function openTemplateModal() {
+  const el = document.getElementById("sms-tpl-list");
+  el.innerHTML = Object.entries(_smsTemplates).map(([k, t]) =>
+    `<div style="margin-bottom:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-size:0.82rem;font-weight:600;color:var(--accent);">${t.label}</span>
+        <button onclick="selectTemplate('${k}')" class="btn b-blue" style="padding:3px 10px;font-size:0.7rem;">사용</button>
+      </div>
+      <textarea id="tpl-${k}" rows="3" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--text);font-size:0.78rem;resize:vertical;">${t.msg}</textarea>
+    </div>`
+  ).join("");
+  document.getElementById("sms-tpl-modal").style.display = "flex";
+}
+
+function closeTemplateModal() {
+  document.getElementById("sms-tpl-modal").style.display = "none";
+}
+
+function selectTemplate(key) {
+  // 현재 편집 내용 반영
+  const ta = document.getElementById("tpl-" + key);
+  if (ta) _smsTemplates[key].msg = ta.value;
+  document.getElementById("sms-msg").value = _smsTemplates[key].msg;
   updateSmsCount();
+  closeTemplateModal();
+}
+
+function saveAllTemplates() {
+  const saved = {};
+  for (const [k, t] of Object.entries(_smsTemplates)) {
+    const ta = document.getElementById("tpl-" + k);
+    if (ta) {
+      t.msg = ta.value;
+      saved[k] = ta.value;
+    }
+  }
+  localStorage.setItem("sms_templates", JSON.stringify(saved));
+  alert("템플릿이 저장되었습니다.");
 }
 
 async function saveSmsConfig() {

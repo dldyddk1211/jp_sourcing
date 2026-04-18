@@ -241,6 +241,9 @@ def login():
             if cust_status == "pending":
                 error = "가입 승인 대기 중입니다. 관리자 승인 후 이용 가능합니다."
                 logger.info(f"승인 대기 로그인 시도: {username}")
+            elif cust_status == "suspended":
+                error = "계정이 사용 불가 상태입니다. 관리자에게 문의해주세요."
+                logger.info(f"사용불가 로그인 시도: {username}")
             elif cust_status == "rejected":
                 error = "가입이 거절되었습니다. 관리자에게 문의해주세요."
             elif expires_at and expires_at < datetime.now().strftime("%Y-%m-%d"):
@@ -1648,8 +1651,10 @@ def update_order(order_id):
                         if user and user["phone"]:
                             from aligo_sms import send_order_notification, load_config
                             load_config()
-                            product_name = order.get("product_name", "") or order.get("brand", "")
-                            order_number = order.get("order_number", "")
+                            product_name = (order["product_name"] or "") if "product_name" in order.keys() else ""
+                            if not product_name:
+                                product_name = (order["brand"] or "") if "brand" in order.keys() else ""
+                            order_number = (order["order_number"] or "") if "order_number" in order.keys() else ""
                             send_order_notification(user["phone"], order_number, new_status, product_name)
                             logger.info(f"[SMS] 주문 알림 발송: {username} ({user['phone']}) → {new_status}")
                 except Exception as e:
@@ -2369,7 +2374,7 @@ def change_member_status(username):
     data = request.json or {}
     new_status = data.get("status", "")
     period = data.get("period", "")  # free, 1m, 3m, 6m
-    if new_status not in ("approved", "rejected", "pending"):
+    if new_status not in ("approved", "rejected", "pending", "suspended"):
         return jsonify({"ok": False, "message": "잘못된 상태"})
 
     expires_at = ""
@@ -2391,27 +2396,33 @@ def change_member_status(username):
         conn.execute("UPDATE users SET status = ?, expires_at = ? WHERE username = ?",
                      (new_status, expires_at, username))
         conn.commit()
-        label = {"approved": "승인", "rejected": "거절", "pending": "대기"}[new_status]
+        label = {"approved": "승인", "rejected": "거절", "pending": "대기", "suspended": "사용불가"}.get(new_status, new_status)
         exp_msg = f" (만료: {expires_at})" if expires_at else " (무제한)"
         logger.info(f"회원 {label}: {username}{exp_msg}")
 
-        # 승인 시 자동 문자 발송
-        if new_status == "approved":
-            try:
-                user = conn.execute("SELECT phone, level FROM users WHERE username=?", (username,)).fetchone()
-                if user and user["phone"]:
-                    from aligo_sms import send_sms, load_config
-                    load_config()
-                    msg = (
+        # 상태 변경 시 자동 문자 발송
+        try:
+            user = conn.execute("SELECT phone, level FROM users WHERE username=?", (username,)).fetchone()
+            if user and user["phone"]:
+                from aligo_sms import send_sms, load_config
+                load_config()
+                sms_msgs = {
+                    "approved": (
                         f"[TheOne Vintage] 회원가입 승인이 완료되었습니다.\n"
                         f"현재 B2C 등급으로 승인되었습니다.\n"
                         f"B2B 승인을 위해서는 요청/문의 게시판을 통해 문의 부탁드리겠습니다.\n"
                         f"감사합니다.\nhttps://vintage.theone-biz.com"
-                    )
+                    ),
+                    "pending": "[TheOne Vintage] 회원 상태가 승인대기로 변경되었습니다.\n관리자 승인 후 이용 가능합니다.\n문의사항은 카카오톡으로 연락해주세요.",
+                    "suspended": "[TheOne Vintage] 계정이 사용불가 상태로 변경되었습니다.\n사유 확인은 관리자에게 문의해주세요.",
+                    "rejected": "[TheOne Vintage] 회원가입이 거절되었습니다.\n사유 확인은 관리자에게 문의해주세요.",
+                }
+                msg = sms_msgs.get(new_status)
+                if msg:
                     send_sms(user["phone"], msg, title="TheOne Vintage")
-                    logger.info(f"[SMS] 가입 승인 알림: {username} ({user['phone']})")
-            except Exception as e:
-                logger.warning(f"[SMS] 가입 승인 알림 실패: {e}")
+                    logger.info(f"[SMS] 회원 상태 알림: {username} → {label} ({user['phone']})")
+        except Exception as e:
+            logger.warning(f"[SMS] 회원 상태 알림 실패: {e}")
 
         return jsonify({"ok": True, "message": f"{username} → {label}{exp_msg}"})
     finally:
@@ -3611,6 +3622,15 @@ def _start_scheduler_once():
     )
     logger.info("💱 환율 갱신 등록 (매일 00:01)")
 
+    # ── 공통: 회원 만료 알림 (매일 09:00) ──
+    scheduler.add_job(
+        func=_check_member_expiry,
+        trigger="cron", hour=9, minute=0,
+        id="member_expiry_check", replace_existing=True,
+        name="회원 만료 알림 (09:00)",
+    )
+    logger.info("📅 회원 만료 알림 등록 (매일 09:00)")
+
     # ── 공통: Git 자동 풀 (매시 정각) ──
     scheduler.add_job(
         func=_auto_git_pull,
@@ -3776,6 +3796,60 @@ def _backup_config_files():
 def _backup_products_db():
     """[Windows] products.db 백업 → NAS/backups/products/"""
     _backup_db_file("products.db", "products", max_backups=30)
+
+
+def _check_member_expiry():
+    """회원 사용기간 만료 3일전/1일전 문자 알림"""
+    from datetime import timedelta
+    from user_db import _conn
+    conn = _conn()
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        d3 = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
+        d1 = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+
+        # 3일 후 만료 회원
+        rows_3d = conn.execute("""
+            SELECT username, name, phone, expires_at FROM users
+            WHERE status='approved' AND expires_at=? AND phone IS NOT NULL AND phone != ''
+        """, (d3,)).fetchall()
+
+        # 1일 후 만료 회원
+        rows_1d = conn.execute("""
+            SELECT username, name, phone, expires_at FROM users
+            WHERE status='approved' AND expires_at=? AND phone IS NOT NULL AND phone != ''
+        """, (d1,)).fetchall()
+
+        if not rows_3d and not rows_1d:
+            return
+
+        from aligo_sms import send_sms, load_config
+        load_config()
+
+        for r in rows_3d:
+            msg = (
+                f"[TheOne Vintage] {r['name'] or r['username']}님,\n"
+                f"사용기간이 3일 후({r['expires_at']}) 만료됩니다.\n"
+                f"연장을 원하시면 관리자에게 문의해주세요.\n"
+                f"감사합니다."
+            )
+            send_sms(r["phone"], msg, title="TheOne Vintage")
+            logger.info(f"[SMS] 만료 3일전 알림: {r['username']} ({r['phone']})")
+
+        for r in rows_1d:
+            msg = (
+                f"[TheOne Vintage] {r['name'] or r['username']}님,\n"
+                f"사용기간이 내일({r['expires_at']}) 만료됩니다.\n"
+                f"연장을 원하시면 관리자에게 문의해주세요.\n"
+                f"감사합니다."
+            )
+            send_sms(r["phone"], msg, title="TheOne Vintage")
+            logger.info(f"[SMS] 만료 1일전 알림: {r['username']} ({r['phone']})")
+
+    except Exception as e:
+        logger.warning(f"[SMS] 만료 알림 체크 실패: {e}")
+    finally:
+        conn.close()
 
 
 def _auto_git_pull():
