@@ -717,8 +717,8 @@ def add_to_cart():
         conn.commit()
         count = conn.execute("SELECT count(*) FROM cart WHERE username=?", (username,)).fetchone()[0]
 
-        # 백그라운드 품절 체크
-        t = threading.Thread(target=_check_product_soldout, args=(product_code,), daemon=True)
+        # 백그라운드 품절 체크 → cart 테이블에 저장
+        t = threading.Thread(target=_bg_check_single_cart_item, args=(product_code,), daemon=True)
         t.start()
 
         return jsonify({"ok": True, "count": count})
@@ -1449,8 +1449,89 @@ def _generate_order_number(conn=None, created_at=None):
     return f"ORD-{dt.strftime('%y%m%d')}-{dt.strftime('%H%M%S')}"
 
 
+@app.route(f"{URL_PREFIX}/shop/api/bulk-order", methods=["POST"])
+@login_required
+def bulk_order():
+    """장바구니 다중 주문 — 1건의 다중주문으로 저장"""
+    data = request.get_json() or {}
+    items = data.get("items", [])
+    if not items:
+        return jsonify({"ok": False, "message": "주문할 상품이 없습니다"})
+
+    username = session.get("username", "")
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        customer = conn.execute("SELECT name FROM users WHERE username=?", (username,)).fetchone()
+        customer_name = customer["name"] if customer else username
+    finally:
+        conn.close()
+
+    if len(items) == 1:
+        # 1건이면 일반 주문
+        it = items[0]
+        order_number = _save_order("order", username, customer_name, it["brand"], it["name"], it["code"], it["price"], it.get("price_jpy", 0))
+        # 장바구니에서 삭제
+        conn2 = user_conn()
+        conn2.execute("DELETE FROM cart WHERE id=?", (it.get("cart_id", 0),))
+        conn2.commit()
+        conn2.close()
+        return jsonify({"ok": True, "order_number": order_number})
+    else:
+        # 다중 주문 — 개별 주문 + 묶음 정보 저장
+        total_jpy = sum(it.get("price_jpy", 0) for it in items)
+        brands = list(set(it["brand"] for it in items))
+        brand_text = brands[0] if len(brands) == 1 else f"{brands[0]} 외 {len(brands)-1}"
+
+        # 개별 주문 저장
+        order_numbers = []
+        for it in items:
+            on = _save_order("order", username, customer_name, it["brand"], it["name"], it["code"], it["price"], it.get("price_jpy", 0))
+            order_numbers.append(on)
+
+        # 다중주문 묶음 저장
+        _init_orders_db()
+        conn3 = user_conn()
+        try:
+            batch_number = _generate_order_number(conn3)
+            detail_json = json.dumps([{"order_number": on, "brand": it["brand"], "name": it["name"], "code": it["code"], "price": it["price"]} for on, it in zip(order_numbers, items)], ensure_ascii=False)
+            conn3.execute("""INSERT INTO orders (type, username, customer_name, brand, product_name, product_code, price, price_jpy, order_number, memo)
+                            VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                         ("order", username, customer_name, brand_text, f"다중주문 ({len(items)}건)", ",".join(order_numbers), f"총 {len(items)}건", total_jpy, batch_number, detail_json))
+            conn3.commit()
+        finally:
+            conn3.close()
+
+        # 장바구니에서 삭제
+        conn4 = user_conn()
+        for it in items:
+            conn4.execute("DELETE FROM cart WHERE id=?", (it.get("cart_id", 0),))
+        conn4.commit()
+        conn4.close()
+
+        return jsonify({"ok": True, "order_number": batch_number, "count": len(items)})
+
+
 def _save_order(ntype, username, customer_name, brand, product_name, product_code, price, price_jpy):
     _init_orders_db()
+    # product_code가 고유번호(No.S-)가 아니면 자동 변환
+    if product_code and not product_code.startswith("No."):
+        try:
+            from product_db import _conn as p_conn, _generate_internal_code
+            pc = p_conn()
+            row = pc.execute("SELECT id, internal_code FROM products WHERE product_code=? LIMIT 1", (product_code,)).fetchone()
+            if row:
+                if row["internal_code"]:
+                    product_code = row["internal_code"]
+                else:
+                    new_code = _generate_internal_code(pc, "2ndstreet")
+                    pc.execute("UPDATE products SET internal_code=? WHERE id=?", (new_code, row["id"]))
+                    pc.commit()
+                    product_code = new_code
+            pc.close()
+        except Exception:
+            pass
+
     from user_db import _conn as user_conn
     conn = user_conn()
     try:
@@ -1520,6 +1601,72 @@ def _check_product_soldout(product_code):
             return None
     finally:
         conn.close()
+
+
+def _bg_check_single_cart_item(product_code):
+    """백그라운드: 장바구니 단건 품절 체크 → cart 테이블에 저장 (상품DB 미수정)"""
+    import asyncio
+    from product_db import _conn as p_conn
+    from user_db import _conn as u_conn
+
+    async def _run():
+        from playwright.async_api import async_playwright
+        pc = p_conn()
+        r = pc.execute("SELECT link FROM products WHERE internal_code=? OR product_code=? LIMIT 1", (product_code, product_code)).fetchone()
+        pc.close()
+        if not r or not r["link"]:
+            return
+
+        pw = await async_playwright().start()
+        browser = await pw.chromium.launch(
+            headless=False,
+            args=["--disable-blink-features=AutomationControlled", "--lang=ja", "--disable-translate"],
+        )
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            locale="ja-JP", timezone_id="Asia/Tokyo", viewport={"width": 1280, "height": 900},
+        )
+        await context.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>false});")
+        page = await context.new_page()
+        try:
+            resp = await page.goto(r["link"], wait_until="domcontentloaded", timeout=20000)
+            await asyncio.sleep(2)
+            is_sold = 0
+            if resp and resp.status == 404:
+                is_sold = 1
+            elif resp and resp.status not in (403, 429, 503):
+                result = await page.evaluate("""() => {
+                    const body = document.body.innerText || '';
+                    if (body.includes('※申し訳ございません。この商品は売切れ') ||
+                        body.includes('※申し訳ございません。この商品は売り切れ') ||
+                        body.includes('この商品は現在販売しておりません')) return 'sold';
+                    const price = document.querySelector('[itemprop="price"], .priceMain, .priceNum');
+                    if (!price) return 'unknown';
+                    let parent = price.parentElement;
+                    for (let i = 0; i < 4 && parent; i++) {
+                        if ((parent.innerText || '').includes('SOLD OUT')) return 'sold';
+                        parent = parent.parentElement;
+                    }
+                    return 'ok';
+                }""")
+                is_sold = 1 if result == "sold" else 0
+
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            uc = u_conn()
+            uc.execute("UPDATE cart SET is_sold_out=?, checked_at=? WHERE product_code=?", (is_sold, now, product_code))
+            uc.commit()
+            uc.close()
+            logger.info(f"[장바구니 단건체크] {product_code} → {'품절' if is_sold else '주문가능'}")
+        except Exception as e:
+            logger.warning(f"[장바구니 단건체크] {product_code} 오류: {e}")
+        finally:
+            await browser.close()
+            await pw.stop()
+
+    try:
+        asyncio.run(_run())
+    except Exception as e:
+        logger.warning(f"[장바구니 단건체크] 실행 오류: {e}")
 
 
 _cart_check_running = False
@@ -1824,8 +1971,21 @@ def get_related_orders(order_id):
         memo = order["memo"] or ""
         product_code = order["product_code"] or ""
         related = []
+        # 0) 다중주문 memo에 JSON 저장된 경우
+        if memo and memo.startswith("["):
+            try:
+                detail = json.loads(memo)
+                # product_code에 개별 주문번호가 쉼표로 저장됨
+                order_nums = [d.strip() for d in product_code.split(",") if d.strip().startswith("ORD")]
+                if order_nums:
+                    placeholders = ",".join(["?"] * len(order_nums))
+                    rows = conn.execute(f"SELECT * FROM orders WHERE order_number IN ({placeholders}) ORDER BY created_at", order_nums).fetchall()
+                    related = [{c: r[c] for c in r.keys()} for r in rows]
+            except Exception:
+                pass
+
         # 1) product_code에 개별 주문 ID들이 저장된 경우 (예: "18,19,20,21")
-        if product_code and all(p.strip().isdigit() for p in product_code.split(",") if p.strip()):
+        if not related and product_code and all(p.strip().isdigit() for p in product_code.split(",") if p.strip()):
             ids = [int(p.strip()) for p in product_code.split(",") if p.strip()]
             if ids:
                 placeholders = ",".join(["?"] * len(ids))
@@ -1859,6 +2019,30 @@ def get_related_orders(order_id):
                 except Exception:
                     o["product_img"] = ""
         return jsonify({"ok": True, "related": related, "count": len(related)})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/shop/api/order-batch/<int:order_id>")
+@login_required
+def get_order_batch(order_id):
+    """다중주문 세부 내역 (고객용)"""
+    username = session.get("username", "")
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        order = conn.execute("SELECT * FROM orders WHERE id=? AND username=?", (order_id, username)).fetchone()
+        if not order:
+            return jsonify({"ok": False})
+        product_code = order["product_code"] or ""
+        order_nums = [d.strip() for d in product_code.split(",") if d.strip().startswith("ORD")]
+        if not order_nums:
+            return jsonify({"ok": False, "items": []})
+        placeholders = ",".join(["?"] * len(order_nums))
+        rows = conn.execute(f"SELECT * FROM orders WHERE order_number IN ({placeholders}) AND username=? ORDER BY created_at",
+                           order_nums + [username]).fetchall()
+        items = [{c: r[c] for c in r.keys()} for r in rows]
+        return jsonify({"ok": True, "items": items})
     finally:
         conn.close()
 

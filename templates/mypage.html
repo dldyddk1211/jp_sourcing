@@ -216,6 +216,7 @@
           <div style="display:flex;gap:8px;align-items:center;">
             <span style="font-size:0.78rem;color:var(--muted);">선택: <b id="order-pay-cnt" style="color:var(--accent);">0</b>건 <b id="order-pay-total" style="color:var(--green);margin-left:4px;">0원</b></span>
             <button onclick="paySelectedOrders()" class="btn btn-accent" style="padding:8px 18px;font-size:0.82rem;white-space:nowrap;">선택 결제</button>
+            <button onclick="bulkCancelMyOrders()" class="btn btn-red" style="padding:8px 14px;font-size:0.78rem;white-space:nowrap;">선택 취소</button>
           </div>
         </div>
         <!-- Desktop table -->
@@ -233,11 +234,17 @@
     <!-- 장바구니 -->
     <div class="tab-content" id="tc-cart">
       <div class="panel">
-        <div class="section-title">장바구니</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div class="section-title" style="margin-bottom:0;">장바구니</div>
+          <div style="display:flex;gap:6px;">
+            <button onclick="bulkOrderMyCart()" class="btn btn-accent" style="padding:5px 12px;font-size:0.72rem;">선택 주문</button>
+            <button onclick="bulkDeleteMyCart()" class="btn btn-red" style="padding:5px 12px;font-size:0.72rem;">선택 삭제</button>
+          </div>
+        </div>
         <!-- Desktop table -->
         <table class="cart-table-desktop">
-          <thead><tr><th></th><th>주문가능</th><th>상품</th><th>브랜드</th><th>고유번호</th><th>가격</th><th></th></tr></thead>
-          <tbody id="my-cart-body"><tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr></tbody>
+          <thead><tr><th style="width:30px;"><input type="checkbox" onchange="document.querySelectorAll('.my-cart-chk').forEach(c=>c.checked=this.checked)"></th><th></th><th>주문가능</th><th>상품</th><th>브랜드</th><th>고유번호</th><th>가격</th><th></th></tr></thead>
+          <tbody id="my-cart-body"><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr></tbody>
         </table>
         <!-- Mobile cards -->
         <div class="cart-cards-mobile" id="my-cart-mobile">
@@ -730,6 +737,55 @@ function mySearchPostcode() {
 }
 
 // 주문내역
+async function toggleMyBatchDetail(orderId, el) {
+  const tr = el.closest("tr");
+  const existing = tr.nextElementSibling;
+  if (existing && existing.classList.contains("batch-detail-row")) {
+    existing.remove();
+    el.textContent = el.textContent.replace("▲", "▼");
+    return;
+  }
+  el.textContent = el.textContent.replace("▼", "▲");
+  const detailRow = document.createElement("tr");
+  detailRow.className = "batch-detail-row";
+  detailRow.innerHTML = `<td colspan="8" style="padding:4px 20px 10px 40px;background:rgba(212,165,74,0.03);"><div style="color:var(--muted);font-size:0.75rem;">로딩 중...</div></td>`;
+  tr.after(detailRow);
+  try {
+    const res = await fetch(PREFIX + "/shop/api/order-batch/" + orderId);
+    const d = await res.json();
+    if (!d.ok || !d.items || !d.items.length) {
+      detailRow.querySelector("div").textContent = "세부 주문 없음";
+      return;
+    }
+    detailRow.querySelector("td").innerHTML = `<div style="padding:6px 0;">
+      ${d.items.map((it,i) => {
+        const [sl] = statusMap[it.status] || [it.status];
+        return `<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(42,45,58,0.3);font-size:0.78rem;">
+          <span style="color:var(--dim);width:16px;">${i+1}</span>
+          <span style="font-weight:600;min-width:70px;">${it.brand||''}</span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.product_name||''}</span>
+          <span style="font-weight:700;color:var(--accent);">${it.price||''}</span>
+          <span style="font-size:0.72rem;font-weight:600;">${sl}</span>
+        </div>`;
+      }).join("")}
+    </div>`;
+  } catch(e) { detailRow.querySelector("div").innerHTML = `<span style="color:var(--red);">로드 실패</span>`; }
+}
+
+async function bulkCancelMyOrders() {
+  const checked = [...document.querySelectorAll('.my-order-chk:checked')];
+  if (!checked.length) { alert("취소할 주문을 선택해주세요"); return; }
+  if (!confirm(`${checked.length}건의 주문을 취소하시겠습니까?`)) return;
+  for (const c of checked) {
+    await fetch(PREFIX + "/shop/api/cancel-order", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({order_id: parseInt(c.dataset.id)})
+    }).catch(()=>{});
+  }
+  alert(`${checked.length}건 취소 완료`);
+  loadMyOrders();
+}
+
 async function loadMyOrders() {
   const tbody = document.getElementById("my-orders-body");
   const mobileEl = document.getElementById("my-orders-mobile");
@@ -753,7 +809,7 @@ async function loadMyOrders() {
         <td><a href="#" onclick="event.preventDefault();openOrderDetail('${onum}');" style="color:var(--accent);font-family:monospace;font-size:0.72rem;text-decoration:underline;text-underline-offset:3px;">${onum}</a></td>
         <td style="font-size:0.78rem;">${(o.created_at||'').slice(5,16)}</td>
         <td>${o.type==='order'?'🛒':'💬'}</td>
-        <td>${o.product_code ? `<a href="#" onclick="event.preventDefault();openCartDetail('${o.product_code.replace(/'/g,"\\'")}');" style="color:var(--text);text-decoration:underline;text-underline-offset:3px;">${o.brand} ${o.product_name||''}</a>` : `${o.brand} ${o.product_name||''}`}</td>
+        <td>${(o.product_name||'').includes('다중주문') || (o.product_name||'').includes('일괄결제') ? `<a href="#" onclick="event.preventDefault();toggleMyBatchDetail(${o.id},this)" style="color:var(--yellow);text-decoration:underline;cursor:pointer;">${o.product_name} ▼</a>` : (o.product_code ? `<a href="#" onclick="event.preventDefault();openCartDetail('${o.product_code.replace(/'/g,"\\'")}');" style="color:var(--text);text-decoration:underline;text-underline-offset:3px;">${o.brand} ${o.product_name||''}</a>` : `${o.brand} ${o.product_name||''}`)}</td>
         <td style="font-weight:700;color:var(--accent);">${o.price||''}</td>
         <td class="${sc}" style="font-weight:600;">${sl}</td>
         <td>${canCancel ? `<button onclick="cancelMyOrder(${o.id})" style="padding:4px 10px;font-size:0.72rem;background:var(--red);color:#fff;border:none;border-radius:4px;cursor:pointer;">취소</button>` : ''}</td>
@@ -802,12 +858,13 @@ async function loadMyCart() {
     const d = await res.json();
     document.getElementById("mp-cart-cnt").textContent = d.count > 0 ? `(${d.count})` : "";
     if (!d.items || !d.items.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px;">장바구니가 비었습니다</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">장바구니가 비었습니다</td></tr>';
       mobileEl.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px;font-size:0.82rem;">장바구니가 비었습니다</div>';
       return;
     }
     // Desktop table
     tbody.innerHTML = d.items.map(c => `<tr style="${c.sold_out?'opacity:0.5;':''}">
+      <td style="text-align:center;"><input type="checkbox" class="my-cart-chk" data-id="${c.id}"></td>
       <td><img class="cart-img" src="${c.img_url||''}" onerror="this.style.display='none'" style="cursor:pointer;" onclick="openCartDetail('${(c.product_code||'').replace(/'/g,"\\'")}')"></td>
       <td style="text-align:center;font-size:0.72rem;font-weight:700;color:${c.order_status==='품절'?'var(--red)':c.order_status==='주문가능'?'var(--green)':'var(--muted)'};">${c.order_status||'확인중'}</td>
       <td><a href="#" onclick="event.preventDefault();openCartDetail('${(c.product_code||'').replace(/'/g,"\\'")}');" style="color:var(--text);text-decoration:underline;text-underline-offset:3px;cursor:pointer;">${c.product_name||''}</a></td>
@@ -815,7 +872,7 @@ async function loadMyCart() {
       <td style="font-family:monospace;font-size:0.75rem;">${c.product_code||''}</td>
       <td style="font-weight:700;color:var(--accent);">${c.price||''}</td>
       <td style="white-space:nowrap;">
-        <button onclick="orderFromCart(${c.id},'${(c.brand||'').replace(/'/g,"\\'")}','${(c.product_name||'').replace(/'/g,"\\'")}','${(c.price||'').replace(/'/g,"\\'")}',${c.price_jpy||0},'${(c.product_code||'').replace(/'/g,"\\'")}');" class="btn btn-accent" style="padding:4px 10px;font-size:0.72rem;margin-right:4px;">주문</button>
+        <button onclick="orderFromCart(${c.id},'${(c.brand||'').replace(/'/g,"\\'")}','${(c.product_name||'').replace(/'/g,"\\'")}','${(c.price||'').replace(/'/g,"\\'")}',${c.price_jpy||0},'${(c.product_code||'').replace(/'/g,"\\'")}',${c.sold_out?1:0});" class="btn btn-accent" style="padding:4px 10px;font-size:0.72rem;margin-right:4px;${c.sold_out?'opacity:0.4;':''}">주문</button>
         <button onclick="removeCart(${c.id})" class="btn btn-red" style="padding:4px 10px;font-size:0.72rem;">삭제</button>
       </td>
     </tr>`).join("");
@@ -830,7 +887,7 @@ async function loadMyCart() {
         <div class="price">${c.price||''}</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0;">
-        <button onclick="orderFromCart(${c.id},'${(c.brand||'').replace(/'/g,"\\'")}','${(c.product_name||'').replace(/'/g,"\\'")}','${(c.price||'').replace(/'/g,"\\'")}',${c.price_jpy||0},'${(c.product_code||'').replace(/'/g,"\\'")}');" style="padding:6px 12px;font-size:0.72rem;background:var(--accent);color:#000;border:none;border-radius:6px;cursor:pointer;white-space:nowrap;font-weight:700;">주문</button>
+        <button onclick="orderFromCart(${c.id},'${(c.brand||'').replace(/'/g,"\\'")}','${(c.product_name||'').replace(/'/g,"\\'")}','${(c.price||'').replace(/'/g,"\\'")}',${c.price_jpy||0},'${(c.product_code||'').replace(/'/g,"\\'")}',${c.sold_out?1:0});" style="padding:6px 12px;font-size:0.72rem;background:var(--accent);color:#000;border:none;border-radius:6px;cursor:pointer;white-space:nowrap;font-weight:700;${c.sold_out?'opacity:0.4;':''}">주문</button>
         <button onclick="removeCart(${c.id})" style="padding:6px 12px;font-size:0.72rem;background:var(--red);color:#fff;border:none;border-radius:6px;cursor:pointer;white-space:nowrap;">삭제</button>
       </div>
     </div>`).join("");
@@ -840,12 +897,57 @@ async function loadMyCart() {
   }
 }
 
+async function bulkOrderMyCart() {
+  const checked = [...document.querySelectorAll('.my-cart-chk:checked')];
+  if (!checked.length) { alert("주문할 상품을 선택해주세요"); return; }
+  const res = await fetch(PREFIX + "/shop/api/cart");
+  const d = await res.json();
+  const items = d.items || [];
+  const selectedIds = checked.map(c => parseInt(c.dataset.id));
+  const selected = items.filter(c => selectedIds.includes(c.id));
+  const soldOuts = selected.filter(c => c.sold_out);
+  if (soldOuts.length) {
+    alert(`품절 상품 ${soldOuts.length}개가 포함되어 있습니다.\n품절 상품을 제외하고 주문해주세요.`);
+    return;
+  }
+  if (!confirm(`${selected.length}개 상품을 일괄 주문하시겠습니까?`)) return;
+  try {
+    const r = await fetch(PREFIX + "/shop/api/bulk-order", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({items: selected.map(c => ({
+        brand: c.brand, name: c.product_name, code: c.product_code,
+        price: c.price, price_jpy: c.price_jpy, cart_id: c.id
+      }))})
+    });
+    const result = await r.json();
+    if (result.ok) {
+      alert(`${selected.length}개 상품 주문이 접수되었습니다.\n주문내역에서 결제를 진행해주세요.`);
+      loadMyCart();
+      loadMyOrders();
+    } else { alert(result.message || "주문 실패"); }
+  } catch(e) { alert("주문 오류: " + e); }
+}
+
+async function bulkDeleteMyCart() {
+  const checked = [...document.querySelectorAll('.my-cart-chk:checked')];
+  if (!checked.length) { alert("삭제할 상품을 선택해주세요"); return; }
+  if (!confirm(`${checked.length}개 상품을 장바구니에서 삭제하시겠습니까?`)) return;
+  for (const c of checked) {
+    await fetch(PREFIX + "/shop/api/cart/" + c.dataset.id, {method:"DELETE"}).catch(()=>{});
+  }
+  loadMyCart();
+}
+
 async function removeCart(id) {
   await fetch(PREFIX + "/shop/api/cart/" + id, {method: "DELETE"});
   loadMyCart();
 }
 
-async function orderFromCart(cartId, brand, name, price, priceJpy, code) {
+async function orderFromCart(cartId, brand, name, price, priceJpy, code, isSoldOut) {
+  if (isSoldOut) {
+    alert("품절 상품입니다.\n현지 사이트에서 판매가 종료된 상품으로 주문이 불가합니다.");
+    return;
+  }
   try {
     const res = await fetch(PREFIX + "/shop/api/notify", {
       method: "POST", headers: {"Content-Type":"application/json"},
