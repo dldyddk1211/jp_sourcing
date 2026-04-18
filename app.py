@@ -2912,6 +2912,16 @@ def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None, delay_
             for r in rows:
                 p = {c: r[c] for c in r.keys()}
                 p["source_type"] = "vintage"
+                # internal_code 없으면 자동 생성
+                if not p.get("internal_code"):
+                    try:
+                        from product_db import _generate_internal_code
+                        new_code = _generate_internal_code(p.get("site_id", "2ndstreet"))
+                        conn.execute("UPDATE products SET internal_code=? WHERE id=?", (new_code, p["id"]))
+                        conn.commit()
+                        p["internal_code"] = new_code
+                    except Exception:
+                        pass
                 p["product_code"] = p.get("internal_code") or p.get("product_code", "")
                 p["name_ko"] = p.get("name_ko") or p.get("name", "")
                 try:

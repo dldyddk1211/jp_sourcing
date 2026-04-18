@@ -422,21 +422,13 @@
         <span class="nav-icon">&#x1f4ac;</span>
         <span>고객 요청/문의</span>
       </div>
-      <div class="nav-item" data-page="vintage" onclick="showPage('vintage')">
-        <span class="nav-icon">&#x1f50d;</span>
-        <span>수집</span>
-      </div>
       <div class="nav-item" data-page="scrape-tasks" onclick="showPage('scrape-tasks');loadScrapeTasks()">
         <span class="nav-icon">&#x1f4cb;</span>
         <span>수집 작업리스트</span>
       </div>
-      <div class="nav-item" data-page="vt-cafe-upload" onclick="showPage('vt-cafe-upload');loadVtCafeProducts();loadFreeBoardList();loadFbSchedule()">
-        <span class="nav-icon">&#x2615;</span>
-        <span>네이버 카페 업로드</span>
-      </div>
-      <div class="nav-item" data-page="vt-blog-upload" onclick="showPage('vt-blog-upload');loadVtBlogProducts()">
-        <span class="nav-icon">&#x1f4dd;</span>
-        <span>네이버 블로그 업로드</span>
+      <div class="nav-item" data-page="sns-upload" onclick="showPage('sns-upload');initSnsUpload()">
+        <span class="nav-icon">&#x1f4e2;</span>
+        <span>SNS 업로드</span>
       </div>
       <div class="nav-item" data-page="nas-sync" onclick="showPage('nas-sync');loadNasStatus()">
         <span class="nav-icon">&#x1f4c2;</span>
@@ -1815,8 +1807,21 @@
       </div>
     </div>
 
-    <!-- ═══ 빈티지 카페 업로드 ═══ -->
-    <div class="page-section" id="page-vt-cafe-upload">
+    <!-- ═══ SNS 업로드 (통합) ═══ -->
+    <div class="page-section" id="page-sns-upload">
+      <!-- 탭 헤더 -->
+      <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:16px;">
+        <div class="sns-tab active" data-tab="cafe" onclick="switchSnsTab('cafe')" style="padding:10px 20px;font-size:0.85rem;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;">&#x2615; 네이버 카페</div>
+        <div class="sns-tab" data-tab="blog" onclick="switchSnsTab('blog')" style="padding:10px 20px;font-size:0.85rem;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;">&#x1f4dd; 네이버 블로그</div>
+        <div class="sns-tab" data-tab="insta" onclick="switchSnsTab('insta')" style="padding:10px 20px;font-size:0.85rem;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;">&#x1f4f7; 인스타그램</div>
+        <div class="sns-tab" data-tab="threads" onclick="switchSnsTab('threads')" style="padding:10px 20px;font-size:0.85rem;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;">&#x1f9f5; 스레드</div>
+      </div>
+
+      <!-- 카페 탭 -->
+      <div class="sns-tab-content active" id="sns-tab-cafe">
+
+    <!-- 기존 빈티지 카페 업로드 내용 -->
+    <div id="page-vt-cafe-upload">
       <div class="panel">
         <div class="panel-title">
           <span>&#x2615; 빈티지 → 네이버 카페 업로드</span>
@@ -1867,7 +1872,7 @@
 
         <!-- 필터 -->
         <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
-          <input type="text" id="vt-cafe-search" placeholder="상품명/브랜드 검색" oninput="filterVtCafe()"
+          <input type="text" id="vt-cafe-search" placeholder="상품명 / 브랜드 / 고유번호(No.S-...) 검색" oninput="filterVtCafe()"
             style="flex:1;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:0.82rem;">
           <select id="vt-cafe-status-filter" onchange="filterVtCafe()" style="background:var(--card);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:0.78rem;">
             <option value="">전체 상태</option>
@@ -1888,13 +1893,14 @@
                 <th>이미지</th>
                 <th>브랜드</th>
                 <th>상품명</th>
+                <th>고유번호</th>
                 <th>가격(¥)</th>
                 <th>판매가</th>
                 <th>상태</th>
               </tr>
             </thead>
             <tbody id="vt-cafe-tbody">
-              <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr>
+              <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr>
             </tbody>
           </table>
         </div>
@@ -2012,8 +2018,11 @@
       </div>
     </div>
 
-    <!-- ═══ 빈티지 블로그 업로드 ═══ -->
-    <div class="page-section" id="page-vt-blog-upload">
+      </div><!-- end sns-tab-cafe -->
+
+      <!-- 블로그 탭 -->
+      <div class="sns-tab-content" id="sns-tab-blog" style="display:none;">
+    <div id="page-vt-blog-upload">
       <div class="panel">
         <div class="panel-title">
           <span>&#x1f4dd; 빈티지 → 네이버 블로그 업로드</span>
@@ -2106,6 +2115,34 @@
         <div id="vt-blog-log" class="log-box" style="height:300px;overflow-y:auto;background:#0a0b0f;border:1px solid var(--border);border-radius:8px;padding:10px;font-family:monospace;font-size:0.75rem;line-height:1.8;color:var(--muted);"></div>
       </div>
     </div>
+
+      </div><!-- end sns-tab-blog -->
+
+      <!-- 인스타그램 탭 -->
+      <div class="sns-tab-content" id="sns-tab-insta" style="display:none;">
+        <div class="panel">
+          <div class="panel-title"><span>&#x1f4f7; 인스타그램</span></div>
+          <div style="text-align:center;padding:40px 20px;color:var(--muted);">
+            <div style="font-size:2rem;margin-bottom:12px;">&#x1f4f7;</div>
+            <div style="font-size:0.9rem;color:var(--text);margin-bottom:6px;">인스타그램 연동 준비 중</div>
+            <div style="font-size:0.78rem;">추후 인스타그램 자동 업로드 기능이 추가됩니다.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 스레드 탭 -->
+      <div class="sns-tab-content" id="sns-tab-threads" style="display:none;">
+        <div class="panel">
+          <div class="panel-title"><span>&#x1f9f5; 스레드</span></div>
+          <div style="text-align:center;padding:40px 20px;color:var(--muted);">
+            <div style="font-size:2rem;margin-bottom:12px;">&#x1f9f5;</div>
+            <div style="font-size:0.9rem;color:var(--text);margin-bottom:6px;">스레드 연동 준비 중</div>
+            <div style="font-size:0.78rem;">추후 스레드 자동 업로드 기능이 추가됩니다.</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end page-sns-upload -->
 
     <!-- ═══ NAS 상품 동기화 ═══ -->
     <div class="page-section" id="page-nas-sync">
@@ -3068,6 +3105,7 @@ const pageTitles = {
   "cafe-schedule": "Sport \u203A \u23F0 \uC790\uB3D9 \uC2A4\uCF00\uC904",
   "vt-cafe-upload": "Vintage \u203A \u2615 \uB124\uC774\uBC84\uCE74\uD398 \uC5C5\uB85C\uB4DC",
   "vt-blog-upload": "Vintage \u203A \uD83D\uDCDD \uB124\uC774\uBC84\uBE14\uB85C\uADF8 \uC5C5\uB85C\uB4DC",
+  "sns-upload": "Vintage \u203A \uD83D\uDCE2 SNS \uC5C5\uB85C\uB4DC",
   "nas-sync": "Vintage \u203A \uD83D\uDCC2 \uC0C1\uD488 \uB9AC\uC2A4\uD2B8 (NAS)",
   "db-update": "Vintage \u203A \uD83D\uDD04 \uC0C1\uD488DB \uC5C5\uB370\uC774\uD2B8",
   "kavinet": "\uD83C\uDFAF Kavinet \u203A \uB300\uC2DC\uBCF4\uB4DC",
@@ -6926,6 +6964,26 @@ loadPriceSettings();
 loadVtPriceSettings();
 loadBizInfo();
 
+// ── SNS 업로드 탭 전환 ──
+function switchSnsTab(tab) {
+  document.querySelectorAll(".sns-tab").forEach(el => {
+    el.classList.toggle("active", el.dataset.tab === tab);
+    el.style.color = el.dataset.tab === tab ? "var(--accent)" : "var(--muted)";
+    el.style.borderBottomColor = el.dataset.tab === tab ? "var(--accent)" : "transparent";
+    el.style.fontWeight = el.dataset.tab === tab ? "700" : "400";
+  });
+  document.querySelectorAll(".sns-tab-content").forEach(el => el.style.display = "none");
+  const target = document.getElementById("sns-tab-" + tab);
+  if (target) target.style.display = "block";
+  // 탭별 데이터 로드
+  if (tab === "cafe") { loadVtCafeProducts(); loadFreeBoardList(); loadFbSchedule(); }
+  if (tab === "blog") { loadVtBlogProducts(); }
+}
+
+function initSnsUpload() {
+  switchSnsTab("cafe");
+}
+
 // ── 빈티지 카페 업로드 ──
 let vtCafeProducts = [];
 let vtCafePage = 1;
@@ -6997,7 +7055,7 @@ function getFilteredVtCafe() {
       if (pRank > gradeThreshold) return false;  // 선택한 등급보다 낮으면 제외
     }
     if (cat && !(p.name||"").includes(cat)) return false;
-    if (search && !(p.name||"").toLowerCase().includes(search) && !(p.brand||"").toLowerCase().includes(search)) return false;
+    if (search && !(p.name||"").toLowerCase().includes(search) && !(p.brand||"").toLowerCase().includes(search) && !(p.product_code||"").toLowerCase().includes(search)) return false;
     return true;
   });
 }
@@ -7016,6 +7074,7 @@ function renderVtCafeTable() {
       <td><img src="${p.img_url||''}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;" onerror="this.style.display='none'"></td>
       <td style="font-weight:600;">${p.brand||''}</td>
       <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name||''}</td>
+      <td style="font-family:monospace;font-size:0.7rem;color:var(--muted);">${p.product_code||''}</td>
       <td>¥${(p.price_jpy||0).toLocaleString()}</td>
       <td style="color:var(--accent);font-weight:700;">${p.price_krw ? p.price_krw.toLocaleString()+'원' : ''}</td>
       <td style="color:${statusColors[p.cafe_status]||'var(--muted)'};font-weight:600;">${p.cafe_status||'대기'}</td>
@@ -8503,7 +8562,7 @@ function getFilteredVtBlog() {
   return vtBlogProducts.filter(p => {
     if (brand && p.brand !== brand) return false;
     if (grade) { const r = gradeRank[p.condition_grade] ?? 99; if (r > threshold) return false; }
-    if (search && !(p.name||"").toLowerCase().includes(search) && !(p.brand||"").toLowerCase().includes(search)) return false;
+    if (search && !(p.name||"").toLowerCase().includes(search) && !(p.brand||"").toLowerCase().includes(search) && !(p.product_code||"").toLowerCase().includes(search)) return false;
     return true;
   });
 }
