@@ -3,7 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TheOne Vintage — Japanese Luxury Vintage</title>
+  <meta name="naver-site-verification" content="8007b69bd935ed5ddd23959cce6143936418f07a" />
+  <meta name="description" content="일본 명품 빈티지 구매대행 TheOne Vintage. 루이비통, 프라다, 샤넬 등 일본 현지 직소싱 중고 명품 전문.">
+  <meta name="robots" content="index, follow">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="TheOne Vintage | 일본 명품 빈티지 구매대행">
+  <meta property="og:description" content="일본 현지 직소싱 중고 명품 전문. 실시간 환율 적용, 사업자 회원 특별 할인.">
+  <meta property="og:image" content="https://vintage.theone-biz.com/static/og_image.png">
+  <meta property="og:url" content="https://vintage.theone-biz.com/">
+  <meta property="og:site_name" content="TheOne Vintage">
+  <meta property="og:locale" content="ko_KR">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="TheOne Vintage | 일본 명품 빈티지 구매대행">
+  <meta name="twitter:description" content="일본 현지 직소싱 중고 명품 전문. 실시간 환율 적용, 사업자 회원 특별 할인.">
+  <meta name="twitter:image" content="https://vintage.theone-biz.com/static/og_image.png">
+  <meta name="twitter:domain" content="TheOne Vintage">
+
+  <title>TheOne Vintage | 일본 명품 빈티지 구매대행</title>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=Playfair+Display:wght@400;500;600;700&family=Cormorant+Garamond:wght@300;400;500;600&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -121,6 +141,7 @@
     }
     .filter-chk-item:hover { background:rgba(212,165,74,0.06); color:var(--text); }
     .filter-chk-item input[type="checkbox"] { accent-color:var(--accent); }
+    .filter-chk-item.selected { color:var(--accent); font-weight:600; background:rgba(212,165,74,0.1); }
 
     /* 정렬 */
     .sort-select {
@@ -1284,6 +1305,7 @@ async function loadShop(page = 1) {
     renderBrandList(d.brands || []);
     renderBagTypeList(d.bag_types || []);
     renderColorList(d.colors || []);
+    refreshDropdownHighlight();
     // 히어로 + 브랜드 스트립 (첫 로드 시)
     if (page === 1) { fillBrandStrip(d.brands || []); }
 
@@ -1363,10 +1385,12 @@ function renderBrandList(brands) {
   const mainBrands = brands.filter(b => b.count > 30);
   const etcBrands = brands.filter(b => b.count <= 30);
   const etcTotal = etcBrands.reduce((s, b) => s + b.count, 0);
+  const selected = filters.brand ? filters.brand.split(",") : [];
+  const hasEtcSelected = etcBrands.some(b => selected.includes(b.name));
 
   let html = `<li class="filter-item ${!filters.brand?'active':''}" data-val="" onclick="selectFilter('brand',this)"><span>전체</span></li>`;
   mainBrands.forEach(b => {
-    html += `<li class="filter-item ${filters.brand===b.name?'active':''}" data-val="${b.name}" onclick="selectFilter('brand',this)">
+    html += `<li class="filter-item ${selected.includes(b.name)?'active':''}" data-val="${b.name}" onclick="selectFilter('brand',this)">
       <span>${b.name}</span><span class="filter-count">${b.count}</span>
     </li>`;
   });
@@ -1374,9 +1398,9 @@ function renderBrandList(brands) {
     html += `<li class="filter-item" style="color:var(--dim);cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
       <span>ETC (${etcBrands.length}개 브랜드)</span><span class="filter-count">${etcTotal}</span>
     </li>`;
-    html += `<div style="display:none;">`;
+    html += `<div style="display:${hasEtcSelected?'block':'none'};">`;
     etcBrands.forEach(b => {
-      html += `<li class="filter-item ${filters.brand===b.name?'active':''}" data-val="${b.name}" onclick="selectFilter('brand',this)" style="padding-left:18px;font-size:0.78rem;">
+      html += `<li class="filter-item ${selected.includes(b.name)?'active':''}" data-val="${b.name}" onclick="selectFilter('brand',this)" style="padding-left:18px;font-size:0.78rem;">
         <span>${b.name}</span><span class="filter-count">${b.count}</span>
       </li>`;
     });
@@ -1391,7 +1415,8 @@ function renderBagTypeList(types) {
   const selected = filters.bag_type ? filters.bag_type.split(",") : [];
   let html = `<label class="filter-chk-item"><input type="checkbox" value="" onchange="toggleDropFilter('bag_type',this)" ${!selected.length?'checked':''}> 전체</label>`;
   types.forEach(t => {
-    html += `<label class="filter-chk-item"><input type="checkbox" value="${t.name}" onchange="toggleDropFilter('bag_type',this)" ${selected.includes(t.name)?'checked':''}> ${t.name} (${t.count})</label>`;
+    const sel = selected.includes(t.name);
+    html += `<label class="filter-chk-item${sel?' selected':''}"><input type="checkbox" value="${t.name}" onchange="toggleDropFilter('bag_type',this)" ${sel?'checked':''}> ${t.name} (${t.count})</label>`;
   });
   el.innerHTML = html;
 }
@@ -1402,9 +1427,30 @@ function renderColorList(colors) {
   const selected = filters.color ? filters.color.split(",") : [];
   let html = `<label class="filter-chk-item"><input type="checkbox" value="" onchange="toggleDropFilter('color',this)" ${!selected.length?'checked':''}> 전체</label>`;
   colors.forEach(c => {
-    html += `<label class="filter-chk-item"><input type="checkbox" value="${c.name}" onchange="toggleDropFilter('color',this)" ${selected.includes(c.name)?'checked':''}> ${c.name} (${c.count})</label>`;
+    const sel = selected.includes(c.name);
+    html += `<label class="filter-chk-item${sel?' selected':''}"><input type="checkbox" value="${c.name}" onchange="toggleDropFilter('color',this)" ${sel?'checked':''}> ${c.name} (${c.count})</label>`;
   });
   el.innerHTML = html;
+}
+
+function refreshDropdownHighlight() {
+  // 모든 체크박스 드롭다운의 선택 상태 하이라이트 복원
+  ["condition-dropdown", "bagtype-dropdown", "color-dropdown"].forEach(id => {
+    const dd = document.getElementById(id);
+    if (!dd) return;
+    dd.querySelectorAll('.filter-chk-item').forEach(lbl => {
+      const chk = lbl.querySelector('input[type="checkbox"]');
+      if (!chk) return;
+      if (chk.value && chk.checked) {
+        lbl.classList.add("selected");
+      } else {
+        lbl.classList.remove("selected");
+      }
+    });
+    // 선택된 항목이 있으면 드롭다운 자동 열기
+    const hasSelected = dd.querySelector('.filter-chk-item.selected');
+    if (hasSelected) dd.classList.add("open");
+  });
 }
 
 function renderActiveTags() {
@@ -1603,8 +1649,17 @@ function toggleDropFilter(type, el) {
     const checked = [...dropdown.querySelectorAll('input[type="checkbox"]:checked')].filter(c => c.value);
     if (!checked.length) allChk.checked = true;
   }
-  // 선택값 수집
-  const vals = [...dropdown.querySelectorAll('input[type="checkbox"]:checked')].filter(c => c.value).map(c => c.value);
+  // 선택값 수집 + 선택 항목 하이라이트
+  const vals = [];
+  dropdown.querySelectorAll('input[type="checkbox"]').forEach(c => {
+    const lbl = c.closest('.filter-chk-item');
+    if (c.value && c.checked) {
+      vals.push(c.value);
+      if (lbl) lbl.classList.add("selected");
+    } else {
+      if (lbl) lbl.classList.remove("selected");
+    }
+  });
   filters[type] = vals.join(",");
   // 라벨 업데이트
   const labelMap = { condition: "cond-sel-label", bag_type: "bag-sel-label", color: "color-sel-label" };

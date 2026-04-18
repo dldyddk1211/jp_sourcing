@@ -436,10 +436,15 @@ def vintage_cafe_products():
         conn.close()
 
 
+@app.route("/googleaccc97bb8d10ca5d.html")
+def google_verification():
+    return send_from_directory("static", "googleaccc97bb8d10ca5d.html")
+
+
 @app.route("/robots.txt")
 def robots_txt():
     return Response(
-        "User-agent: *\nAllow: /shop\nAllow: /shop/api/notices\nAllow: /shop/api/reviews\nDisallow: /dashboard\nDisallow: /orders\nDisallow: /members\nDisallow: /scrape\nDisallow: /settings\nSitemap: https://vintage.theone-biz.com/sitemap.xml\n",
+        "User-agent: *\nAllow: /\nAllow: /shop\nAllow: /shop/api/notices\nAllow: /shop/api/reviews\nDisallow: /dashboard\nDisallow: /orders\nDisallow: /members\nDisallow: /scrape\nDisallow: /settings\nDisallow: /api/\nSitemap: https://vintage.theone-biz.com/sitemap.xml\n",
         mimetype="text/plain"
     )
 
@@ -3636,12 +3641,11 @@ except Exception as e:
 
 @app.route(f"{URL_PREFIX}/")
 def root_redirect():
-    """루트: 비로그인/일반회원 → 쇼핑몰, 관리자 → 대시보드"""
-    if not session.get("logged_in"):
-        return redirect(f"{URL_PREFIX}/shop")
-    if session.get("role", "admin") == "admin":
+    """루트: 비로그인/일반회원 → 쇼핑몰 직접 렌더링, 관리자 → 대시보드"""
+    if session.get("logged_in") and session.get("role", "admin") == "admin":
         return dashboard_page()
-    return redirect(f"{URL_PREFIX}/shop")
+    # 302 리다이렉트 대신 직접 렌더링 (네이버 검색 로봇 대응)
+    return shop()
 
 
 @app.route(f"{URL_PREFIX}/dashboard")
@@ -4118,6 +4122,135 @@ def _init_scrape_tasks_db():
         pass
     finally:
         conn.close()
+
+
+# ── 키워드 분석 API ─────────────────────
+@app.route(f"{URL_PREFIX}/api/keyword/config", methods=["POST"])
+@admin_required
+def keyword_config_save():
+    """네이버 검색광고 API 키 저장"""
+    data = request.get_json() or {}
+    from naver_keyword import save_api_keys
+    save_api_keys(data.get("api_key", ""), data.get("secret_key", ""), data.get("customer_id", ""))
+    return jsonify({"ok": True})
+
+
+@app.route(f"{URL_PREFIX}/api/keyword/search", methods=["POST"])
+@admin_required
+def keyword_search():
+    """키워드 검색량 조회"""
+    data = request.get_json() or {}
+    keywords = data.get("keywords", [])
+    if not keywords:
+        return jsonify({"ok": False, "message": "키워드를 입력해주세요"})
+    try:
+        from naver_keyword import get_keyword_stats, load_api_keys
+        load_api_keys()
+        results = get_keyword_stats(keywords)
+        # 검색량 합계 기준 정렬
+        results.sort(key=lambda x: x.get("total", 0), reverse=True)
+        return jsonify({"ok": True, "results": results})
+    except ValueError as e:
+        return jsonify({"ok": False, "message": str(e)})
+    except Exception as e:
+        return jsonify({"ok": False, "message": f"조회 실패: {e}"})
+
+
+# ── Kavinet API ─────────────────────
+_kavinet_status = {"running": False, "stop_requested": False, "log": []}
+
+def _kv_log(msg):
+    ts = datetime.now().strftime("%H:%M:%S")
+    _kavinet_status["log"].append(f"[{ts}] {msg}")
+    if len(_kavinet_status["log"]) > 300:
+        _kavinet_status["log"] = _kavinet_status["log"][-200:]
+    logger.info(f"[Kavinet] {msg}")
+
+
+@app.route(f"{URL_PREFIX}/api/kavinet/products", methods=["GET"])
+@admin_required
+def kavinet_products():
+    """Kavinet 상품 목록"""
+    from product_db import _conn
+    conn = _conn()
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM products WHERE site_id='kavinet'").fetchone()[0]
+        today = conn.execute(
+            "SELECT COUNT(*) FROM products WHERE site_id='kavinet' AND date(created_at)=date('now','localtime')"
+        ).fetchone()[0]
+        last = conn.execute(
+            "SELECT MAX(scraped_at) FROM products WHERE site_id='kavinet'"
+        ).fetchone()[0] or ""
+        rows = conn.execute(
+            "SELECT * FROM products WHERE site_id='kavinet' ORDER BY created_at DESC LIMIT 100"
+        ).fetchall()
+        products = []
+        for r in rows:
+            products.append({
+                "name": r["name"], "brand": r["brand"],
+                "price_jpy": r["price_jpy"], "img_url": r["img_url"],
+                "link": r["link"], "created_at": r["created_at"],
+                "product_code": r["product_code"],
+            })
+        return jsonify({"ok": True, "products": products, "total": total, "today": today, "last_scrape": last})
+    except Exception as e:
+        return jsonify({"ok": True, "products": [], "total": 0, "today": 0, "last_scrape": ""})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/api/kavinet/scrape", methods=["POST"])
+@admin_required
+def kavinet_scrape():
+    """Kavinet 수집 시작"""
+    if _kavinet_status["running"]:
+        return jsonify({"ok": False, "message": "이미 수집 중입니다"})
+    data = request.get_json() or {}
+    url = data.get("url", "")
+    pages = data.get("pages", "")
+    if not url:
+        return jsonify({"ok": False, "message": "URL을 입력해주세요"})
+    t = threading.Thread(target=_run_kavinet_scrape, args=(url, pages), daemon=True)
+    t.start()
+    return jsonify({"ok": True})
+
+
+@app.route(f"{URL_PREFIX}/api/kavinet/stop", methods=["POST"])
+@admin_required
+def kavinet_stop():
+    """Kavinet 수집 중지"""
+    _kavinet_status["stop_requested"] = True
+    return jsonify({"ok": True})
+
+
+@app.route(f"{URL_PREFIX}/api/kavinet/status", methods=["GET"])
+@admin_required
+def kavinet_scrape_status():
+    """Kavinet 수집 상태"""
+    return jsonify({
+        "ok": True,
+        "running": _kavinet_status["running"],
+        "log": "\n".join(_kavinet_status["log"][-100:]),
+    })
+
+
+def _run_kavinet_scrape(url, pages=""):
+    """Kavinet 크롤링 (백그라운드)"""
+    _kavinet_status["running"] = True
+    _kavinet_status["stop_requested"] = False
+    _kavinet_status["log"] = []
+    _kv_log(f"Kavinet 수집 시작: {url}")
+    _kv_log(f"페이지: {pages or '자동'}")
+
+    try:
+        # TODO: Kavinet 사이트 구조에 맞는 크롤러 구현
+        _kv_log("Kavinet 크롤러를 구현해주세요")
+        _kv_log("사이트 URL 구조를 확인 후 크롤러를 작성합니다")
+    except Exception as e:
+        _kv_log(f"오류: {e}")
+    finally:
+        _kavinet_status["running"] = False
+        _kv_log("수집 종료")
 
 
 @app.route(f"{URL_PREFIX}/api/vintage-db-stats", methods=["GET"])

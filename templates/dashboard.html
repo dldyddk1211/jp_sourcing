@@ -448,16 +448,23 @@
       </div>
     </div>
 
-    <!-- ▶ Brand Auc -->
-    <div class="nav-category" onclick="toggleCategory('brandauc')">
+    <!-- ▶ Kavinet -->
+    <div class="nav-category" onclick="toggleCategory('kavinet')">
       <span class="cat-icon">&#x1f3af;</span>
-      <span class="cat-label">Brand Auc</span>
-      <span class="coming-soon">&#xc900;&#xbe44;&#xc911;</span>
+      <span class="cat-label">Kavinet</span>
     </div>
-    <div class="nav-sub collapsed" id="sub-brandauc">
-      <div class="nav-item" data-page="brandauc" onclick="showPage('brandauc')">
+    <div class="nav-sub collapsed" id="sub-kavinet">
+      <div class="nav-item" data-page="kavinet" onclick="showPage('kavinet')">
         <span class="nav-icon">&#x1f4cb;</span>
-        <span>&#xb300;&#xc2dc;&#xbcf4;&#xb4dc;</span>
+        <span>대시보드</span>
+      </div>
+      <div class="nav-item" data-page="kavinet-products" onclick="showPage('kavinet-products');loadKavinetProducts()">
+        <span class="nav-icon">&#x1f4e6;</span>
+        <span>상품 목록</span>
+      </div>
+      <div class="nav-item" data-page="kavinet-scrape" onclick="showPage('kavinet-scrape')">
+        <span class="nav-icon">&#x1f50d;</span>
+        <span>수집</span>
       </div>
     </div>
 
@@ -487,6 +494,10 @@
       <div class="nav-item" data-page="bigdata" onclick="showPage('bigdata')">
         <span class="nav-icon">&#x1f4be;</span>
         <span>빅데이터 관리</span>
+      </div>
+      <div class="nav-item" data-page="seo-keyword" onclick="showPage('seo-keyword')">
+        <span class="nav-icon">&#x1f50d;</span>
+        <span>키워드 분석</span>
       </div>
     </div>
   </nav>
@@ -987,13 +998,65 @@
     </div>
 
     <!-- ═══ Brand Auc ═══ -->
-    <div class="page-section" id="page-brandauc">
+    <!-- ═══ Kavinet 대시보드 ═══ -->
+    <div class="page-section" id="page-kavinet">
       <div class="panel">
-        <div class="panel-title">&#x1f3af; Brand Auc</div>
-        <div style="text-align:center;padding:60px 20px;color:var(--muted)">
-          <div style="font-size:2.5rem;margin-bottom:16px">&#x1f3af;</div>
-          <div style="font-size:1.1rem;color:var(--text);margin-bottom:8px">Brand Auc &#xcc44;&#xb110; &#xc900;&#xbe44; &#xc911;</div>
-          <div style="font-size:0.82rem">&#xbe0c;&#xb79c;&#xb4dc; &#xacbd;&#xb9e4; &#xc0c1;&#xd488; &#xc18c;&#xc2f1; &#xae30;&#xb2a5;&#xc774; &#xc5ec;&#xae30;&#xc5d0; &#xcd94;&#xac00;&#xb429;&#xb2c8;&#xb2e4;</div>
+        <div class="panel-title">&#x1f3af; Kavinet 대시보드</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px;">
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center;">
+            <div style="font-size:0.72rem;color:var(--muted);">총 상품</div>
+            <div style="font-size:1.3rem;font-weight:800;color:var(--accent);" id="kv-total">-</div>
+          </div>
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center;">
+            <div style="font-size:0.72rem;color:var(--muted);">오늘 수집</div>
+            <div style="font-size:1.3rem;font-weight:800;color:var(--green);" id="kv-today">-</div>
+          </div>
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center;">
+            <div style="font-size:0.72rem;color:var(--muted);">마지막 수집</div>
+            <div style="font-size:0.85rem;font-weight:600;color:var(--text);margin-top:4px;" id="kv-last-scrape">-</div>
+          </div>
+        </div>
+        <div style="padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:0.78rem;color:var(--muted);">
+          <b>Kavinet:</b> 일본 브랜드 경매/중고 상품 크롤링 채널<br>
+          수집 페이지에서 URL을 입력하거나 자동 수집을 설정할 수 있습니다.
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Kavinet 상품 목록 ═══ -->
+    <div class="page-section" id="page-kavinet-products">
+      <div class="panel">
+        <div class="panel-title">
+          <span>&#x1f4e6; Kavinet 상품 목록</span>
+          <button class="btn b-gray" onclick="loadKavinetProducts()" style="padding:5px 12px;font-size:0.78rem;">새로고침</button>
+        </div>
+        <div id="kv-product-list" style="font-size:0.82rem;color:var(--muted);text-align:center;padding:30px;">
+          상품이 없습니다. 수집 페이지에서 크롤링을 시작해주세요.
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Kavinet 수집 ═══ -->
+    <div class="page-section" id="page-kavinet-scrape">
+      <div class="panel">
+        <div class="panel-title">
+          <span>&#x1f50d; Kavinet 수집</span>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;">
+          <div style="flex:1;min-width:300px;">
+            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">수집 URL</label>
+            <input id="kv-scrape-url" placeholder="https://kavinet.jp/..." style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.82rem;">
+          </div>
+          <div>
+            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">페이지</label>
+            <input id="kv-scrape-pages" placeholder="1-10" value="" style="width:80px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.82rem;">
+          </div>
+          <button class="btn b-blue" onclick="startKavinetScrape()" id="btn-kv-scrape" style="padding:8px 16px;font-size:0.82rem;">&#x25b6; 수집 시작</button>
+          <button class="btn b-red" onclick="stopKavinetScrape()" id="btn-kv-stop" style="padding:8px 16px;font-size:0.82rem;display:none;">&#x23f9; 중지</button>
+        </div>
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;">
+          <div style="font-size:0.8rem;font-weight:600;margin-bottom:8px;">수집 로그</div>
+          <div id="kv-scrape-log" style="max-height:300px;overflow-y:auto;font-size:0.75rem;font-family:monospace;color:var(--muted);white-space:pre-wrap;">대기 중...</div>
         </div>
       </div>
     </div>
@@ -2309,6 +2372,72 @@
       </div>
     </div>
 
+    <!-- ═══ 키워드 분석 (SEO) ═══ -->
+    <div class="page-section" id="page-seo-keyword">
+      <div class="panel">
+        <div class="panel-title"><span>&#x1f50d; 네이버 키워드 분석</span></div>
+
+        <!-- API 키 설정 -->
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:16px;">
+          <div style="font-size:0.8rem;font-weight:600;margin-bottom:10px;">API 키 설정</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+            <div style="flex:1;min-width:180px;">
+              <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">API Key</label>
+              <input id="kw-api-key" type="password" placeholder="액세스 라이선스" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.78rem;">
+            </div>
+            <div style="flex:1;min-width:180px;">
+              <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">Secret Key</label>
+              <input id="kw-secret-key" type="password" placeholder="비밀키" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.78rem;">
+            </div>
+            <div style="min-width:140px;">
+              <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">Customer ID</label>
+              <input id="kw-customer-id" placeholder="고객 ID" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.78rem;">
+            </div>
+            <button class="btn b-green" onclick="saveKwApiKeys()" style="padding:7px 14px;font-size:0.78rem;">저장</button>
+          </div>
+          <div id="kw-api-status" style="margin-top:6px;font-size:0.72rem;color:var(--muted);"></div>
+        </div>
+
+        <!-- 키워드 조회 -->
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:16px;">
+          <div style="font-size:0.8rem;font-weight:600;margin-bottom:10px;">키워드 검색량 조회</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+            <div style="flex:1;min-width:300px;">
+              <textarea id="kw-input" rows="3" placeholder="키워드 입력 (줄바꿈으로 구분)&#10;예: 루이비통 중고&#10;프라다 가방&#10;일본 명품 구매대행" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.82rem;resize:vertical;"></textarea>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              <button class="btn b-blue" onclick="searchKeywords()" id="btn-kw-search" style="padding:8px 16px;font-size:0.82rem;">조회</button>
+              <button class="btn b-accent" onclick="searchBrandKeywords()" style="padding:8px 16px;font-size:0.78rem;">브랜드별 자동 분석</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 결과 테이블 -->
+        <div class="panel" style="margin:0;">
+          <div class="panel-title">
+            <span>조회 결과</span>
+            <button class="btn b-green" onclick="downloadKwCsv()" style="padding:5px 12px;font-size:0.75rem;">CSV 다운로드</button>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="tbl" style="width:100%;font-size:0.78rem;table-layout:fixed;" id="kw-result-table">
+              <thead>
+                <tr>
+                  <th style="text-align:left;width:40%;">키워드</th>
+                  <th style="text-align:right;width:15%;">PC 검색</th>
+                  <th style="text-align:right;width:15%;">모바일 검색</th>
+                  <th style="text-align:right;width:15%;">합계</th>
+                  <th style="text-align:center;width:15%;">경쟁도</th>
+                </tr>
+              </thead>
+              <tbody id="kw-result-body">
+                <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px;">키워드를 입력하고 [조회] 버튼을 눌러주세요</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ═══ 5. 번역 단어장 ═══ -->
     <div class="page-section" id="page-dictionary">
       <div class="panel">
@@ -2787,6 +2916,10 @@ const pageTitles = {
   "vt-blog-upload": "Vintage \u203A \uD83D\uDCDD \uB124\uC774\uBC84\uBE14\uB85C\uADF8 \uC5C5\uB85C\uB4DC",
   "nas-sync": "Vintage \u203A \uD83D\uDCC2 \uC0C1\uD488 \uB9AC\uC2A4\uD2B8 (NAS)",
   "db-update": "Vintage \u203A \uD83D\uDD04 \uC0C1\uD488DB \uC5C5\uB370\uC774\uD2B8",
+  "kavinet": "\uD83C\uDFAF Kavinet \u203A \uB300\uC2DC\uBCF4\uB4DC",
+  "kavinet-products": "\uD83C\uDFAF Kavinet \u203A \uC0C1\uD488 \uBAA9\uB85D",
+  "kavinet-scrape": "\uD83C\uDFAF Kavinet \u203A \uC218\uC9D1",
+  "seo-keyword": "Setting \u203A \uD83D\uDD0D \uD0A4\uC6CC\uB4DC \uBD84\uC11D",
 };
 
 function showPage(page, pushHash) {
@@ -7673,6 +7806,160 @@ function stopDbUpdateLog() {
 // ── 빈티지 블로그 업로드 ──
 let vtBlogProducts = [];
 let vtBlogPage = 1;
+// ── 키워드 분석 (SEO) ──
+var _kwResults = [];
+
+async function saveKwApiKeys() {
+  const api_key = document.getElementById("kw-api-key").value.trim();
+  const secret_key = document.getElementById("kw-secret-key").value.trim();
+  const customer_id = document.getElementById("kw-customer-id").value.trim();
+  if (!api_key || !secret_key || !customer_id) { alert("3개 값을 모두 입력해주세요"); return; }
+  try {
+    const r = await fetch(PREFIX + "/api/keyword/config", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({api_key, secret_key, customer_id})
+    });
+    const d = await r.json();
+    document.getElementById("kw-api-status").innerHTML = d.ok
+      ? '<span style="color:var(--green);">API 키 저장 완료</span>'
+      : '<span style="color:var(--red);">저장 실패</span>';
+  } catch(e) { alert("오류: " + e); }
+}
+
+async function searchKeywords() {
+  const text = document.getElementById("kw-input").value.trim();
+  if (!text) { alert("키워드를 입력해주세요"); return; }
+  const keywords = text.split("\n").map(s => s.trim()).filter(Boolean);
+  const btn = document.getElementById("btn-kw-search");
+  btn.disabled = true; btn.textContent = "조회 중...";
+  const tbody = document.getElementById("kw-result-body");
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);">조회 중...</td></tr>';
+  try {
+    const r = await fetch(PREFIX + "/api/keyword/search", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({keywords})
+    });
+    const d = await r.json();
+    if (!d.ok) { tbody.innerHTML = `<tr><td colspan="5" style="color:var(--red);text-align:center;padding:20px;">${d.message||'조회 실패'}</td></tr>`; return; }
+    _kwResults = d.results || [];
+    renderKwResults();
+  } catch(e) { tbody.innerHTML = `<tr><td colspan="5" style="color:var(--red);text-align:center;padding:20px;">오류: ${e}</td></tr>`; }
+  finally { btn.disabled = false; btn.textContent = "조회"; }
+}
+
+async function searchBrandKeywords() {
+  const brands = ["루이비통", "프라다", "구찌", "샤넬", "에르메스", "셀린느", "발렌시아가", "보테가베네타", "펜디", "버버리"];
+  const keywords = [];
+  brands.forEach(b => { keywords.push(b + " 중고", b + " 가방", b + " 빈티지"); });
+  document.getElementById("kw-input").value = keywords.join("\n");
+  searchKeywords();
+}
+
+function renderKwResults() {
+  const tbody = document.getElementById("kw-result-body");
+  if (!_kwResults.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px;">결과 없음</td></tr>'; return; }
+  const compColor = {"높음":"var(--red)","중간":"var(--yellow)","낮음":"var(--green)"};
+  tbody.innerHTML = _kwResults.map(r => {
+    const comp = r.compIdx || "-";
+    const cc = compColor[comp] || "var(--muted)";
+    return `<tr>
+      <td style="text-align:left;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.relKeyword||''}</td>
+      <td style="text-align:right;padding-right:16px;">${(r.monthlyPcQcCnt||0).toLocaleString()}</td>
+      <td style="text-align:right;padding-right:16px;">${(r.monthlyMobileQcCnt||0).toLocaleString()}</td>
+      <td style="text-align:right;padding-right:16px;font-weight:700;color:var(--accent);">${(r.total||0).toLocaleString()}</td>
+      <td style="text-align:center;color:${cc};">${comp}</td>
+    </tr>`;
+  }).join("");
+}
+
+function downloadKwCsv() {
+  if (!_kwResults.length) return;
+  let csv = "키워드,PC검색,모바일검색,합계,경쟁도\n";
+  _kwResults.forEach(r => {
+    csv += `"${r.relKeyword}",${r.monthlyPcQcCnt},${r.monthlyMobileQcCnt},${r.total},"${r.compIdx||''}"\n`;
+  });
+  const blob = new Blob(["\uFEFF" + csv], {type:"text/csv;charset=utf-8;"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "keyword_analysis.csv";
+  a.click();
+}
+
+// ── Kavinet ──
+async function loadKavinetProducts() {
+  const el = document.getElementById("kv-product-list");
+  el.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;">로딩 중...</div>';
+  try {
+    const r = await fetch(PREFIX + "/api/kavinet/products");
+    const ct = r.headers.get("content-type") || "";
+    if (!ct.includes("application/json")) { el.innerHTML = '<div style="color:var(--muted);text-align:center;padding:30px;">데이터 없음</div>'; return; }
+    const d = await r.json();
+    if (!d.ok) { el.innerHTML = '<div style="color:var(--muted);text-align:center;padding:30px;">데이터 없음</div>'; return; }
+    const products = d.products || [];
+    // 대시보드 통계 업데이트
+    if (document.getElementById("kv-total")) document.getElementById("kv-total").textContent = (d.total || 0).toLocaleString();
+    if (document.getElementById("kv-today")) document.getElementById("kv-today").textContent = (d.today || 0).toLocaleString();
+    if (document.getElementById("kv-last-scrape")) document.getElementById("kv-last-scrape").textContent = d.last_scrape || "-";
+    if (!products.length) { el.innerHTML = '<div style="color:var(--muted);text-align:center;padding:30px;">상품이 없습니다.</div>'; return; }
+    el.innerHTML = `<table class="tbl" style="width:100%;font-size:0.78rem;">
+      <thead><tr><th>이미지</th><th>상품명</th><th>브랜드</th><th>가격</th><th>수집일</th></tr></thead>
+      <tbody>${products.map(p => `<tr>
+        <td><img src="${p.img_url||''}" style="width:50px;height:50px;object-fit:cover;border-radius:4px;" onerror="this.style.display='none'"></td>
+        <td>${p.name||''}</td>
+        <td>${p.brand||''}</td>
+        <td>${p.price_jpy ? '¥'+p.price_jpy.toLocaleString() : '-'}</td>
+        <td>${p.created_at||''}</td>
+      </tr>`).join("")}</tbody></table>`;
+  } catch(e) { el.innerHTML = `<div style="color:var(--red);text-align:center;padding:30px;">로드 실패</div>`; }
+}
+
+let _kvLogTimer = null;
+async function startKavinetScrape() {
+  const url = document.getElementById("kv-scrape-url").value.trim();
+  const pages = document.getElementById("kv-scrape-pages").value.trim();
+  if (!url) { alert("수집 URL을 입력해주세요"); return; }
+  const btn = document.getElementById("btn-kv-scrape");
+  btn.disabled = true; btn.textContent = "⏳ 시작 중...";
+  try {
+    const r = await fetch(PREFIX + "/api/kavinet/scrape", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({url, pages})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      btn.style.display = "none";
+      document.getElementById("btn-kv-stop").style.display = "";
+      _kvLogTimer = setInterval(pollKvLog, 3000);
+    } else { alert(d.message || "시작 실패"); }
+  } catch(e) { alert("오류: " + e); }
+  finally { btn.textContent = "▶ 수집 시작"; btn.disabled = false; }
+}
+
+async function stopKavinetScrape() {
+  try { await fetch(PREFIX + "/api/kavinet/stop", {method:"POST"}); } catch(e) {}
+  document.getElementById("btn-kv-stop").style.display = "none";
+  document.getElementById("btn-kv-scrape").style.display = "";
+  if (_kvLogTimer) { clearInterval(_kvLogTimer); _kvLogTimer = null; }
+}
+
+async function pollKvLog() {
+  try {
+    const r = await fetch(PREFIX + "/api/kavinet/status");
+    const d = await r.json();
+    if (d.log) {
+      const el = document.getElementById("kv-scrape-log");
+      el.textContent = d.log;
+      el.scrollTop = el.scrollHeight;
+    }
+    if (!d.running) {
+      document.getElementById("btn-kv-stop").style.display = "none";
+      document.getElementById("btn-kv-scrape").style.display = "";
+      if (_kvLogTimer) { clearInterval(_kvLogTimer); _kvLogTimer = null; }
+      loadKavinetProducts();
+    }
+  } catch(e) {}
+}
+
 const VT_BLOG_PER_PAGE = 10;
 
 async function loadVtBlogProducts() {

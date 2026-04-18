@@ -142,6 +142,14 @@ SITES = {
         },
         "brands": {},
     },
+    "kavinet": {
+        "name": "카비넷 (KAVINET)",
+        "domain": "",
+        "base_url": "",
+        "source_type": "vintage",
+        "categories": {},
+        "brands": {},
+    },
 }
 
 
