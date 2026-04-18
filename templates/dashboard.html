@@ -902,12 +902,16 @@
       <div class="panel">
         <div class="panel-title">
           <span>&#x1f6d2; 고객 장바구니</span>
-          <button class="btn b-gray" onclick="loadAdminCarts()" style="padding:5px 12px;font-size:0.78rem">&#x1f504; 새로고침</button>
+          <div style="display:flex;gap:6px;">
+            <button class="btn b-red" onclick="bulkDeleteCarts()" style="padding:5px 12px;font-size:0.78rem">&#x1f5d1; 선택 삭제</button>
+            <button class="btn b-gray" onclick="loadAdminCarts()" style="padding:5px 12px;font-size:0.78rem">&#x1f504; 새로고침</button>
+          </div>
         </div>
         <div style="overflow-x:auto;">
           <table class="tbl" style="width:100%;font-size:0.78rem;">
             <thead>
               <tr>
+                <th style="width:30px"><input type="checkbox" onchange="toggleAllCartChk(this.checked)"></th>
                 <th>고객ID</th>
                 <th>고객명</th>
                 <th>이미지</th>
@@ -5907,12 +5911,13 @@ async function loadAdminCarts() {
     const r = await fetch(PREFIX + "/api/admin/carts");
     const d = await r.json();
     if (!d.ok || !d.carts.length) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:30px;">장바구니가 비어있습니다</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:30px;">장바구니가 비어있습니다</td></tr>';
       document.getElementById("cart-tab-cnt").textContent = "";
       return;
     }
     document.getElementById("cart-tab-cnt").textContent = d.carts.length;
     tbody.innerHTML = d.carts.map(c => `<tr>
+      <td style="text-align:center;"><input type="checkbox" class="cart-admin-chk" data-id="${c.id}" data-user="${c.username}"></td>
       <td style="font-size:0.75rem;">${c.username||''}</td>
       <td style="font-weight:600;">${c.customer_name||'-'}</td>
       <td><img src="${c.img_url||''}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;" onerror="this.style.display='none'"></td>
@@ -5929,6 +5934,22 @@ async function loadAdminCarts() {
 }
 
 var _adminCartMainImg = "";
+function toggleAllCartChk(checked) {
+  document.querySelectorAll('.cart-admin-chk').forEach(c => c.checked = checked);
+}
+
+async function bulkDeleteCarts() {
+  const checked = [...document.querySelectorAll('.cart-admin-chk:checked')];
+  if (!checked.length) { alert("삭제할 항목을 선택해주세요"); return; }
+  if (!confirm(`${checked.length}개 장바구니 항목을 삭제하시겠습니까?`)) return;
+  for (const c of checked) {
+    const id = c.dataset.id;
+    const user = c.dataset.user;
+    await fetch(PREFIX + "/api/admin/cart/" + id, {method:"DELETE"}).catch(()=>{});
+  }
+  loadAdminCarts();
+}
+
 async function openAdminCartDetail(code) {
   if (!code) return;
   try {
