@@ -2924,11 +2924,43 @@ def run_upload(max_upload=None, shuffle_brands=False, checked_codes=None, delay_
         ))
         status["uploaded_count"] = count
         status["last_upload"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # 업로드 히스토리 저장
         _save_upload_history(selected[:count])
 
-        push_log(f"🎉 업로드 완료: {count}개 성공")
+        # 전부 "이미 게시됨"으로 0개 성공 시 → 새 상품 리스트로 재시도
+        if count == 0 and len(selected) > 0 and not checked_set:
+            push_log("🔄 전부 이미 게시됨 — 새 상품 리스트로 재시도")
+            try:
+                from product_db import get_unuploaded_products
+                retry_list = get_unuploaded_products(source_type=source_type)
+                # 브랜드 필터 적용
+                if filter_brand and filter_brand != "ALL":
+                    retry_list = [p for p in retry_list
+                                  if p.get("brand", "") == filter_brand
+                                  or p.get("brand_ko", "") == filter_brand]
+                if shuffle_brands:
+                    retry_list = _shuffle_by_brand(retry_list)
+                else:
+                    _random.shuffle(retry_list)
+                retry_upload = retry_list[:max_upload or 5]
+                if retry_upload:
+                    push_log(f"🔄 재시도: {len(retry_upload)}개 새 상품 발견")
+                    count2 = asyncio.run(upload_products(
+                        products=retry_upload,
+                        status_callback=push_log,
+                        max_upload=max_upload,
+                        delay_min=delay_min, delay_max=delay_max,
+                        on_single_success=_on_single_upload_success,
+                        cookie_path=active_cookie,
+                    ))
+                    status["uploaded_count"] = count2
+                    _save_upload_history(retry_upload[:count2])
+                    push_log(f"🎉 재시도 완료: {count2}개 성공")
+                else:
+                    push_log("⚠️ 재시도할 새 상품 없음 — 모든 상품이 이미 게시됨")
+            except Exception as e2:
+                push_log(f"🔄 재시도 오류: {e2}")
+        else:
+            push_log(f"🎉 업로드 완료: {count}개 성공")
     except Exception as e:
         push_log(f"❌ 업로드 오류: {e}")
     finally:
@@ -3119,7 +3151,41 @@ def run_scheduled_upload(slot_id: str, brand: str, quantity: int):
         status["uploaded_count"] = count
         status["last_upload"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         _save_upload_history(to_upload[:count])
-        push_log(f"⏰ [{slot_id}] 자동 업로드 완료: {count}개 성공")
+
+        # 전부 "이미 게시됨"으로 0개 성공 시 → 새 상품 리스트로 재시도
+        if count == 0 and len(to_upload) > 0:
+            push_log(f"⏰ [{slot_id}] 전부 이미 게시됨 — 새 상품 리스트로 재시도")
+            # 이미 게시된 상품 제외하고 다시 대기 목록 조회
+            try:
+                from product_db import get_unuploaded_products
+                retry_products = get_unuploaded_products(source_type="sports")
+                # 브랜드 필터
+                if brand and brand != "ALL":
+                    retry_products = [p for p in retry_products
+                                      if (p.get("brand_ko") or "").strip() == brand
+                                      or (p.get("brand") or "").strip() == brand]
+                if brand == "ALL":
+                    retry_products = _shuffle_by_brand(retry_products)
+                retry_upload = retry_products[:quantity]
+                if retry_upload:
+                    push_log(f"⏰ [{slot_id}] 재시도: {len(retry_upload)}개 새 상품 발견")
+                    count2 = asyncio.run(upload_products(
+                        products=retry_upload,
+                        status_callback=push_log,
+                        max_upload=quantity,
+                        delay_min=20, delay_max=30,
+                        on_single_success=_on_single_upload_success,
+                        cookie_path=active_cookie,
+                    ))
+                    status["uploaded_count"] = count2
+                    _save_upload_history(retry_upload[:count2])
+                    push_log(f"⏰ [{slot_id}] 재시도 완료: {count2}개 성공")
+                else:
+                    push_log(f"⏰ [{slot_id}] 재시도할 새 상품 없음")
+            except Exception as e2:
+                push_log(f"⏰ [{slot_id}] 재시도 오류: {e2}")
+        else:
+            push_log(f"⏰ [{slot_id}] 자동 업로드 완료: {count}개 성공")
     except Exception as e:
         push_log(f"❌ [{slot_id}] 자동 업로드 오류: {e}")
     finally:
