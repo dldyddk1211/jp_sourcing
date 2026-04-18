@@ -141,6 +141,7 @@ def send_order_notification(phone, order_number, status, product_name=""):
         "processing": f"[TheOne Vintage] 상품을 처리 중입니다.\n주문번호: {order_number}\n상품: {product_name}",
         "shipped": f"[TheOne Vintage] 상품이 발송되었습니다!\n주문번호: {order_number}\n상품: {product_name}\n배송 추적은 마이페이지에서 확인하세요.",
         "completed": f"[TheOne Vintage] 배송이 완료되었습니다.\n주문번호: {order_number}\n이용해 주셔서 감사합니다.",
+        "sold_out": f"[TheOne Vintage] 죄송합니다.\n주문번호: {order_number}\n상품: {product_name}\n현지 사이트에서 해당 상품이 품절되어 발송이 어렵게 되었습니다.\n불편을 드려 죄송합니다.",
     }
     msg = status_msg.get(status)
     if not msg:

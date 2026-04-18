@@ -1455,6 +1455,19 @@ def _save_order(ntype, username, customer_name, brand, product_name, product_cod
                         VALUES (?,?,?,?,?,?,?,?,?)""",
                      (ntype, username, customer_name, brand, product_name, product_code, price, price_jpy, order_number))
         conn.commit()
+
+        # 주문 접수 시 고객에게 자동 문자 발송
+        try:
+            user = conn.execute("SELECT phone FROM users WHERE username=?", (username,)).fetchone()
+            if user and user["phone"]:
+                from aligo_sms import send_sms, load_config
+                load_config()
+                msg = f"[TheOne Vintage] 주문이 접수되었습니다.\n주문번호: {order_number}\n상품: {brand} {product_name[:20]}\n확인 후 안내드리겠습니다."
+                send_sms(user["phone"], msg, title="TheOne Vintage")
+                logger.info(f"[SMS] 주문 접수 알림: {username} ({user['phone']})")
+        except Exception as e:
+            logger.warning(f"[SMS] 주문 접수 알림 실패: {e}")
+
         return order_number
     finally:
         conn.close()
@@ -1626,7 +1639,7 @@ def update_order(order_id):
         # 주문 상태 변경 시 자동 문자 발송
         if "status" in data:
             new_status = data["status"]
-            if new_status in ("confirmed", "processing", "shipped", "completed"):
+            if new_status in ("confirmed", "processing", "shipped", "completed", "sold_out"):
                 try:
                     order = conn.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
                     if order:
@@ -2381,6 +2394,25 @@ def change_member_status(username):
         label = {"approved": "승인", "rejected": "거절", "pending": "대기"}[new_status]
         exp_msg = f" (만료: {expires_at})" if expires_at else " (무제한)"
         logger.info(f"회원 {label}: {username}{exp_msg}")
+
+        # 승인 시 자동 문자 발송
+        if new_status == "approved":
+            try:
+                user = conn.execute("SELECT phone, level FROM users WHERE username=?", (username,)).fetchone()
+                if user and user["phone"]:
+                    from aligo_sms import send_sms, load_config
+                    load_config()
+                    msg = (
+                        f"[TheOne Vintage] 회원가입 승인이 완료되었습니다.\n"
+                        f"현재 B2C 등급으로 승인되었습니다.\n"
+                        f"B2B 승인을 위해서는 요청/문의 게시판을 통해 문의 부탁드리겠습니다.\n"
+                        f"감사합니다.\nhttps://vintage.theone-biz.com"
+                    )
+                    send_sms(user["phone"], msg, title="TheOne Vintage")
+                    logger.info(f"[SMS] 가입 승인 알림: {username} ({user['phone']})")
+            except Exception as e:
+                logger.warning(f"[SMS] 가입 승인 알림 실패: {e}")
+
         return jsonify({"ok": True, "message": f"{username} → {label}{exp_msg}"})
     finally:
         conn.close()
