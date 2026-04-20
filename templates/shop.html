@@ -3,7 +3,61 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- CookieYes -->
+  <script id="cookieyes" type="text/javascript" src="https://cdn-cookieyes.com/client_data/b01768259ba4a894ef15e929/script.js"></script>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=AW-18104024699"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'AW-18104024699');
+  </script>
+  <!-- Event snippet for 페이지 조회 conversion page -->
+  <script>
+    gtag('event', 'conversion', {
+        'send_to': 'AW-18104024699/eFooCMDK5Z4cEPv81bhD',
+        'value': 1.0,
+        'currency': 'KRW'
+    });
+  </script>
   <meta name="naver-site-verification" content="8007b69bd935ed5ddd23959cce6143936418f07a" />
+
+  <!-- 파비콘 -->
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_prefix }}/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ url_prefix }}/static/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_prefix }}/static/apple-touch-icon.png">
+  <link rel="shortcut icon" href="{{ url_prefix }}/static/favicon.ico">
+
+  <!-- 구조화 데이터 (Google 로고 + 사이트 정보) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "TheOne Vintage",
+    "url": "https://vintage.theone-biz.com",
+    "logo": "https://vintage.theone-biz.com/static/logo.png",
+    "description": "일본 명품 빈티지 구매대행 전문",
+    "contactPoint": {
+      "@type": "ContactPoint",
+      "telephone": "+82-10-9201-7013",
+      "contactType": "customer service"
+    }
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "TheOne Vintage",
+    "url": "https://vintage.theone-biz.com",
+    "potentialAction": {
+      "@type": "SearchAction",
+      "target": "https://vintage.theone-biz.com/shop?keyword={search_term_string}",
+      "query-input": "required name=search_term_string"
+    }
+  }
+  </script>
   <meta name="description" content="일본 명품 빈티지 구매대행 TheOne Vintage. 루이비통, 프라다, 샤넬 등 일본 현지 직소싱 중고 명품 전문.">
   <meta name="robots" content="index, follow">
 
@@ -550,7 +604,7 @@
     .notice-card-content {
       display:none; margin-top:12px; padding-top:12px;
       border-top:1px solid var(--border); font-size:0.84rem;
-      color:var(--muted); line-height:1.7; white-space:pre-wrap;
+      color:var(--muted); line-height:1.7; white-space:pre-wrap; text-align:left;
     }
     .notice-card.open .notice-card-content { display:block; }
 
@@ -678,6 +732,10 @@
         &#x1f464; {{ username }}
       </button>
       <div id="user-dropdown" class="user-dropdown">
+        {% if is_admin %}
+        <a href="{{ url_prefix }}/admin/vintage" style="color:var(--accent);font-weight:700;">⚙️ 관리자 설정</a>
+        <div style="border-top:1px solid var(--border);margin:4px 0;"></div>
+        {% endif %}
         <a href="{{ url_prefix }}/shop/mypage">회원정보</a>
         <a href="{{ url_prefix }}/shop/mypage#orders">주문내역</a>
         <a href="{{ url_prefix }}/shop/mypage#cart">장바구니</a>
@@ -856,11 +914,28 @@
             <div class="hero-visual-grid" id="hero-grid-3"></div>
           </div>
         </div>
+        <!-- Slide 4 -->
+        <div class="hero-slide" style="background:linear-gradient(135deg, rgba(212,165,74,0.12) 0%, rgba(192,137,48,0.06) 60%);">
+          <div class="hero-bg-accent" style="background:radial-gradient(circle, rgba(212,165,74,0.08) 0%, transparent 70%);"></div>
+          <div class="hero-slide-content">
+            <span class="hero-tag" style="background:var(--accent);">Expert Consulting</span>
+            <h2 class="hero-title">전문 소싱 바이어<br><em>컨설팅</em> 안내</h2>
+            <p class="hero-sub">일본 현지 전문 바이어가 직접 소싱 컨설팅<br>브랜드 선정부터 수입까지 원스톱 지원</p>
+            <a class="hero-cta" style="border-color:var(--accent);color:var(--accent);"
+               onclick="window.open('https://cafe.naver.com/sohosupport/2972','_blank')"
+               onmouseenter="this.style.background='var(--accent)';this.style.color='#000'"
+               onmouseleave="this.style.background='transparent';this.style.color='var(--accent)'">컨설팅 자세히 보기 &rarr;</a>
+          </div>
+          <div class="hero-visual">
+            <div class="hero-visual-grid" id="hero-grid-4"></div>
+          </div>
+        </div>
       </div>
       <div class="hero-dots" id="hero-dots">
         <button class="hero-dot active" onclick="goHeroSlide(0)"></button>
         <button class="hero-dot" onclick="goHeroSlide(1)"></button>
         <button class="hero-dot" onclick="goHeroSlide(2)"></button>
+        <button class="hero-dot" onclick="goHeroSlide(3)"></button>
       </div>
     </div>
 
@@ -1276,6 +1351,22 @@ function resetFilters() {
 }
 
 async function loadShop(page = 1) {
+  // 비회원/미승인: 2페이지 이상 클릭 시 가입 유도
+  if (page > 1 && !LOGGED_IN) {
+    const html = `<div style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:1000;display:flex;justify-content:center;align-items:center;" onclick="if(event.target===this)this.remove()">
+      <div style="background:var(--card);border:1px solid var(--accent);border-radius:14px;max-width:400px;width:90%;padding:30px;text-align:center;box-shadow:0 16px 48px rgba(0,0,0,0.5);">
+        <div style="font-size:2rem;margin-bottom:12px;">🔒</div>
+        <div style="font-size:1.1rem;font-weight:700;color:var(--accent);margin-bottom:10px;">회원 전용 서비스</div>
+        <div style="font-size:0.85rem;color:var(--muted);line-height:1.6;margin-bottom:20px;">더 많은 상품을 보시려면<br>회원가입 후 이용해주세요.</div>
+        <div style="display:flex;gap:8px;justify-content:center;">
+          <a href="${PREFIX}/signup" style="padding:10px 24px;background:var(--accent);color:#000;border-radius:8px;font-weight:700;font-size:0.85rem;text-decoration:none;">회원가입</a>
+          <a href="${PREFIX}/login" style="padding:10px 24px;background:rgba(212,165,74,0.15);color:var(--accent);border:1px solid var(--accent);border-radius:8px;font-weight:600;font-size:0.85rem;text-decoration:none;">로그인</a>
+        </div>
+      </div>
+    </div>`;
+    document.body.insertAdjacentHTML("beforeend", html);
+    return;
+  }
   currentPage = page;
   filters.keyword = document.getElementById("keyword-input").value.trim();
   const sort = document.getElementById("sort-select").value;
@@ -1749,7 +1840,11 @@ async function addToCart() {
     });
     const d = await res.json();
     if (d.ok) {
-      alert("장바구니에 추가되었습니다!");
+      if (d.duplicate) {
+        alert("이미 장바구니에 담긴 상품입니다.");
+      } else {
+        alert("장바구니에 추가되었습니다!");
+      }
       if (LOGGED_IN) updateCartBadge();
     }
   } catch(e) { alert("장바구니 추가 실패"); }
@@ -1768,6 +1863,11 @@ async function orderProduct() {
       method: "POST", headers: {"Content-Type":"application/json"},
       body: JSON.stringify({type:"order", brand:p.brand, name:name, code:code, price:amount.toLocaleString()+"원", price_jpy:p.price_jpy})
     });
+    const d = await res.json();
+    if (d.duplicate) {
+      alert(d.message || "이미 주문된 상품입니다.");
+      return;
+    }
     alert("주문이 추가되었습니다.\n주문내역에서 결제를 진행해주세요.");
     closeModal();
     location.href = PREFIX + "/shop/mypage#orders";
@@ -1781,6 +1881,20 @@ function showCostBreakdown() {
   if (panel.style.display !== "none") { panel.style.display = "none"; return; }
 
   const price = p.price_krw || 0;
+
+  // 200만원 이상 → 개별소비세 안내
+  if (price >= 2000000) {
+    panel.innerHTML = `
+      <div style="text-align:center;padding:16px;">
+        <div style="font-size:1.5rem;margin-bottom:10px;">⚠️</div>
+        <div style="font-size:0.9rem;font-weight:700;color:var(--yellow);margin-bottom:8px;">200만원 이상 상품 안내</div>
+        <div style="font-size:0.8rem;color:var(--muted);line-height:1.6;margin-bottom:14px;">결제 금액이 200만원 이상일 경우<br><b>개별소비세</b> 계산이 필요합니다.<br>정확한 비용은 문의해주세요.</div>
+        <a href="http://pf.kakao.com/_geJHxj/chat" target="_blank" style="display:inline-block;padding:10px 24px;background:#FEE500;color:#000;border-radius:8px;font-weight:700;font-size:0.85rem;text-decoration:none;">카카오톡 상담하기</a>
+      </div>`;
+    panel.style.display = "block";
+    return;
+  }
+
   const intlShip = 20000;
   const duty = Math.round(price * 0.20);
   const totalCost = price + intlShip + duty;
@@ -1822,6 +1936,19 @@ function calcCost() {
 
   // 포맷팅 (콤마 추가)
   document.getElementById("calc-price").value = price.toLocaleString();
+
+  // 200만원 이상 → 개별소비세 안내
+  if (price >= 2000000) {
+    document.getElementById("calc-result").innerHTML = `
+      <div style="text-align:center;padding:16px;">
+        <div style="font-size:1.5rem;margin-bottom:10px;">⚠️</div>
+        <div style="font-size:0.9rem;font-weight:700;color:var(--yellow);margin-bottom:8px;">200만원 이상 상품 안내</div>
+        <div style="font-size:0.8rem;color:var(--muted);line-height:1.6;margin-bottom:14px;">결제 금액이 200만원 이상일 경우<br><b>개별소비세</b> 계산이 필요합니다.<br>정확한 비용은 문의해주세요.</div>
+        <a href="http://pf.kakao.com/_geJHxj/chat" target="_blank" style="display:inline-block;padding:10px 24px;background:#FEE500;color:#000;border-radius:8px;font-weight:700;font-size:0.85rem;text-decoration:none;">카카오톡 상담하기</a>
+      </div>`;
+    document.getElementById("calc-result").style.display = "block";
+    return;
+  }
 
   const intlShip = 20000;
   const rate = window._cachedRate || 9.23;
@@ -1929,7 +2056,7 @@ document.addEventListener("dragstart", e => {
 
 // ── Hero Banner Carousel ──
 let heroIdx = 0;
-const heroTotal = 3;
+const heroTotal = 4;
 let heroTimer = null;
 
 function goHeroSlide(idx) {
@@ -1997,11 +2124,29 @@ function fillBrandStrip(brands) {
 }
 
 function clickBrandStrip(name) {
-  const el = document.querySelector(`#brand-list .filter-item[data-val="${name}"]`);
-  if (el) selectFilter('brand', el);
+  // 기존 브랜드 선택 초기화 → 해당 브랜드만 단일 선택
+  multiFilters.brand = [name];
+  filters.brand = name;
+  // 사이드바 UI 갱신
+  document.querySelectorAll("#brand-list .filter-item").forEach(el => {
+    el.classList.toggle("active", el.dataset.val === name);
+  });
+  loadShop(1);
 }
 
 loadShop(1);
+
+// 접속 로그 전송
+try {
+  fetch(PREFIX + "/api/analytics/log", {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      path: location.pathname,
+      referrer: document.referrer || "",
+      ua: navigator.userAgent,
+    })
+  }).catch(()=>{});
+} catch(e) {}
 
 // 자동 새로고침 제거 (수동 새로고침만 사용)
 

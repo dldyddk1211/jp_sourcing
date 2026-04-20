@@ -1,0 +1,283 @@
+{% extends "admin_base.html" %}
+
+{% block head %}
+<style>
+  .stat-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(100px,1fr)); gap:8px; margin-bottom:14px; }
+  .stat-card { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; text-align:center; }
+  .stat-card .lbl { font-size:0.68rem; color:var(--muted); }
+  .stat-card .val { font-size:1.1rem; font-weight:800; margin-top:2px; }
+  .filter-chk-item { display:flex; align-items:center; gap:6px; padding:3px 6px; font-size:0.78rem; color:var(--muted); cursor:pointer; border-radius:4px; }
+  .filter-chk-item:hover { background:rgba(212,165,74,0.06); }
+  .order-tab { padding:10px 18px; font-size:0.82rem; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; color:var(--muted); }
+  .order-tab.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:700; }
+  @media(max-width:768px) {
+    .stat-grid { grid-template-columns:repeat(3,1fr); gap:6px; }
+    .stat-card { padding:8px; }
+    .stat-card .val { font-size:0.95rem; }
+  }
+</style>
+{% endblock %}
+
+{% block sub_title %}🎺 Vintage{% endblock %}
+
+{% block sub_menu %}
+<div class="sub-item active" data-page="analytics" onclick="showPage('analytics')"><span class="sub-icon">📊</span>접속 통계</div>
+<div class="sub-item" data-page="vt-todo" onclick="showPage('vt-todo')"><span class="sub-icon">📝</span>To Do List</div>
+<div class="sub-item" onclick="window.open('{{ url_prefix }}/shop','_blank')" style="cursor:pointer;"><span class="sub-icon">🛍️</span>대행사이트 ↗</div>
+<div class="sub-item" data-page="members" onclick="showPage('members')"><span class="sub-icon">👥</span>회원관리</div>
+<div class="sub-item" data-page="orders" onclick="showPage('orders')"><span class="sub-icon">📦</span>주문확인</div>
+<div class="sub-item" data-page="scrape-tasks" onclick="showPage('scrape-tasks')"><span class="sub-icon">📋</span>수집 작업리스트</div>
+<div class="sub-item" data-page="sns-upload" onclick="showPage('sns-upload')"><span class="sub-icon">📢</span>SNS 업로드</div>
+<div class="sub-item" data-page="nas-sync" onclick="showPage('nas-sync')"><span class="sub-icon">📂</span>상품 리스트 (NAS)</div>
+<div class="sub-item" data-page="db-update" onclick="showPage('db-update')"><span class="sub-icon">🔄</span>상품DB 업데이트</div>
+{% endblock %}
+
+{% block topbar_title %}📊 접속 통계{% endblock %}
+
+{% block content %}
+<!-- ═══ 접속 통계 ═══ -->
+<div class="page-section active" id="page-analytics">
+  <div class="panel">
+    <div class="panel-title">
+      <span>📊 접속 통계</span>
+      <div style="display:flex;gap:6px;">
+        <select id="analytics-period" onchange="loadAnalytics()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.78rem;">
+          <option value="today" selected>오늘</option>
+          <option value="yesterday">어제</option>
+          <option value="7d">최근 7일</option>
+          <option value="30d">최근 30일</option>
+        </select>
+        <button class="btn b-gray" onclick="loadAnalytics()">🔄</button>
+      </div>
+    </div>
+    <div class="stat-grid">
+      <div class="stat-card"><div class="lbl">총 방문</div><div class="val" style="color:var(--accent);" id="an-total">-</div></div>
+      <div class="stat-card"><div class="lbl">오늘</div><div class="val" style="color:var(--green);" id="an-today">-</div></div>
+      <div class="stat-card"><div class="lbl">순방문자</div><div class="val" id="an-unique">-</div></div>
+      <div class="stat-card"><div class="lbl">검색유입</div><div class="val" style="color:var(--yellow);" id="an-search">-</div></div>
+      <div class="stat-card"><div class="lbl">회원</div><div class="val" style="color:var(--blue);" id="an-member">-</div></div>
+      <div class="stat-card"><div class="lbl">비회원</div><div class="val" style="color:var(--dim);" id="an-guest">-</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:14px;">
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;">
+        <div style="font-size:0.78rem;font-weight:600;margin-bottom:8px;">🌐 유입 경로</div>
+        <div id="an-referrers" style="font-size:0.76rem;"></div>
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;">
+        <div style="font-size:0.78rem;font-weight:600;margin-bottom:8px;">🔍 검색 키워드</div>
+        <div id="an-keywords" style="font-size:0.76rem;"></div>
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;">
+        <div style="font-size:0.78rem;font-weight:600;margin-bottom:8px;">👥 회원 접속</div>
+        <div id="an-members" style="font-size:0.76rem;"></div>
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;">
+        <div style="font-size:0.78rem;font-weight:600;margin-bottom:8px;">📱 디바이스</div>
+        <div id="an-devices" style="font-size:0.76rem;"></div>
+      </div>
+    </div>
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;">
+      <div style="font-size:0.78rem;font-weight:600;margin-bottom:8px;">📋 최근 접속</div>
+      <div style="overflow-x:auto;">
+        <table class="tbl" style="font-size:0.73rem;">
+          <thead><tr><th>시간</th><th>회원</th><th>IP</th><th>페이지</th><th>유입</th><th>기기</th></tr></thead>
+          <tbody id="an-log-body"><tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px;">로딩 중...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ To Do List ═══ -->
+<div class="page-section" id="page-vt-todo">
+  <div class="panel">
+    <div class="panel-title"><span>📝 To Do List</span><button class="btn b-gray" onclick="loadVtTodo()">🔄</button></div>
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <select id="todo-priority" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 8px;border-radius:6px;font-size:0.82rem;">
+        <option value="normal">보통</option><option value="high">긴급</option><option value="low">낮음</option>
+      </select>
+      <input id="todo-input" placeholder="할 일을 입력하세요..." onkeydown="if(event.key==='Enter')addVtTodo()" style="flex:1;padding:8px 12px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:0.85rem;">
+      <button class="btn b-green" onclick="addVtTodo()">추가</button>
+    </div>
+    <div id="todo-list"></div>
+  </div>
+</div>
+
+<!-- ═══ 회원관리 ═══ -->
+<div class="page-section" id="page-members">
+  <div class="panel">
+    <div class="panel-title"><span>👥 회원 목록 (<span id="member-count">0</span>명)</span><button class="btn b-gray" onclick="loadMembers(true)">🔄</button></div>
+    <input id="member-search" placeholder="아이디/이름/연락처 검색" onkeyup="loadMembers(true)" style="width:100%;max-width:300px;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:0.82rem;margin-bottom:10px;">
+    <div style="overflow-x:auto;">
+      <table class="tbl">
+        <thead><tr><th>#</th><th>아이디</th><th>이름</th><th>연락처</th><th>상태</th><th>레벨</th><th>가입일</th><th>최근접속</th></tr></thead>
+        <tbody id="member-tbody"><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 주문확인 ═══ -->
+<div class="page-section" id="page-orders">
+  <div class="panel">
+    <div class="panel-title">
+      <span>📦 주문 리스트</span>
+      <div style="display:flex;gap:6px;">
+        <input id="order-search" placeholder="검색..." onkeydown="if(event.key==='Enter')loadOrders()" style="padding:5px 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:0.78rem;width:180px;">
+        <select id="order-status-filter" onchange="loadOrders()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.78rem;">
+          <option value="">전체</option><option value="new">신규</option><option value="confirmed">확인</option><option value="processing">처리중</option><option value="shipped">배송중</option><option value="completed">완료</option><option value="sold_out">품절취소</option><option value="cancelled">취소</option>
+        </select>
+        <button class="btn b-gray" onclick="loadOrders()">🔄</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="tbl">
+        <thead><tr><th style="width:28px"><input type="checkbox" onchange="document.querySelectorAll('.oc').forEach(c=>c.checked=this.checked)"></th><th>주문번호</th><th>고객</th><th>레벨</th><th>이미지</th><th>브랜드</th><th>상품명</th><th>상품코드</th><th>판매가</th><th>상태</th></tr></thead>
+        <tbody id="order-tbody"><tr><td colspan="10" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 나머지 페이지는 준비 중 표시 -->
+<div class="page-section" id="page-scrape-tasks"><div class="panel"><div style="text-align:center;padding:40px;color:var(--muted);">수집 작업리스트 — <a href="{{ url_prefix }}/dashboard#scrape-tasks" style="color:var(--accent);">전체 대시보드에서 보기</a></div></div></div>
+<div class="page-section" id="page-sns-upload"><div class="panel"><div style="text-align:center;padding:40px;color:var(--muted);">SNS 업로드 — <a href="{{ url_prefix }}/dashboard#sns-upload" style="color:var(--accent);">전체 대시보드에서 보기</a></div></div></div>
+<div class="page-section" id="page-nas-sync"><div class="panel"><div style="text-align:center;padding:40px;color:var(--muted);">NAS 동기화 — <a href="{{ url_prefix }}/dashboard#nas-sync" style="color:var(--accent);">전체 대시보드에서 보기</a></div></div></div>
+<div class="page-section" id="page-db-update"><div class="panel"><div style="text-align:center;padding:40px;color:var(--muted);">상품DB 업데이트 — <a href="{{ url_prefix }}/dashboard#db-update" style="color:var(--accent);">전체 대시보드에서 보기</a></div></div></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── 페이지별 데이터 로드 ──
+const pageTitles = {
+  analytics: "📊 접속 통계", "vt-todo": "📝 To Do List",
+  members: "👥 회원관리", orders: "📦 주문확인",
+  "scrape-tasks": "📋 수집 작업리스트", "sns-upload": "📢 SNS 업로드",
+  "nas-sync": "📂 NAS 동기화", "db-update": "🔄 상품DB 업데이트",
+};
+
+function onPageShow(page) {
+  document.getElementById("topbar-title").textContent = pageTitles[page] || page;
+  if (page === "analytics") loadAnalytics();
+  if (page === "vt-todo") loadVtTodo();
+  if (page === "members") loadMembers();
+  if (page === "orders") loadOrders();
+}
+
+// ── 접속 통계 ──
+async function loadAnalytics() {
+  const period = document.getElementById("analytics-period")?.value || "today";
+  try {
+    const r = await fetch(PREFIX + "/api/analytics?period=" + period);
+    const d = await r.json();
+    if (!d.ok) return;
+    document.getElementById("an-total").textContent = (d.total||0).toLocaleString();
+    document.getElementById("an-today").textContent = (d.today||0).toLocaleString();
+    document.getElementById("an-unique").textContent = (d.unique||0).toLocaleString();
+    document.getElementById("an-search").textContent = (d.search_count||0).toLocaleString();
+    document.getElementById("an-member").textContent = (d.member_count||0).toLocaleString();
+    document.getElementById("an-guest").textContent = (d.guest_count||0).toLocaleString();
+    const row = (a,b,c) => `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border);"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a}</span><span style="font-weight:600;color:${c||'var(--accent)'};margin-left:8px;">${b}</span></div>`;
+    document.getElementById("an-referrers").innerHTML = (d.referrers||[]).map(r=>row(r.name,r.count)).join("") || '<span style="color:var(--muted);">없음</span>';
+    document.getElementById("an-keywords").innerHTML = (d.keywords||[]).map(k=>row(k.keyword,k.count,'var(--yellow)')).join("") || '<span style="color:var(--muted);">없음</span>';
+    document.getElementById("an-members").innerHTML = (d.members||[]).map(m=>row(`${m.name||m.username}`,m.count+'회','var(--blue)')).join("") || '<span style="color:var(--muted);">없음</span>';
+    document.getElementById("an-devices").innerHTML = (d.devices||[]).map(v=>row(v.name,v.count,'var(--green)')).join("") || '<span style="color:var(--muted);">없음</span>';
+    document.getElementById("an-log-body").innerHTML = (d.logs||[]).map(l=>`<tr><td>${l.time}</td><td style="font-weight:600;color:${l.member_type==='회원'?'var(--accent)':'var(--dim)'};">${l.name||l.username||'비회원'}</td><td>${l.ip}</td><td>${l.path}</td><td>${l.referrer||'직접'}</td><td>${l.device}</td></tr>`).join("") || '<tr><td colspan="6" style="text-align:center;color:var(--muted);">없음</td></tr>';
+  } catch(e) {}
+}
+
+// ── To Do List ──
+var _vtTodos = [];
+async function loadVtTodo() {
+  try { const r = await fetch(PREFIX+"/api/todo"); const d = await r.json(); if(d.ok) _vtTodos=d.todos||[]; } catch(e){}
+  renderVtTodo();
+}
+async function saveVtTodos() { await fetch(PREFIX+"/api/todo",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({todos:_vtTodos})}).catch(()=>{}); }
+async function addVtTodo() {
+  try {
+    const input=document.getElementById("todo-input"); const text=input.value.trim(); if(!text) return;
+    _vtTodos.unshift({id:Date.now(),text,priority:document.getElementById("todo-priority").value,done:false,images:[],created:new Date().toISOString().slice(0,16).replace("T"," ")});
+    await saveVtTodos(); input.value=""; renderVtTodo();
+  } catch(e) { alert("추가 오류: " + e); }
+}
+async function toggleVtTodo(id) { const t=_vtTodos.find(t=>t.id===id); if(t){t.done=!t.done;t.completed=t.done?new Date().toISOString().slice(0,16).replace("T"," "):"";} await saveVtTodos(); renderVtTodo(); }
+function editVtTodo(id,text) { const t=_vtTodos.find(t=>t.id===id); if(t&&text.trim()){t.text=text.trim();saveVtTodos();} }
+async function deleteVtTodo(id) { _vtTodos=_vtTodos.filter(t=>t.id!==id); await saveVtTodos(); renderVtTodo(); }
+function renderVtTodo() {
+  const el=document.getElementById("todo-list"); if(!el) return;
+  const pc={high:"var(--red)",normal:"var(--accent)",low:"var(--muted)"}; const pl={high:"긴급",normal:"보통",low:"낮음"};
+  if(!_vtTodos.length){el.innerHTML='<div style="text-align:center;color:var(--muted);padding:30px;">할 일이 없습니다</div>';return;}
+  el.innerHTML=_vtTodos.map(t=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);${t.done?'opacity:0.5;':''}">
+    <input type="checkbox" ${t.done?'checked':''} onchange="toggleVtTodo(${t.id})" style="accent-color:var(--accent);width:16px;height:16px;">
+    <span style="font-size:0.68rem;padding:2px 5px;border-radius:3px;color:${pc[t.priority]};border:1px solid ${pc[t.priority]};">${pl[t.priority]}</span>
+    <span contenteditable="true" onblur="editVtTodo(${t.id},this.textContent)" style="flex:1;font-size:0.82rem;outline:none;${t.done?'text-decoration:line-through;color:var(--dim);':''}">${t.text}</span>
+    <span style="font-size:0.65rem;color:var(--dim);">${t.created}</span>
+    <button onclick="deleteVtTodo(${t.id})" style="background:none;border:none;color:var(--red);cursor:pointer;">&times;</button>
+  </div>`).join("");
+}
+
+// ── 회원관리 ──
+var _memberList = [];
+async function loadMembers(force) {
+  const q=(document.getElementById("member-search")?.value||"").trim();
+  if(!force&&!q&&_memberList.length){renderMembers();return;}
+  try{const r=await fetch(PREFIX+"/members?"+(q?"q="+encodeURIComponent(q):""));const d=await r.json();_memberList=d.members||[];document.getElementById("member-count").textContent=d.total||0;renderMembers();}catch(e){}
+}
+function renderMembers() {
+  const tbody=document.getElementById("member-tbody");
+  const stC={approved:'var(--green)',pending:'var(--yellow)',suspended:'var(--red)',rejected:'var(--red)'};
+  tbody.innerHTML=_memberList.length?_memberList.map((m,i)=>{const st=m.status||'approved';const lvl=m.level||'b2c';
+    return `<tr><td style="color:var(--dim);">${i+1}</td><td style="font-weight:600;">${m.username}</td><td>${m.name||'-'}</td><td>${m.phone||'-'}</td>
+    <td><select onchange="chgMemberSt('${m.username}',this.value)" style="background:var(--bg);border:1px solid var(--border);color:${stC[st]};padding:2px 4px;border-radius:4px;font-size:0.7rem;font-weight:600;">
+      <option value="approved" ${st==='approved'?'selected':''}>승인</option><option value="pending" ${st==='pending'?'selected':''}>대기</option><option value="suspended" ${st==='suspended'?'selected':''}>사용불가</option><option value="rejected" ${st==='rejected'?'selected':''}>거절</option></select></td>
+    <td><span style="color:${lvl==='b2b'?'var(--blue)':'var(--green)'};font-weight:700;font-size:0.75rem;">${lvl.toUpperCase()}</span></td>
+    <td style="font-size:0.72rem;color:var(--muted);">${(m.created_at||'').substring(0,10)}</td>
+    <td style="font-size:0.72rem;color:${m.last_login?'var(--green)':'var(--dim)'};">${m.last_login||'없음'}</td></tr>`;
+  }).join(""):'<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">회원 없음</td></tr>';
+}
+async function chgMemberSt(user,st) {
+  if(!confirm(`'${user}' → '${st}'로 변경?`)){loadMembers(true);return;}
+  await fetch(PREFIX+"/members/"+encodeURIComponent(user)+"/status",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:st})});
+  loadMembers(true);
+}
+
+// ── 주문확인 ──
+const SL={"new":"신규","confirmed":"확인","processing":"처리중","shipped":"배송중","completed":"완료","sold_out":"품절취소","cancelled":"취소"};
+const SC={"new":"var(--yellow)","confirmed":"var(--blue)","processing":"var(--accent)","shipped":"#6cf","completed":"var(--green)","sold_out":"var(--red)","cancelled":"var(--red)"};
+async function loadOrders() {
+  const q=document.getElementById("order-search")?.value?.trim()||"";
+  const st=document.getElementById("order-status-filter")?.value||"";
+  const params=new URLSearchParams({type:"order"});
+  if(q) params.set("q",q); if(st) params.set("status",st);
+  try{
+    const r=await fetch(PREFIX+"/orders?"+params);
+    if(r.status===401){location.href=PREFIX+"/login";return;}
+    const d=await r.json();
+    const tbody=document.getElementById("order-tbody");
+    if(!d.orders||!d.orders.length){tbody.innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:30px;">주문 없음</td></tr>';return;}
+    const hide=new Set();
+    d.orders.forEach(o=>{if((o.product_name||'').includes('다중주문')||(o.product_name||'').includes('일괄결제'))(o.product_code||'').split(',').forEach(n=>{if(n.trim().startsWith('ORD'))hide.add(n.trim());});});
+    const list=d.orders.filter(o=>!hide.has(o.order_number));
+    tbody.innerHTML=list.map(o=>{const sc=SC[o.status]||'var(--muted)';
+      return `<tr><td><input type="checkbox" class="oc" data-id="${o.id}"></td>
+      <td style="font-family:monospace;font-size:0.68rem;color:var(--accent);">${o.order_number||''}</td>
+      <td style="font-weight:600;">${o.customer_name||o.username||''}</td>
+      <td style="font-size:0.7rem;font-weight:700;color:${o.user_level==='b2b'?'var(--blue)':'var(--green)'};">${(o.user_level||'b2c').toUpperCase()}</td>
+      <td><img src="${o.product_img||''}" style="width:32px;height:32px;object-fit:cover;border-radius:4px;" onerror="this.style.display='none'"></td>
+      <td>${o.brand||''}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.product_name||''}</td>
+      <td style="font-family:monospace;font-size:0.68rem;">${o.product_code||''}</td>
+      <td style="font-weight:700;color:var(--accent);">${o.price||''}</td>
+      <td><select onchange="chgOrderSt(${o.id},this.value)" style="background:var(--bg);border:1px solid var(--border);color:${sc};padding:2px 4px;border-radius:4px;font-size:0.68rem;font-weight:600;">${Object.entries(SL).map(([k,v])=>`<option value="${k}" ${k===o.status?'selected':''}>${v}</option>`).join('')}</select></td></tr>`;
+    }).join("");
+  }catch(e){}
+}
+async function chgOrderSt(id,st) {
+  await fetch(PREFIX+"/orders/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:st})});
+  loadOrders();
+}
+
+// 초기 로드
+loadAnalytics();
+</script>
+{% endblock %}

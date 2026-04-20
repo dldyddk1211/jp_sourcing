@@ -1,0 +1,74 @@
+{% extends "admin_base.html" %}
+{% block sub_title %}⚙️ Setting{% endblock %}
+{% block sub_menu %}
+<div class="sub-item active" data-page="st-account" onclick="showPage('st-account')"><span class="sub-icon">🔑</span>로그인/계정</div>
+<div class="sub-item" data-page="st-data" onclick="showPage('st-data')"><span class="sub-icon">📁</span>데이터 경로</div>
+<div class="sub-item" data-page="st-telegram" onclick="showPage('st-telegram')"><span class="sub-icon">📬</span>텔레그램</div>
+<div class="sub-item" data-page="st-sms" onclick="showPage('st-sms')"><span class="sub-icon">📱</span>문자 발송</div>
+<div class="sub-item" data-page="st-dict" onclick="showPage('st-dict')"><span class="sub-icon">📖</span>번역 단어장</div>
+<div class="sub-item" data-page="st-bigdata" onclick="showPage('st-bigdata')"><span class="sub-icon">💾</span>빅데이터</div>
+<div class="sub-item" data-page="st-keyword" onclick="showPage('st-keyword')"><span class="sub-icon">🔍</span>키워드 분석</div>
+{% endblock %}
+{% block topbar_title %}🔑 로그인/계정 설정{% endblock %}
+{% block content %}
+<div class="page-section active" id="page-st-account">
+  <div class="panel"><div class="panel-title"><span>🔑 로그인/계정 설정</span></div>
+    <div style="text-align:center;padding:30px;color:var(--muted);"><a href="{{ url_prefix }}/dashboard#ai-settings" style="color:var(--accent);font-size:0.9rem;">전체 대시보드에서 설정 →</a></div>
+  </div>
+</div>
+<div class="page-section" id="page-st-data">
+  <div class="panel"><div class="panel-title"><span>📁 데이터 저장 경로</span></div>
+    <div id="st-data-info" style="font-size:0.82rem;color:var(--muted);">로딩 중...</div>
+  </div>
+</div>
+<div class="page-section" id="page-st-telegram">
+  <div class="panel"><div class="panel-title"><span>📬 텔레그램 알림</span></div>
+    <div style="text-align:center;padding:30px;color:var(--muted);"><a href="{{ url_prefix }}/dashboard#telegram" style="color:var(--accent);">전체 대시보드에서 설정 →</a></div>
+  </div>
+</div>
+<div class="page-section" id="page-st-sms">
+  <div class="panel"><div class="panel-title"><span>📱 문자 발송</span></div>
+    <div id="st-sms-balance" style="font-size:0.82rem;margin-bottom:12px;color:var(--muted);">잔여: -</div>
+    <div style="text-align:center;padding:20px;color:var(--muted);"><a href="{{ url_prefix }}/dashboard#sms" style="color:var(--accent);">전체 대시보드에서 설정 →</a></div>
+  </div>
+</div>
+<div class="page-section" id="page-st-dict">
+  <div class="panel"><div class="panel-title"><span>📖 번역 단어장</span></div>
+    <div style="text-align:center;padding:30px;color:var(--muted);"><a href="{{ url_prefix }}/dashboard#dictionary" style="color:var(--accent);">전체 대시보드에서 설정 →</a></div>
+  </div>
+</div>
+<div class="page-section" id="page-st-bigdata">
+  <div class="panel"><div class="panel-title"><span>💾 빅데이터 관리</span></div>
+    <div style="text-align:center;padding:30px;color:var(--muted);"><a href="{{ url_prefix }}/dashboard#bigdata" style="color:var(--accent);">전체 대시보드에서 설정 →</a></div>
+  </div>
+</div>
+<div class="page-section" id="page-st-keyword">
+  <div class="panel"><div class="panel-title"><span>🔍 키워드 분석</span></div>
+    <div style="text-align:center;padding:30px;color:var(--muted);"><a href="{{ url_prefix }}/dashboard#seo-keyword" style="color:var(--accent);">전체 대시보드에서 설정 →</a></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const pageTitles = {"st-account":"🔑 로그인/계정","st-data":"📁 데이터 경로","st-telegram":"📬 텔레그램","st-sms":"📱 문자 발송","st-dict":"📖 번역 단어장","st-bigdata":"💾 빅데이터","st-keyword":"🔍 키워드 분석"};
+function onPageShow(page) {
+  document.getElementById("topbar-title").textContent = pageTitles[page] || page;
+  if (page === "st-data") loadDataPath();
+  if (page === "st-sms") loadSmsBalance();
+}
+async function loadDataPath() {
+  try {
+    const r = await fetch(PREFIX + "/data-path");
+    const d = await r.json();
+    document.getElementById("st-data-info").innerHTML = `<div>현재 경로: <b>${d.current||'-'}</b></div><div style="margin-top:6px;">NAS 연결: <b style="color:${d.nas_connected?'var(--green)':'var(--red)'};">${d.nas_connected?'연결됨':'미연결'}</b></div>`;
+  } catch(e) {}
+}
+async function loadSmsBalance() {
+  try {
+    const r = await fetch(PREFIX + "/api/sms/status");
+    const d = await r.json();
+    if (d.balance) document.getElementById("st-sms-balance").innerHTML = `잔여: SMS <b>${d.balance.sms_cnt||0}</b>건 / LMS <b>${d.balance.lms_cnt||0}</b>건`;
+  } catch(e) {}
+}
+</script>
+{% endblock %}

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TheOne Vintage — To Do List</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_prefix }}/static/favicon-32x32.png">
+  <style>
+    :root {
+      --bg:#0f1117; --card:#1a1d27; --border:#2a2d3a;
+      --accent:#d4a54a; --green:#2ecc71; --red:#e74c3c; --yellow:#f39c12;
+      --text:#e0e0e0; --muted:#7a7f9a; --dim:#444860;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { background:var(--bg); color:var(--text); font-family:'Noto Sans KR',sans-serif; min-height:100vh; }
+    .header { background:var(--card); border-bottom:1px solid var(--border); padding:14px 24px; display:flex; align-items:center; justify-content:space-between; }
+    .header-logo { font-size:1.2rem; font-weight:800; color:var(--accent); }
+    .header-logo span { color:var(--text); font-weight:300; margin-left:6px; font-size:0.9rem; }
+    .container { max-width:700px; margin:30px auto; padding:0 16px; }
+    .panel { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:24px; }
+    .btn { padding:7px 16px; border:none; border-radius:6px; cursor:pointer; font-size:0.82rem; font-weight:600; }
+    .b-green { background:var(--green); color:#fff; }
+    .b-gray { background:var(--bg); color:var(--muted); border:1px solid var(--border); }
+    .b-red { background:var(--red); color:#fff; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-logo">TheOne<span>Vintage</span> — To Do List</div>
+    <div style="display:flex;gap:8px;font-size:0.82rem;">
+      <a href="{{ url_prefix }}/analytics" style="color:var(--muted);text-decoration:none;padding:6px 12px;border-radius:6px;">통계</a>
+      <a href="{{ url_prefix }}/orders-page" style="color:var(--muted);text-decoration:none;padding:6px 12px;border-radius:6px;">주문</a>
+      <a href="{{ url_prefix }}/members-page" style="color:var(--muted);text-decoration:none;padding:6px 12px;border-radius:6px;">회원</a>
+      <a href="{{ url_prefix }}/dashboard" style="color:var(--muted);text-decoration:none;padding:6px 12px;border-radius:6px;">대시보드</a>
+    </div>
+  </div>
+  <div class="container">
+    <div class="panel">
+      <!-- 입력 -->
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <select id="todo-priority" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 8px;border-radius:6px;font-size:0.82rem;">
+          <option value="normal">보통</option>
+          <option value="high">긴급</option>
+          <option value="low">낮음</option>
+        </select>
+        <input id="todo-input" placeholder="할 일을 입력하세요..." onkeydown="if(event.key==='Enter')addTodo()" style="flex:1;padding:8px 12px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:0.85rem;">
+        <button class="btn b-green" onclick="addTodo()">추가</button>
+      </div>
+      <!-- 필터 -->
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <button onclick="filterTodo('all',this)" class="btn b-gray todo-f active" style="padding:4px 12px;font-size:0.75rem;background:rgba(212,165,74,0.15);color:var(--accent);">전체</button>
+        <button onclick="filterTodo('active',this)" class="btn b-gray todo-f" style="padding:4px 12px;font-size:0.75rem;">진행중</button>
+        <button onclick="filterTodo('done',this)" class="btn b-gray todo-f" style="padding:4px 12px;font-size:0.75rem;">완료</button>
+      </div>
+      <!-- 리스트 -->
+      <div id="todo-list"></div>
+    </div>
+  </div>
+
+<script>
+const PREFIX = "{{ url_prefix }}";
+let todos = [];
+let filter = "all";
+
+async function loadTodos() {
+  try {
+    const r = await fetch(PREFIX + "/api/todo");
+    const d = await r.json();
+    if (d.ok) todos = d.todos || [];
+  } catch(e) {}
+  render();
+}
+
+async function saveTodos() {
+  await fetch(PREFIX + "/api/todo", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({todos})}).catch(()=>{});
+}
+
+async function addTodo() {
+  const input = document.getElementById("todo-input");
+  const text = input.value.trim();
+  if (!text) return;
+  todos.unshift({id:Date.now(), text, priority:document.getElementById("todo-priority").value, done:false, images:[], created:new Date().toISOString().slice(0,16).replace("T"," ")});
+  await saveTodos();
+  input.value = "";
+  render();
+}
+
+async function toggleTodo(id) {
+  const t = todos.find(t => t.id === id);
+  if (t) { t.done = !t.done; t.completed = t.done ? new Date().toISOString().slice(0,16).replace("T"," ") : ""; }
+  await saveTodos();
+  render();
+}
+
+async function editTodo(id, text) {
+  const t = todos.find(t => t.id === id);
+  if (t && text.trim()) { t.text = text.trim(); await saveTodos(); }
+}
+
+async function deleteTodo(id) {
+  todos = todos.filter(t => t.id !== id);
+  await saveTodos();
+  render();
+}
+
+function filterTodo(f, el) {
+  filter = f;
+  document.querySelectorAll(".todo-f").forEach(b => { b.style.background="var(--bg)"; b.style.color="var(--muted)"; });
+  if (el) { el.style.background="rgba(212,165,74,0.15)"; el.style.color="var(--accent)"; }
+  render();
+}
+
+function render() {
+  const el = document.getElementById("todo-list");
+  let list = todos;
+  if (filter === "active") list = list.filter(t => !t.done);
+  if (filter === "done") list = list.filter(t => t.done);
+  if (!list.length) { el.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px;">할 일이 없습니다</div>'; return; }
+  const pc = {high:"var(--red)", normal:"var(--accent)", low:"var(--muted)"};
+  const pl = {high:"긴급", normal:"보통", low:"낮음"};
+  el.innerHTML = list.map(t => `
+    <div style="padding:10px 12px;border-bottom:1px solid var(--border);${t.done?'opacity:0.5;':''}">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="checkbox" ${t.done?'checked':''} onchange="toggleTodo(${t.id})" style="accent-color:var(--accent);width:18px;height:18px;cursor:pointer;flex-shrink:0;">
+        <span style="font-size:0.68rem;padding:2px 6px;border-radius:3px;font-weight:600;color:${pc[t.priority]||'var(--muted)'};border:1px solid ${pc[t.priority]||'var(--border)'};">${pl[t.priority]||''}</span>
+        <span contenteditable="true" onblur="editTodo(${t.id},this.textContent)" style="flex:1;font-size:0.85rem;outline:none;cursor:text;padding:2px 4px;border-radius:4px;${t.done?'text-decoration:line-through;color:var(--dim);':''}" onfocus="this.style.background='rgba(212,165,74,0.1)'" onblur="this.style.background='';editTodo(${t.id},this.textContent)">${t.text}</span>
+        <span style="font-size:0.68rem;color:var(--dim);white-space:nowrap;">${t.created}</span>
+        ${t.done && t.completed ? `<span style="font-size:0.68rem;color:var(--green);white-space:nowrap;">✓ ${t.completed}</span>` : ''}
+        <button onclick="deleteTodo(${t.id})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.85rem;padding:2px 6px;">&times;</button>
+      </div>
+    </div>
+  `).join("");
+}
+
+loadTodos();
+</script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+{% extends "admin_base.html" %}
+{% block sub_title %}🏷️ Brand{% endblock %}
+{% block sub_menu %}
+<div class="sub-item active" data-page="brand-dashboard" onclick="showPage('brand-dashboard')"><span class="sub-icon">📊</span>대시보드</div>
+<div class="sub-item" data-page="brand-products" onclick="showPage('brand-products')"><span class="sub-icon">📦</span>상품 목록</div>
+<div class="sub-item" data-page="brand-price" onclick="showPage('brand-price')"><span class="sub-icon">💰</span>가격 설정</div>
+<div class="sub-item" data-page="brand-cafe" onclick="showPage('brand-cafe')"><span class="sub-icon">☕</span>카페 업로드</div>
+<div class="sub-item" data-page="brand-blog" onclick="showPage('brand-blog')"><span class="sub-icon">📝</span>블로그 업로드</div>
+<div class="sub-item" data-page="brand-schedule" onclick="showPage('brand-schedule')"><span class="sub-icon">⏰</span>자동 스케줄</div>
+<div class="sub-item" data-page="brand-logs" onclick="showPage('brand-logs')"><span class="sub-icon">📋</span>실시간 로그</div>
+{% endblock %}
+{% block topbar_title %}📊 브랜드 대시보드{% endblock %}
+{% block content %}
+<div class="page-section active" id="page-brand-dashboard">
+  <div class="panel"><div class="panel-title"><span>📊 브랜드 대시보드</span></div>
+    <div style="text-align:center;padding:30px;color:var(--muted);">
+      <a href="{{ url_prefix }}/dashboard#dashboard" style="color:var(--accent);font-size:0.9rem;">전체 대시보드에서 보기 →</a>
+    </div>
+  </div>
+</div>
+<div class="page-section" id="page-brand-products"><div class="panel"><div style="text-align:center;padding:30px;color:var(--muted);"><a href="{{ url_prefix }}/dashboard#products" style="color:var(--accent);">전체 대시보드에서 보기 →</a></div></div></div>
+<div class="page-section" id="page-brand-price"><div class="panel"><div style="text-align:center;padding:30px;color:var(--muted);"><a href="{{ url_prefix }}/dashboard#price" style="color:var(--accent);">전체 대시보드에서 보기 →</a></div></div></div>
+<div class="page-section" id="page-brand-cafe"><div class="panel"><div style="text-align:center;padding:30px;color:var(--muted);"><a href="{{ url_prefix }}/dashboard#cafe-upload" style="color:var(--accent);">전체 대시보드에서 보기 →</a></div></div></div>
+<div class="page-section" id="page-brand-blog"><div class="panel"><div style="text-align:center;padding:30px;color:var(--muted);"><a href="{{ url_prefix }}/dashboard#blog-upload" style="color:var(--accent);">전체 대시보드에서 보기 →</a></div></div></div>
+<div class="page-section" id="page-brand-schedule"><div class="panel"><div style="text-align:center;padding:30px;color:var(--muted);"><a href="{{ url_prefix }}/dashboard#cafe-schedule" style="color:var(--accent);">전체 대시보드에서 보기 →</a></div></div></div>
+<div class="page-section" id="page-brand-logs"><div class="panel"><div style="text-align:center;padding:30px;color:var(--muted);"><a href="{{ url_prefix }}/dashboard#logs" style="color:var(--accent);">전체 대시보드에서 보기 →</a></div></div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+const pageTitles = {"brand-dashboard":"📊 브랜드 대시보드","brand-products":"📦 상품 목록","brand-price":"💰 가격 설정","brand-cafe":"☕ 카페 업로드","brand-blog":"📝 블로그 업로드","brand-schedule":"⏰ 자동 스케줄","brand-logs":"📋 실시간 로그"};
+function onPageShow(page) { document.getElementById("topbar-title").textContent = pageTitles[page] || page; }
+</script>
+{% endblock %}

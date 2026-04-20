@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TheOne Vintage — 회원관리</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_prefix }}/static/favicon-32x32.png">
+  <style>
+    :root { --bg:#0f1117; --card:#1a1d27; --border:#2a2d3a; --accent:#d4a54a; --green:#2ecc71; --red:#e74c3c; --yellow:#f39c12; --blue:#4f8ef7; --text:#e0e0e0; --muted:#7a7f9a; --dim:#444860; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { background:var(--bg); color:var(--text); font-family:'Noto Sans KR',sans-serif; }
+    .header { background:var(--card); border-bottom:1px solid var(--border); padding:14px 24px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+    .header-logo { font-size:1.2rem; font-weight:800; color:var(--accent); }
+    .header-logo span { color:var(--text); font-weight:300; margin-left:6px; font-size:0.9rem; }
+    .header-nav { display:flex; gap:8px; font-size:0.82rem; }
+    .header-nav a { color:var(--muted); text-decoration:none; padding:6px 12px; border-radius:6px; }
+    .header-nav a:hover, .header-nav a.active { color:var(--accent); background:rgba(212,165,74,0.1); }
+    .container { max-width:1000px; margin:16px auto; padding:0 12px; }
+    .panel { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; }
+    .tbl { width:100%; border-collapse:collapse; font-size:0.78rem; }
+    .tbl th, .tbl td { padding:6px 8px; border-bottom:1px solid var(--border); text-align:left; }
+    .tbl th { color:var(--muted); font-size:0.72rem; cursor:pointer; }
+    .tbl th:hover { color:var(--accent); }
+    .btn { padding:4px 10px; border:none; border-radius:5px; cursor:pointer; font-size:0.72rem; font-weight:600; }
+    .b-green { background:var(--green); color:#fff; }
+    .b-red { background:var(--red); color:#fff; }
+    .b-gray { background:var(--bg); color:var(--muted); border:1px solid var(--border); }
+    @media(max-width:768px) { .tbl { font-size:0.72rem; } .tbl th, .tbl td { padding:4px 5px; } }
+  </style>
+</head>
+<body>
+<div class="header">
+  <div class="header-logo">TheOne<span>Vintage</span> — 회원관리</div>
+  <div class="header-nav">
+    <a href="{{ url_prefix }}/analytics">통계</a>
+    <a href="{{ url_prefix }}/orders-page">주문</a>
+    <a href="{{ url_prefix }}/members-page" class="active">회원</a>
+    <a href="{{ url_prefix }}/todo">ToDo</a>
+    <a href="{{ url_prefix }}/dashboard">대시보드</a>
+  </div>
+</div>
+<div class="container">
+  <div class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+      <span style="font-size:0.95rem;font-weight:700;">&#x1f465; 회원 목록 (<span id="cnt">0</span>명)</span>
+      <div style="display:flex;gap:6px;">
+        <input id="q" placeholder="아이디/이름/연락처 검색" onkeyup="load()" style="padding:5px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:0.78rem;min-width:180px;">
+        <button class="btn b-gray" onclick="load()">&#x1f504;</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="tbl">
+        <thead><tr>
+          <th onclick="sort('id')">#</th>
+          <th onclick="sort('username')">아이디</th>
+          <th onclick="sort('name')">이름</th>
+          <th>연락처</th>
+          <th onclick="sort('status')">상태</th>
+          <th onclick="sort('level')">레벨</th>
+          <th onclick="sort('created_at')">가입일</th>
+          <th onclick="sort('last_login')">최근접속</th>
+        </tr></thead>
+        <tbody id="tbody"><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<script>
+const P = "{{ url_prefix }}";
+let members = [];
+let sortCol = "created_at", sortAsc = false;
+
+async function load() {
+  const q = document.getElementById("q").value.trim();
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  const r = await fetch(P+"/members?"+params);
+  if (r.status===401) { location.href=P+"/login"; return; }
+  const d = await r.json();
+  members = d.members || [];
+  document.getElementById("cnt").textContent = d.total || 0;
+  render();
+}
+
+function sort(col) {
+  if (sortCol === col) sortAsc = !sortAsc;
+  else { sortCol = col; sortAsc = true; }
+  render();
+}
+
+function render() {
+  let list = [...members];
+  list.sort((a,b) => {
+    let va = a[sortCol]||"", vb = b[sortCol]||"";
+    if (typeof va==="string") va=va.toLowerCase();
+    if (typeof vb==="string") vb=vb.toLowerCase();
+    if (va<vb) return sortAsc?-1:1;
+    if (va>vb) return sortAsc?1:-1;
+    return 0;
+  });
+  const stC = {approved:'var(--green)', pending:'var(--yellow)', suspended:'var(--red)', rejected:'var(--red)'};
+  const stL = {approved:'승인', pending:'대기', suspended:'사용불가', rejected:'거절'};
+  document.getElementById("tbody").innerHTML = list.length ? list.map(m => {
+    const lvl = m.level||'b2c';
+    const st = m.status||'approved';
+    return `<tr>
+      <td style="color:var(--dim);">${m.id||''}</td>
+      <td style="font-weight:600;">${m.username}</td>
+      <td>${m.name||'-'}</td>
+      <td>${m.phone||'-'}</td>
+      <td>
+        <select onchange="chgStatus('${m.username}',this.value)" style="background:var(--bg);border:1px solid var(--border);color:${stC[st]||'var(--muted)'};padding:2px 4px;border-radius:4px;font-size:0.7rem;font-weight:600;">
+          <option value="approved" ${st==='approved'?'selected':''}>승인</option>
+          <option value="pending" ${st==='pending'?'selected':''}>대기</option>
+          <option value="suspended" ${st==='suspended'?'selected':''}>사용불가</option>
+          <option value="rejected" ${st==='rejected'?'selected':''}>거절</option>
+        </select>
+      </td>
+      <td>
+        <select onchange="chgLevel('${m.username}',this.value)" style="background:var(--bg);border:1px solid var(--border);color:${lvl==='b2b'?'var(--blue)':'var(--green)'};padding:2px 4px;border-radius:4px;font-size:0.7rem;font-weight:600;">
+          <option value="b2c" ${lvl==='b2c'?'selected':''}>B2C</option>
+          <option value="b2b" ${lvl==='b2b'?'selected':''}>B2B</option>
+        </select>
+      </td>
+      <td style="font-size:0.72rem;color:var(--muted);">${(m.created_at||'').substring(0,10)}</td>
+      <td style="font-size:0.72rem;color:${m.last_login?'var(--green)':'var(--dim)'};">${m.last_login||'없음'}</td>
+    </tr>`;
+  }).join("") : '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">회원 없음</td></tr>';
+}
+
+async function chgStatus(user, st) {
+  if (!confirm(`'${user}' → '${st}'로 변경?`)) { load(); return; }
+  await fetch(P+"/members/"+encodeURIComponent(user)+"/status", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({status:st})});
+  load();
+}
+
+async function chgLevel(user, lvl) {
+  await fetch(P+"/members/"+encodeURIComponent(user)+"/level", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({level:lvl})});
+  load();
+}
+
+load();
+</script>
+</body>
+</html>

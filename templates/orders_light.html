@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TheOne Vintage — 주문확인</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_prefix }}/static/favicon-32x32.png">
+  <style>
+    :root { --bg:#0f1117; --card:#1a1d27; --border:#2a2d3a; --accent:#d4a54a; --green:#2ecc71; --red:#e74c3c; --yellow:#f39c12; --blue:#4f8ef7; --text:#e0e0e0; --muted:#7a7f9a; --dim:#444860; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { background:var(--bg); color:var(--text); font-family:'Noto Sans KR',sans-serif; }
+    .header { background:var(--card); border-bottom:1px solid var(--border); padding:14px 24px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+    .header-logo { font-size:1.2rem; font-weight:800; color:var(--accent); }
+    .header-logo span { color:var(--text); font-weight:300; margin-left:6px; font-size:0.9rem; }
+    .header-nav { display:flex; gap:8px; font-size:0.82rem; }
+    .header-nav a { color:var(--muted); text-decoration:none; padding:6px 12px; border-radius:6px; }
+    .header-nav a:hover, .header-nav a.active { color:var(--accent); background:rgba(212,165,74,0.1); }
+    .container { max-width:1200px; margin:16px auto; padding:0 12px; }
+    .panel { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:16px; }
+    .tbl { width:100%; border-collapse:collapse; font-size:0.78rem; }
+    .tbl th, .tbl td { padding:6px 8px; border-bottom:1px solid var(--border); text-align:left; }
+    .tbl th { color:var(--muted); font-size:0.72rem; }
+    .btn { padding:4px 10px; border:none; border-radius:5px; cursor:pointer; font-size:0.72rem; font-weight:600; }
+    .b-blue { background:var(--blue); color:#fff; }
+    .b-red { background:var(--red); color:#fff; }
+    .b-gray { background:var(--bg); color:var(--muted); border:1px solid var(--border); }
+    .b-accent { background:var(--accent); color:#000; }
+    @media(max-width:768px) { .tbl { font-size:0.72rem; } .tbl th, .tbl td { padding:4px 6px; } }
+  </style>
+</head>
+<body>
+<div class="header">
+  <div class="header-logo">TheOne<span>Vintage</span> — 주문확인</div>
+  <div class="header-nav">
+    <a href="{{ url_prefix }}/analytics">통계</a>
+    <a href="{{ url_prefix }}/orders-page" class="active">주문</a>
+    <a href="{{ url_prefix }}/members-page">회원</a>
+    <a href="{{ url_prefix }}/todo">ToDo</a>
+    <a href="{{ url_prefix }}/dashboard">대시보드</a>
+  </div>
+</div>
+<div class="container">
+  <div class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+      <span style="font-size:0.95rem;font-weight:700;">&#x1f4e6; 주문 리스트</span>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <input id="q" placeholder="주문자/주문번호/상품번호/브랜드 검색" onkeydown="if(event.key==='Enter')load()" style="padding:5px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:0.78rem;min-width:200px;">
+        <select id="st" onchange="load()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.78rem;">
+          <option value="">전체</option><option value="new">신규</option><option value="confirmed">확인</option><option value="processing">처리중</option><option value="shipped">배송중</option><option value="completed">완료</option><option value="sold_out">품절취소</option><option value="cancelled">취소</option>
+        </select>
+        <button class="btn b-gray" onclick="load()">&#x1f504;</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+      <span style="font-size:0.78rem;color:var(--muted);">선택: <b id="sel-cnt" style="color:var(--accent);">0</b>건</span>
+      <select id="bulk-st" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:5px;font-size:0.72rem;">
+        <option value="">상태 변경</option><option value="confirmed">확인</option><option value="processing">처리중</option><option value="shipped">배송중</option><option value="completed">완료</option><option value="sold_out">품절취소</option><option value="cancelled">취소</option>
+      </select>
+      <button class="btn b-blue" onclick="bulkStatus()">적용</button>
+      <button class="btn b-red" onclick="bulkDel()">선택 삭제</button>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="tbl">
+        <thead><tr>
+          <th style="width:28px"><input type="checkbox" onchange="document.querySelectorAll('.oc').forEach(c=>c.checked=this.checked);updSel()"></th>
+          <th>주문번호</th><th>고객</th><th>레벨</th><th>이름</th><th>이미지</th><th>브랜드</th><th>상품명</th><th>상품코드</th><th>판매가</th><th>상태</th>
+        </tr></thead>
+        <tbody id="tbody"><tr><td colspan="11" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<script>
+const P = "{{ url_prefix }}";
+const SL = {"new":"신규","confirmed":"확인","processing":"처리중","shipped":"배송중","completed":"완료","sold_out":"품절취소","cancelled":"취소"};
+const SC = {"new":"var(--yellow)","confirmed":"var(--blue)","processing":"var(--accent)","shipped":"#6cf","completed":"var(--green)","sold_out":"var(--red)","cancelled":"var(--red)"};
+
+async function load() {
+  const params = new URLSearchParams({type:"order"});
+  const q = document.getElementById("q").value.trim();
+  const st = document.getElementById("st").value;
+  if (q) params.set("q", q);
+  if (st) params.set("status", st);
+  const r = await fetch(P+"/orders?"+params);
+  if (r.status===401) { location.href=P+"/login"; return; }
+  const d = await r.json();
+  if (!d.orders||!d.orders.length) { document.getElementById("tbody").innerHTML='<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:30px;">주문 없음</td></tr>'; return; }
+  // 다중주문 하위 숨김
+  const hide = new Set();
+  d.orders.forEach(o => { if ((o.product_name||'').includes('다중주문')||(o.product_name||'').includes('일괄결제')) (o.product_code||'').split(',').forEach(n => { if(n.trim().startsWith('ORD')) hide.add(n.trim()); }); });
+  const list = d.orders.filter(o => !hide.has(o.order_number));
+  document.getElementById("tbody").innerHTML = list.map(o => {
+    const sc = SC[o.status]||'var(--muted)';
+    return `<tr>
+      <td><input type="checkbox" class="oc" data-id="${o.id}" onchange="updSel()"></td>
+      <td style="font-family:monospace;font-size:0.68rem;color:var(--accent);">${o.order_number||''}</td>
+      <td style="font-weight:600;">${o.username||''}</td>
+      <td style="font-size:0.7rem;font-weight:700;color:${o.user_level==='b2b'?'var(--blue)':'var(--green)'};">${(o.user_level||'b2c').toUpperCase()}</td>
+      <td>${o.customer_name||'-'}</td>
+      <td><img src="${o.product_img||''}" style="width:32px;height:32px;object-fit:cover;border-radius:4px;" onerror="this.style.display='none'"></td>
+      <td>${o.brand||''}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.product_name||''}</td>
+      <td style="font-family:monospace;font-size:0.68rem;">${o.product_code||''}</td>
+      <td style="font-weight:700;color:var(--accent);">${o.price||''}</td>
+      <td><select onchange="chgSt(${o.id},this.value)" style="background:var(--bg);border:1px solid var(--border);color:${sc};padding:2px 4px;border-radius:4px;font-size:0.68rem;font-weight:600;">${Object.entries(SL).map(([k,v])=>`<option value="${k}" ${k===o.status?'selected':''}>${v}</option>`).join('')}</select></td>
+    </tr>`;
+  }).join("");
+}
+
+function updSel() { document.getElementById("sel-cnt").textContent = document.querySelectorAll('.oc:checked').length; }
+
+async function chgSt(id, st) {
+  await fetch(P+"/orders/"+id, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({status:st})});
+  load();
+}
+
+async function bulkStatus() {
+  const ids = [...document.querySelectorAll('.oc:checked')].map(c=>parseInt(c.dataset.id));
+  const st = document.getElementById("bulk-st").value;
+  if (!ids.length||!st) return;
+  if (!confirm(`${ids.length}건을 '${SL[st]}'로 변경?`)) return;
+  for (const id of ids) await fetch(P+"/orders/"+id, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({status:st})});
+  load();
+}
+
+async function bulkDel() {
+  const ids = [...document.querySelectorAll('.oc:checked')].map(c=>parseInt(c.dataset.id));
+  if (!ids.length) return;
+  if (!confirm(`${ids.length}건 삭제?`)) return;
+  for (const id of ids) await fetch(P+"/orders/"+id, {method:"DELETE"});
+  load();
+}
+
+load();
+</script>
+</body>
+</html>

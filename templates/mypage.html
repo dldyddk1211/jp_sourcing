@@ -215,13 +215,14 @@
           </div>
           <div style="display:flex;gap:8px;align-items:center;">
             <span style="font-size:0.78rem;color:var(--muted);">선택: <b id="order-pay-cnt" style="color:var(--accent);">0</b>건 <b id="order-pay-total" style="color:var(--green);margin-left:4px;">0원</b></span>
+            <button onclick="showTotalCost('order')" class="btn btn-blue" style="padding:8px 14px;font-size:0.78rem;white-space:nowrap;">총 예상비용</button>
             <button onclick="paySelectedOrders()" class="btn btn-accent" style="padding:8px 18px;font-size:0.82rem;white-space:nowrap;">선택 결제</button>
             <button onclick="bulkCancelMyOrders()" class="btn btn-red" style="padding:8px 14px;font-size:0.78rem;white-space:nowrap;">선택 취소</button>
           </div>
         </div>
         <!-- Desktop table -->
         <table class="order-table-desktop">
-          <thead><tr><th style="width:30px"></th><th>주문번호</th><th>일시</th><th>유형</th><th>상품</th><th>가격</th><th>상태</th><th></th></tr></thead>
+          <thead><tr><th style="width:30px"></th><th>주문번호</th><th>일시</th><th style="width:40px">이미지</th><th>상품</th><th>가격</th><th>상태</th><th></th></tr></thead>
           <tbody id="my-orders-body"><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr></tbody>
         </table>
         <!-- Mobile cards -->
@@ -234,16 +235,18 @@
     <!-- 장바구니 -->
     <div class="tab-content" id="tc-cart">
       <div class="panel">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
           <div class="section-title" style="margin-bottom:0;">장바구니</div>
-          <div style="display:flex;gap:6px;">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span style="font-size:0.78rem;color:var(--muted);">선택: <b id="cart-sel-cnt" style="color:var(--accent);">0</b>건 <b id="cart-sel-total" style="color:var(--green);margin-left:4px;">0원</b></span>
+            <button onclick="showTotalCost('cart')" class="btn btn-blue" style="padding:5px 12px;font-size:0.72rem;">총 예상비용</button>
             <button onclick="bulkOrderMyCart()" class="btn btn-accent" style="padding:5px 12px;font-size:0.72rem;">선택 주문</button>
             <button onclick="bulkDeleteMyCart()" class="btn btn-red" style="padding:5px 12px;font-size:0.72rem;">선택 삭제</button>
           </div>
         </div>
         <!-- Desktop table -->
         <table class="cart-table-desktop">
-          <thead><tr><th style="width:30px;"><input type="checkbox" onchange="document.querySelectorAll('.my-cart-chk').forEach(c=>c.checked=this.checked)"></th><th></th><th>주문가능</th><th>상품</th><th>브랜드</th><th>고유번호</th><th>가격</th><th></th></tr></thead>
+          <thead><tr><th style="width:30px;"><input type="checkbox" onchange="document.querySelectorAll('.my-cart-chk:not(:disabled)').forEach(c=>c.checked=this.checked);updateCartSelInfo()"></th><th></th><th>주문가능</th><th>상품</th><th>브랜드</th><th>고유번호</th><th>가격</th><th></th></tr></thead>
           <tbody id="my-cart-body"><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr></tbody>
         </table>
         <!-- Mobile cards -->
@@ -764,8 +767,9 @@ async function toggleMyBatchDetail(orderId, el) {
         const [sl] = statusMap[it.status] || [it.status];
         return `<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(42,45,58,0.3);font-size:0.78rem;">
           <span style="color:var(--dim);width:16px;">${i+1}</span>
-          <span style="font-weight:600;min-width:70px;">${it.brand||''}</span>
-          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.product_name||''}</span>
+          <img src="${it.product_img||''}" style="width:32px;height:32px;object-fit:cover;border-radius:4px;" onerror="this.style.display='none'">
+          <span style="font-weight:600;min-width:60px;">${it.brand||''}</span>
+          ${it.product_code ? `<a href="#" onclick="event.preventDefault();openCartDetail('${(it.product_code||'').replace(/'/g,"\\'")}')" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);text-decoration:underline;text-underline-offset:3px;cursor:pointer;">${it.product_name||''}</a>` : `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.product_name||''}</span>`}
           <span style="font-weight:700;color:var(--accent);">${it.price||''}</span>
           <span style="font-size:0.72rem;font-weight:600;">${sl}</span>
         </div>`;
@@ -799,26 +803,53 @@ async function loadMyOrders() {
       mobileEl.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px;font-size:0.82rem;">내역이 없습니다</div>';
       return;
     }
+    // 다중주문에 포함된 개별 주문번호 수집 → 목록에서 숨김
+    const batchChildNums = new Set();
+    d.orders.forEach(o => {
+      if ((o.product_name||'').includes('다중주문') || (o.product_name||'').includes('일괄결제')) {
+        (o.product_code||'').split(',').forEach(n => { if (n.trim().startsWith('ORD')) batchChildNums.add(n.trim()); });
+      }
+    });
+    const filteredOrders = d.orders.filter(o => !batchChildNums.has(o.order_number));
+    // 다중주문 가격 합산 (개별 주문 가격 합계, 중복 제거)
+    const batchPriceMap = {};
+    filteredOrders.forEach(o => {
+      if ((o.product_name||'').includes('다중주문') || (o.product_name||'').includes('일괄결제')) {
+        const childNums = (o.product_code||'').split(',').map(n => n.trim()).filter(n => n.startsWith('ORD'));
+        const uniqueNums = [...new Set(childNums)];
+        let total = 0;
+        const counted = new Set();
+        d.orders.filter(x => uniqueNums.includes(x.order_number) && !x.product_name?.includes('다중주문') && !x.product_name?.includes('일괄결제')).forEach(x => {
+          if (!counted.has(x.id)) {
+            counted.add(x.id);
+            total += parseInt((x.price||'0').replace(/[^0-9]/g,'')) || 0;
+          }
+        });
+        batchPriceMap[o.id] = total;
+      }
+    });
+
     // Desktop table
-    tbody.innerHTML = d.orders.map((o, i) => {
+    tbody.innerHTML = filteredOrders.map((o, i) => {
       const [sl, sc] = statusMap[o.status] || [o.status, ""];
       const canCancel = o.status === "new" || o.status === "confirmed";
       const canPay = o.status === "new" && o.type === "order";
-      const priceNum = parseInt((o.price||'0').replace(/[^0-9]/g,'')) || 0;
+      const isBatch = (o.product_name||'').includes('다중주문') || (o.product_name||'').includes('일괄결제');
+      const priceNum = isBatch ? (batchPriceMap[o.id] || 0) : (parseInt((o.price||'0').replace(/[^0-9]/g,'')) || 0);
       const onum = o.order_number || '';
       return `<tr>
         <td style="text-align:center;">${canPay ? `<input type="checkbox" class="my-order-chk" data-id="${o.id}" data-price="${priceNum}" data-name="${(o.brand||'')+' '+(o.product_name||'')}" onchange="updateMyOrderPayInfo()">` : ''}</td>
         <td><a href="#" onclick="event.preventDefault();openOrderDetail('${onum}');" style="color:var(--accent);font-family:monospace;font-size:0.72rem;text-decoration:underline;text-underline-offset:3px;">${onum}</a></td>
         <td style="font-size:0.78rem;">${(o.created_at||'').slice(5,16)}</td>
-        <td>${o.type==='order'?'🛒':'💬'}</td>
+        <td><img src="${o.product_img||''}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;" onerror="this.style.display='none'"></td>
         <td>${(o.product_name||'').includes('다중주문') || (o.product_name||'').includes('일괄결제') ? `<a href="#" onclick="event.preventDefault();toggleMyBatchDetail(${o.id},this)" style="color:var(--yellow);text-decoration:underline;cursor:pointer;">${o.product_name} ▼</a>` : (o.product_code ? `<a href="#" onclick="event.preventDefault();openCartDetail('${o.product_code.replace(/'/g,"\\'")}');" style="color:var(--text);text-decoration:underline;text-underline-offset:3px;">${o.brand} ${o.product_name||''}</a>` : `${o.brand} ${o.product_name||''}`)}</td>
-        <td style="font-weight:700;color:var(--accent);">${o.price||''}</td>
+        <td style="font-weight:700;color:var(--accent);">${isBatch ? priceNum.toLocaleString()+'원' : (o.price||'')}</td>
         <td class="${sc}" style="font-weight:600;">${sl}</td>
         <td>${canCancel ? `<button onclick="cancelMyOrder(${o.id})" style="padding:4px 10px;font-size:0.72rem;background:var(--red);color:#fff;border:none;border-radius:4px;cursor:pointer;">취소</button>` : ''}</td>
       </tr>`;
     }).join("");
     // Mobile cards
-    mobileEl.innerHTML = d.orders.map((o) => {
+    mobileEl.innerHTML = filteredOrders.map((o) => {
       const [sl, sc] = statusMap[o.status] || [o.status, ""];
       const canCancel = o.status === "new" || o.status === "confirmed";
       const canPay = o.status === "new" && o.type === "order";
@@ -866,7 +897,7 @@ async function loadMyCart() {
     }
     // Desktop table
     tbody.innerHTML = d.items.map(c => `<tr style="${c.sold_out?'opacity:0.5;':''}">
-      <td style="text-align:center;"><input type="checkbox" class="my-cart-chk" data-id="${c.id}"></td>
+      <td style="text-align:center;"><input type="checkbox" class="my-cart-chk" data-id="${c.id}" data-price="${parseInt((c.price||'0').replace(/[^0-9]/g,''))||0}" ${c.sold_out?'disabled':''}></td>
       <td><img class="cart-img" src="${c.img_url||''}" onerror="this.style.display='none'" style="cursor:pointer;" onclick="openCartDetail('${(c.product_code||'').replace(/'/g,"\\'")}')"></td>
       <td style="text-align:center;font-size:0.72rem;font-weight:700;color:${c.order_status==='품절'?'var(--red)':c.order_status==='주문가능'?'var(--green)':'var(--muted)'};">${c.order_status||'확인중'}</td>
       <td><a href="#" onclick="event.preventDefault();openCartDetail('${(c.product_code||'').replace(/'/g,"\\'")}');" style="color:var(--text);text-decoration:underline;text-underline-offset:3px;cursor:pointer;">${c.product_name||''}</a></td>
@@ -880,7 +911,8 @@ async function loadMyCart() {
     </tr>`).join("");
     // Mobile cards
     mobileEl.innerHTML = d.items.map(c => `<div class="cart-card" style="${c.sold_out?'opacity:0.5;':''}position:relative;">
-      <span style="position:absolute;top:4px;left:4px;background:${c.order_status==='품절'?'var(--red)':c.order_status==='주문가능'?'var(--green)':'var(--muted)'};color:#fff;font-size:0.6rem;padding:2px 6px;border-radius:3px;font-weight:700;z-index:1;">${c.order_status||'확인중'}</span>
+      <input type="checkbox" class="my-cart-chk" data-id="${c.id}" data-price="${parseInt((c.price||'0').replace(/[^0-9]/g,''))||0}" ${c.sold_out?'disabled':''} onchange="updateCartSelInfo()" style="position:absolute;top:8px;left:8px;z-index:2;accent-color:var(--accent);width:18px;height:18px;">
+      <span style="position:absolute;top:4px;left:34px;background:${c.order_status==='품절'?'var(--red)':c.order_status==='주문가능'?'var(--green)':'var(--muted)'};color:#fff;font-size:0.6rem;padding:2px 6px;border-radius:3px;font-weight:700;z-index:1;">${c.order_status||'확인중'}</span>
       <img src="${c.img_url||''}" onclick="openCartDetail('${(c.product_code||'').replace(/'/g,"\\'")}');" style="cursor:pointer;" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1 1%22><rect fill=%22%23181a22%22 width=%221%22 height=%221%22/></svg>'">
       <div class="cart-card-info" onclick="openCartDetail('${(c.product_code||'').replace(/'/g,"\\'")}');" style="cursor:pointer;">
         <div class="brand">${c.brand||''}</div>
@@ -897,6 +929,120 @@ async function loadMyCart() {
     tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red);text-align:center;">로드 실패</td></tr>`;
     mobileEl.innerHTML = `<div style="color:var(--red);text-align:center;padding:20px;">로드 실패</div>`;
   }
+}
+
+function showTotalCost(type) {
+  let items = [];
+  if (type === 'order') {
+    const seenIds = new Set();
+    document.querySelectorAll('.my-order-chk:checked').forEach(chk => {
+      const id = chk.dataset.id;
+      if (seenIds.has(id)) return;
+      seenIds.add(id);
+      const price = parseInt(chk.dataset.price) || 0;
+      const name = chk.dataset.name || '';
+      if (price > 0) items.push({name, price});
+    });
+  } else {
+    const seenIds = new Set();
+    document.querySelectorAll('.my-cart-chk:checked').forEach(chk => {
+      const id = chk.dataset.id;
+      if (seenIds.has(id)) return;
+      seenIds.add(id);
+      const price = parseInt(chk.dataset.price) || 0;
+      // 이름: tr이면 셀에서, div(모바일)이면 brand+name에서
+      let name = '';
+      const tr = chk.closest('tr');
+      if (tr) {
+        const cells = tr.querySelectorAll('td');
+        name = (cells[5]?.textContent?.trim()||'') + ' ' + (cells[4]?.textContent?.trim()||'');
+      } else {
+        const card = chk.closest('.cart-card');
+        if (card) name = (card.querySelector('.brand')?.textContent||'') + ' ' + (card.querySelector('.name')?.textContent||'');
+      }
+      if (price > 0) items.push({name: name.trim(), price});
+    });
+  }
+  // 가격이 0인 항목 제거
+  items = items.filter(it => it.price > 0);
+  if (!items.length) { alert('비용을 확인할 상품을 선택해주세요'); return; }
+
+  const totalPrice = items.reduce((s, it) => s + it.price, 0);
+
+  // 개별 상품 1개라도 200만원 이상 → 개별소비세 안내
+  const overItem = items.find(it => it.price >= 2000000);
+  if (overItem) {
+    const html = `
+      <div id="cost-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:1000;display:flex;justify-content:center;align-items:center;" onclick="if(event.target===this)this.remove()">
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;max-width:420px;width:92%;box-shadow:0 16px 48px rgba(0,0,0,0.5);overflow:hidden;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border);">
+            <span style="font-size:1rem;font-weight:700;color:var(--yellow);">⚠️ 200만원 이상 상품 안내</span>
+            <button onclick="document.getElementById('cost-modal').remove()" style="background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer;">&times;</button>
+          </div>
+          <div style="padding:24px;text-align:center;">
+            <div style="font-size:1.1rem;font-weight:700;margin-bottom:8px;">${overItem.name}: ${overItem.price.toLocaleString()}원</div>
+            <div style="font-size:0.85rem;color:var(--muted);line-height:1.7;margin-bottom:20px;">
+              개별 상품 가격이 200만원 이상일 경우<br>
+              <b style="color:var(--yellow);">개별소비세</b> 계산이 필요합니다.<br>
+              정확한 비용 안내를 위해 문의해주세요.
+            </div>
+            <a href="http://pf.kakao.com/_geJHxj/chat" target="_blank" style="display:inline-block;padding:12px 28px;background:#FEE500;color:#000;border-radius:8px;font-weight:700;font-size:0.9rem;text-decoration:none;">카카오톡 상담하기</a>
+          </div>
+        </div>
+      </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+    return;
+  }
+
+  const shipping = 20000;
+  const usd = totalPrice / 1350;
+  const dutyFree = usd <= 150;
+  const duty = dutyFree ? 0 : Math.round(totalPrice * 0.20);
+  const totalCost = totalPrice + shipping + duty;
+
+  const html = `
+    <div id="cost-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:1000;display:flex;justify-content:center;align-items:center;" onclick="if(event.target===this)this.remove()">
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;max-width:420px;width:92%;box-shadow:0 16px 48px rgba(0,0,0,0.5);overflow:hidden;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border);">
+          <span style="font-size:1rem;font-weight:700;color:var(--accent);">&#x1f4b0; 총 예상비용 안내</span>
+          <button onclick="document.getElementById('cost-modal').remove()" style="background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer;">&times;</button>
+        </div>
+        <div style="padding:20px;">
+          <div style="margin-bottom:14px;">
+            ${items.map((it,i) => `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.82rem;border-bottom:1px solid var(--border);">
+              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i+1}. ${it.name}</span>
+              <span style="font-weight:600;margin-left:10px;white-space:nowrap;">${it.price.toLocaleString()}원</span>
+            </div>`).join('')}
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+            <tr style="border-top:2px solid var(--border);">
+              <td style="padding:8px 0;color:var(--muted);">상품가격 (${items.length}건)</td>
+              <td style="text-align:right;font-weight:600;">${totalPrice.toLocaleString()}원</td>
+            </tr>
+            <tr>
+              <td style="padding:8px 0;color:var(--muted);">국제배송비</td>
+              <td style="text-align:right;">${shipping.toLocaleString()}원</td>
+            </tr>
+            ${dutyFree ? `<tr>
+              <td style="padding:8px 0;color:var(--green);">관부가세</td>
+              <td style="text-align:right;color:var(--green);font-weight:600;">면제 ($${usd.toFixed(0)} ≤ $150)</td>
+            </tr>` : `<tr>
+              <td style="padding:8px 0;color:var(--muted);">관부가세 (약 20%)</td>
+              <td style="text-align:right;">${duty.toLocaleString()}원</td>
+            </tr>`}
+            <tr style="border-top:2px solid var(--accent);">
+              <td style="padding:10px 0;font-weight:700;color:var(--accent);font-size:1rem;">총 예상비용</td>
+              <td style="text-align:right;font-weight:800;color:var(--accent);font-size:1.1rem;">${totalCost.toLocaleString()}원</td>
+            </tr>
+          </table>
+          <div style="margin-top:12px;padding:10px 12px;background:rgba(243,156,18,0.1);border:1px solid rgba(243,156,18,0.3);border-radius:6px;font-size:0.75rem;color:var(--yellow);line-height:1.7;">
+            ⚠️ 개인통관 시 미화 $150 이하 관부가세 면제 가능<br>
+            ⚠️ 실제 비용은 환율 및 통관 방식에 따라 달라질 수 있습니다
+          </div>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
 }
 
 async function bulkOrderMyCart() {
@@ -929,6 +1075,25 @@ async function bulkOrderMyCart() {
     } else { alert(result.message || "주문 실패"); }
   } catch(e) { alert("주문 오류: " + e); }
 }
+
+function updateCartSelInfo() {
+  const seenIds = new Set();
+  let cnt = 0, total = 0;
+  document.querySelectorAll('.my-cart-chk:checked').forEach(chk => {
+    const id = chk.dataset.id;
+    if (seenIds.has(id)) return;
+    seenIds.add(id);
+    total += parseInt(chk.dataset.price) || 0;
+    cnt++;
+  });
+  document.getElementById("cart-sel-cnt").textContent = cnt;
+  document.getElementById("cart-sel-total").textContent = total.toLocaleString() + "원";
+}
+
+// 장바구니 체크박스 이벤트
+document.addEventListener("change", e => {
+  if (e.target.classList.contains("my-cart-chk")) updateCartSelInfo();
+});
 
 async function bulkDeleteMyCart() {
   const checked = [...document.querySelectorAll('.my-cart-chk:checked')];
@@ -1235,6 +1400,7 @@ document.addEventListener("change", e => {
   const id = e.target.dataset.id;
   const isChecked = e.target.checked;
   document.querySelectorAll(`.my-order-chk[data-id="${id}"]`).forEach(c => c.checked = isChecked);
+  updateMyOrderPayInfo();
 });
 
 function updateMyOrderPayInfo() {

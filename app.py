@@ -319,7 +319,7 @@ def signup():
                     conn.close()
                 except Exception:
                     pass
-                logger.info(f"회원가입 (승인대기): {username}")
+                logger.info(f"회원가입 (B2C 자동승인): {username}")
                 # 텔레그램 알림
                 try:
                     from notifier import send_telegram
@@ -328,10 +328,24 @@ def signup():
                         f"🆔 아이디: {username}\n"
                         f"📛 이름: {name or '-'}\n"
                         f"📞 연락처: {phone or '-'}\n"
-                        f"⏳ 승인 대기 중"
+                        f"✅ B2C 자동 승인 완료"
                     )
                 except Exception:
                     pass
+                # 가입 환영 문자 발송
+                if phone:
+                    try:
+                        from aligo_sms import send_sms, load_config
+                        load_config()
+                        msg = (
+                            f"[TheOne Vintage] {name or username}님, 회원가입을 환영합니다!\n"
+                            f"B2C 회원으로 승인되었습니다.\n"
+                            f"B2B 승인은 요청/문의 게시판에서 신청해주세요.\n"
+                            f"https://vintage.theone-biz.com"
+                        )
+                        send_sms(phone, msg, title="TheOne Vintage")
+                    except Exception:
+                        pass
                 return render_template("signup.html", error=None, success=True,
                                        url_prefix=URL_PREFIX, env=APP_ENV)
             else:
@@ -439,6 +453,11 @@ def vintage_cafe_products():
         conn.close()
 
 
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory("static", "favicon.ico", mimetype="image/x-icon")
+
+
 @app.route("/googleaccc97bb8d10ca5d.html")
 def google_verification():
     return send_from_directory("static", "googleaccc97bb8d10ca5d.html")
@@ -502,10 +521,24 @@ def shop_my_orders_api():
     conn = user_conn()
     try:
         rows = conn.execute(
-            "SELECT * FROM orders WHERE username = ? ORDER BY created_at DESC LIMIT 100",
+            "SELECT id, type, username, customer_name, brand, product_name, product_code, price, status, order_number, created_at FROM orders WHERE username = ? ORDER BY created_at DESC LIMIT 100",
             (username,)
         ).fetchall()
         orders = [{c: r[c] for c in r.keys()} for r in rows]
+        # 상품 이미지 추가
+        try:
+            from product_db import _conn as prod_conn
+            pconn = prod_conn()
+            for o in orders:
+                code = o.get("product_code", "")
+                if code and not code.startswith("ORD"):
+                    pr = pconn.execute("SELECT img_url FROM products WHERE internal_code=? OR product_code=? LIMIT 1", (code, code)).fetchone()
+                    o["product_img"] = pr["img_url"] if pr else ""
+                else:
+                    o["product_img"] = ""
+            pconn.close()
+        except Exception:
+            pass
         return jsonify({"ok": True, "orders": orders})
     finally:
         conn.close()
@@ -710,10 +743,29 @@ def add_to_cart():
     conn = user_conn()
     try:
         product_code = data.get("code", "")
-        conn.execute("""INSERT OR IGNORE INTO cart (username, product_code, brand, product_name, price, price_jpy, img_url)
+        # 중복 체크
+        existing = conn.execute("SELECT id FROM cart WHERE username=? AND product_code=?", (username, product_code)).fetchone()
+        if existing:
+            count = conn.execute("SELECT count(*) FROM cart WHERE username=?", (username,)).fetchone()[0]
+            return jsonify({"ok": True, "count": count, "duplicate": True, "message": "이미 장바구니에 담긴 상품입니다."})
+
+        # 가격을 고객 레벨에 맞게 재계산
+        cart_price = data.get("price", "")
+        cart_jpy = data.get("price_jpy", 0)
+        if cart_jpy and cart_jpy > 0:
+            try:
+                _ur = conn.execute("SELECT level FROM users WHERE username=?", (username,)).fetchone()
+                _lvl = _ur["level"] if _ur else "b2c"
+                _rp = _calc_vintage_price(cart_jpy, _lvl)
+                if _rp > 0:
+                    cart_price = f"{_rp:,}원"
+            except Exception:
+                pass
+
+        conn.execute("""INSERT INTO cart (username, product_code, brand, product_name, price, price_jpy, img_url)
                         VALUES (?,?,?,?,?,?,?)""",
                      (username, product_code, data.get("brand",""), data.get("name",""),
-                      data.get("price",""), data.get("price_jpy",0), data.get("img_url","")))
+                      cart_price, cart_jpy, data.get("img_url","")))
         conn.commit()
         count = conn.execute("SELECT count(*) FROM cart WHERE username=?", (username,)).fetchone()[0]
 
@@ -1389,6 +1441,20 @@ def shop_notify():
     except Exception as e:
         logger.warning(f"주문 알림 전송 실패: {e}")
 
+    # 주문 중복 체크 (같은 상품코드 + 미처리 상태)
+    if ntype == "order" and code:
+        from user_db import _conn as _uc2
+        _c2 = _uc2()
+        try:
+            dup = _c2.execute(
+                "SELECT id, order_number FROM orders WHERE username=? AND product_code=? AND status IN ('new','confirmed','processing')",
+                (username, code)
+            ).fetchone()
+            if dup:
+                return jsonify({"ok": True, "duplicate": True, "message": f"이미 주문된 상품입니다. (주문번호: {dup['order_number']})"})
+        finally:
+            _c2.close()
+
     # 주문 DB에 저장
     try:
         _save_order(ntype, username, customer_name, brand, name, code, price, price_jpy)
@@ -1443,10 +1509,13 @@ def _init_orders_db():
         conn.close()
 
 
+_order_seq = 0
 def _generate_order_number(conn=None, created_at=None):
-    """주문번호 생성: ORD-YYMMDD-HHMMSS"""
+    """주문번호 생성: ORD-YYMMDD-HHMMSS + 시퀀스 (중복 방지)"""
+    global _order_seq
+    _order_seq += 1
     dt = datetime.now()
-    return f"ORD-{dt.strftime('%y%m%d')}-{dt.strftime('%H%M%S')}"
+    return f"ORD-{dt.strftime('%y%m%d')}-{dt.strftime('%H%M%S')}{_order_seq:02d}"
 
 
 @app.route(f"{URL_PREFIX}/shop/api/bulk-order", methods=["POST"])
@@ -1514,6 +1583,20 @@ def bulk_order():
 
 def _save_order(ntype, username, customer_name, brand, product_name, product_code, price, price_jpy):
     _init_orders_db()
+    # 가격을 고객 레벨에 맞게 재계산
+    if price_jpy and price_jpy > 0:
+        try:
+            from user_db import _conn as _ulc
+            _uc = _ulc()
+            _ur = _uc.execute("SELECT level FROM users WHERE username=?", (username,)).fetchone()
+            _uc.close()
+            user_lvl = _ur["level"] if _ur else "b2c"
+            recalc = _calc_vintage_price(price_jpy, user_lvl)
+            if recalc > 0:
+                price = f"{recalc:,}원"
+        except Exception:
+            pass
+
     # product_code가 고유번호(No.S-)가 아니면 자동 변환
     if product_code and not product_code.startswith("No."):
         try:
@@ -1604,69 +1687,67 @@ def _check_product_soldout(product_code):
 
 
 def _bg_check_single_cart_item(product_code):
-    """백그라운드: 장바구니 단건 품절 체크 → cart 테이블에 저장 (상품DB 미수정)"""
-    import asyncio
+    """백그라운드: 장바구니 단건 품절 체크 → cart 테이블에 저장 (상품DB 미수정)
+
+    Playwright 대신 requests + 정규식으로 빠르게 체크 (0.5~1초)
+    403 차단 시 → 확인불가로 처리 (품절 아님)
+    """
     from product_db import _conn as p_conn
     from user_db import _conn as u_conn
 
-    async def _run():
-        from playwright.async_api import async_playwright
-        pc = p_conn()
-        r = pc.execute("SELECT link FROM products WHERE internal_code=? OR product_code=? LIMIT 1", (product_code, product_code)).fetchone()
-        pc.close()
-        if not r or not r["link"]:
-            return
+    pc = p_conn()
+    r = pc.execute("SELECT link FROM products WHERE internal_code=? OR product_code=? LIMIT 1", (product_code, product_code)).fetchone()
+    pc.close()
+    if not r or not r["link"]:
+        return
 
-        pw = await async_playwright().start()
-        browser = await pw.chromium.launch(
-            headless=False,
-            args=["--disable-blink-features=AutomationControlled", "--lang=ja", "--disable-translate"],
-        )
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            locale="ja-JP", timezone_id="Asia/Tokyo", viewport={"width": 1280, "height": 900},
-        )
-        await context.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>false});")
-        page = await context.new_page()
-        try:
-            resp = await page.goto(r["link"], wait_until="domcontentloaded", timeout=20000)
-            await asyncio.sleep(2)
-            is_sold = 0
-            if resp and resp.status == 404:
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    is_sold = -1  # -1: 확인불가
+
+    try:
+        import requests as _req
+        resp = _req.get(r["link"], timeout=10, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Accept-Language": "ja,ja-JP;q=0.9",
+            "Accept": "text/html,application/xhtml+xml",
+        })
+        if resp.status_code == 404:
+            is_sold = 1
+        elif resp.status_code == 200:
+            body = resp.text
+            if "SOLD OUT" in body or "この商品は売切れ" in body or "この商品は売り切れ" in body:
                 is_sold = 1
-            elif resp and resp.status not in (403, 429, 503):
-                result = await page.evaluate("""() => {
-                    const body = document.body.innerText || '';
-                    if (body.includes('※申し訳ございません。この商品は売切れ') ||
-                        body.includes('※申し訳ございません。この商品は売り切れ') ||
-                        body.includes('この商品は現在販売しておりません')) return 'sold';
-                    const price = document.querySelector('[itemprop="price"], .priceMain, .priceNum');
-                    if (!price) return 'unknown';
-                    let parent = price.parentElement;
-                    for (let i = 0; i < 4 && parent; i++) {
-                        if ((parent.innerText || '').includes('SOLD OUT')) return 'sold';
-                        parent = parent.parentElement;
-                    }
-                    return 'ok';
-                }""")
-                is_sold = 1 if result == "sold" else 0
+            elif "Access Denied" in body:
+                is_sold = -1  # 차단 → Playwright 재시도
+            else:
+                is_sold = 0
+        else:
+            is_sold = -1  # 403 등 → Playwright 재시도
+    except Exception:
+        is_sold = -1
 
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # HTTP 차단 시 Playwright로 정확한 체크
+    if is_sold == -1:
+        try:
+            import asyncio
+            result = asyncio.run(_check_soldout_playwright(r["link"]))
+            if result is True:
+                is_sold = 1
+            elif result is False:
+                is_sold = 0
+            # None이면 여전히 확인불가
+        except Exception as e:
+            logger.warning(f"[장바구니 단건체크] Playwright 폴백 오류: {e}")
+
+    if is_sold >= 0:
+        try:
             uc = u_conn()
             uc.execute("UPDATE cart SET is_sold_out=?, checked_at=? WHERE product_code=?", (is_sold, now, product_code))
             uc.commit()
             uc.close()
-            logger.info(f"[장바구니 단건체크] {product_code} → {'품절' if is_sold else '주문가능'}")
-        except Exception as e:
-            logger.warning(f"[장바구니 단건체크] {product_code} 오류: {e}")
-        finally:
-            await browser.close()
-            await pw.stop()
-
-    try:
-        asyncio.run(_run())
-    except Exception as e:
-        logger.warning(f"[장바구니 단건체크] 실행 오류: {e}")
+            logger.info(f"[장바구니 단건체크] {product_code} → {'품절' if is_sold else '주문가능'} (HTTP)")
+        except Exception:
+            pass
 
 
 _cart_check_running = False
@@ -1774,8 +1855,8 @@ async def _check_soldout_playwright(url):
     try:
         playwright = await async_playwright().start()
         browser = await playwright.chromium.launch(
-            headless=True,
-            args=["--disable-blink-features=AutomationControlled", "--lang=ja"],
+            headless=False,
+            args=["--disable-blink-features=AutomationControlled", "--lang=ja", "--disable-translate"],
         )
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -1877,6 +1958,7 @@ def get_orders():
     _init_orders_db()
     type_filter = request.args.get("type", "")
     status_filter = request.args.get("status", "")
+    search_query = request.args.get("q", "").strip()
     from user_db import _conn as user_conn
     conn = user_conn()
     try:
@@ -1888,6 +1970,10 @@ def get_orders():
         if status_filter:
             sql += " AND status = ?"
             params.append(status_filter)
+        if search_query:
+            sql += " AND (username LIKE ? OR customer_name LIKE ? OR order_number LIKE ? OR product_code LIKE ? OR brand LIKE ? OR product_name LIKE ?)"
+            q = f"%{search_query}%"
+            params.extend([q, q, q, q, q, q])
         sql += " ORDER BY created_at DESC LIMIT 200"
         rows = conn.execute(sql, params).fetchall()
         orders = []
@@ -1918,23 +2004,35 @@ def get_orders():
             # 원가/마진 계산
             pname = o.get("product_name", "") or ""
             pjpy = o.get("price_jpy", 0) or 0
-            if "일괄결제" in pname:
-                # 일괄결제: 개별 주문들의 합계
+            if "일괄결제" in pname or "다중주문" in pname:
+                # 다중주문/일괄결제: 개별 주문들의 합계
                 batch_cost = 0
+                batch_sell = 0
                 batch_ids_str = o.get("product_code", "")
                 if batch_ids_str:
                     for bid in batch_ids_str.split(","):
                         bid = bid.strip()
                         if bid.isdigit():
-                            br = conn.execute("SELECT price_jpy FROM orders WHERE id=?", (int(bid),)).fetchone()
-                            if br and br["price_jpy"]:
-                                batch_cost += _calc_vintage_cost(br["price_jpy"])
+                            br = conn.execute("SELECT price_jpy, price FROM orders WHERE id=?", (int(bid),)).fetchone()
+                        elif bid.startswith("ORD"):
+                            br = conn.execute("SELECT price_jpy, price FROM orders WHERE order_number=?", (bid,)).fetchone()
+                        else:
+                            continue
+                        if br and br["price_jpy"]:
+                            batch_cost += _calc_vintage_cost(br["price_jpy"])
+                        if br:
+                            try:
+                                batch_sell += int("".join(ch for ch in str(br["price"] or "0") if ch.isdigit()) or 0)
+                            except Exception:
+                                pass
                 o["cost_krw"] = batch_cost
-                sell_price = int(str(o.get("price", "0")).replace(",", "").replace("원", "").strip() or 0)
-                o["margin_krw"] = sell_price - batch_cost if sell_price > 0 and batch_cost > 0 else 0
+                o["margin_krw"] = batch_sell - batch_cost if batch_sell > 0 and batch_cost > 0 else 0
             elif pjpy > 0:
                 o["cost_krw"] = _calc_vintage_cost(pjpy)
-                sell_price = int(str(o.get("price", "0")).replace(",", "").replace("원", "").strip() or 0)
+                try:
+                    sell_price = int("".join(c for c in str(o.get("price", "0")) if c.isdigit()) or 0)
+                except Exception:
+                    sell_price = 0
                 o["margin_krw"] = sell_price - o["cost_krw"] if sell_price > 0 else 0
             else:
                 o["cost_krw"] = 0
@@ -1950,7 +2048,18 @@ def get_orders():
         except Exception:
             pass
         for o in orders:
-            o["user_level"] = user_levels.get(o.get("username",""), "b2c")
+            lvl = user_levels.get(o.get("username",""), "b2c")
+            o["user_level"] = lvl
+            # 판매가를 레벨별로 재계산
+            pjpy = o.get("price_jpy", 0) or 0
+            pname = o.get("product_name", "") or ""
+            if pjpy > 0 and "다중주문" not in pname and "일괄결제" not in pname:
+                recalc = _calc_vintage_price(pjpy, lvl)
+                if recalc > 0:
+                    o["price"] = f"{recalc:,}원"
+                    # 마진도 재계산
+                    cost = o.get("cost_krw", 0) or 0
+                    o["margin_krw"] = recalc - cost if recalc > 0 and cost > 0 else 0
         return jsonify({"ok": True, "orders": orders, "rate": current_rate})
     finally:
         conn.close()
@@ -2007,18 +2116,32 @@ def get_related_orders(order_id):
             """, (username, order_id, order["created_at"])).fetchall()
             related = [{c: r[c] for c in r.keys()} for r in rows]
         # 상품 이미지 조회
-        for o in related:
-            code = o.get("product_code", "")
-            if code:
-                try:
-                    from product_db import _conn as prod_conn
-                    pconn = prod_conn()
-                    pr = pconn.execute("SELECT img_url FROM products WHERE internal_code=? LIMIT 1", (code,)).fetchone()
+        # 상품 이미지/링크 + 원가 계산
+        try:
+            from product_db import _conn as prod_conn
+            pconn = prod_conn()
+            for o in related:
+                code = o.get("product_code", "")
+                if code:
+                    pr = pconn.execute("SELECT img_url, link FROM products WHERE internal_code=? OR product_code=? LIMIT 1", (code, code)).fetchone()
                     o["product_img"] = pr["img_url"] if pr else ""
-                    pconn.close()
-                except Exception:
+                    o["product_link"] = pr["link"] if pr else ""
+                else:
                     o["product_img"] = ""
-        return jsonify({"ok": True, "related": related, "count": len(related)})
+                    o["product_link"] = ""
+                # 원가 계산
+                pjpy = o.get("price_jpy", 0) or 0
+                if pjpy > 0:
+                    try:
+                        o["cost_krw"] = _calc_vintage_cost(pjpy)
+                    except Exception:
+                        o["cost_krw"] = 0
+                else:
+                    o["cost_krw"] = 0
+            pconn.close()
+        except Exception:
+            pass
+        return jsonify({"ok": True, "related": related, "count": len(related), "rate": get_cached_rate() or 0})
     finally:
         conn.close()
 
@@ -2039,9 +2162,20 @@ def get_order_batch(order_id):
         if not order_nums:
             return jsonify({"ok": False, "items": []})
         placeholders = ",".join(["?"] * len(order_nums))
-        rows = conn.execute(f"SELECT * FROM orders WHERE order_number IN ({placeholders}) AND username=? ORDER BY created_at",
+        rows = conn.execute(f"SELECT id, type, brand, product_name, product_code, price, status, order_number, created_at FROM orders WHERE order_number IN ({placeholders}) AND username=? ORDER BY created_at",
                            order_nums + [username]).fetchall()
         items = [{c: r[c] for c in r.keys()} for r in rows]
+        try:
+            from product_db import _conn as prod_conn
+            pconn = prod_conn()
+            for it in items:
+                code = it.get("product_code", "")
+                if code:
+                    pr = pconn.execute("SELECT img_url FROM products WHERE internal_code=? OR product_code=? LIMIT 1", (code, code)).fetchone()
+                    it["product_img"] = pr["img_url"] if pr else ""
+            pconn.close()
+        except Exception:
+            pass
         return jsonify({"ok": True, "items": items})
     finally:
         conn.close()
@@ -2490,6 +2624,24 @@ def shop_api_products():
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 24, type=int)
     sort = request.args.get("sort", "newest")
+
+    # 비회원/미승인 회원은 1페이지만 허용
+    is_approved = False
+    if session.get("logged_in"):
+        if session.get("role") == "admin":
+            is_approved = True
+        else:
+            from user_db import _conn as _uc
+            _uconn = _uc()
+            try:
+                _u = _uconn.execute("SELECT status FROM users WHERE username=?", (session.get("username",""),)).fetchone()
+                is_approved = _u and _u["status"] == "approved"
+            except Exception:
+                pass
+            finally:
+                _uconn.close()
+    if not is_approved and page > 1:
+        page = 1
 
     from product_db import _conn
     conn = _conn()
@@ -4092,14 +4244,7 @@ def _start_scheduler_once():
     )
     logger.info("📅 회원 만료 알림 등록 (매일 09:00)")
 
-    # ── 공통: 장바구니 품절 체크 (매일 04:00) ──
-    scheduler.add_job(
-        func=_check_cart_soldout,
-        trigger="cron", hour=4, minute=0,
-        id="cart_soldout_check", replace_existing=True,
-        name="장바구니 품절 체크 (04:00)",
-    )
-    logger.info("🛒 장바구니 품절 체크 등록 (매일 04:00)")
+    # 장바구니 품절 체크: 담을 때 개별 체크로 변경 (스케줄 제거)
 
     # ── 공통: Git 자동 풀 (매시 정각) ──
     scheduler.add_job(
@@ -4396,7 +4541,7 @@ except Exception as e:
 def root_redirect():
     """루트: 비로그인/일반회원 → 쇼핑몰 직접 렌더링, 관리자 → 대시보드"""
     if session.get("logged_in") and session.get("role", "admin") == "admin":
-        return dashboard_page()
+        return redirect(f"{URL_PREFIX}/admin/vintage")
     # 302 리다이렉트 대신 직접 렌더링 (네이버 검색 로봇 대응)
     return shop()
 
@@ -5053,6 +5198,463 @@ def freshness_stop_api():
     return jsonify({"ok": True})
 
 
+# ── To Do List ─────────────────────
+@app.route(f"{URL_PREFIX}/admin/vintage")
+@admin_required
+def admin_vintage():
+    """빈티지 관리 페이지 (경량)"""
+    return render_template("admin_vintage.html", url_prefix=URL_PREFIX, env=APP_ENV, active_menu="vintage", default_page="analytics")
+
+
+@app.route(f"{URL_PREFIX}/admin/brand")
+@admin_required
+def admin_brand():
+    """브랜드 관리 페이지 (경량)"""
+    return render_template("admin_brand.html", url_prefix=URL_PREFIX, env=APP_ENV, active_menu="brand", default_page="brand-dashboard")
+
+
+@app.route(f"{URL_PREFIX}/admin/kavinet")
+@admin_required
+def admin_kavinet():
+    """캐비넷 관리 페이지 (경량)"""
+    return render_template("admin_kavinet.html", url_prefix=URL_PREFIX, env=APP_ENV, active_menu="kavinet", default_page="kv-dashboard")
+
+
+@app.route(f"{URL_PREFIX}/admin/setting")
+@admin_required
+def admin_setting():
+    """설정 페이지 (경량)"""
+    return render_template("admin_setting.html", url_prefix=URL_PREFIX, env=APP_ENV, active_menu="setting", default_page="st-account")
+
+
+@app.route(f"{URL_PREFIX}/orders-page")
+@admin_required
+def orders_light_page():
+    """주문확인 경량 페이지"""
+    return render_template("orders_light.html", url_prefix=URL_PREFIX)
+
+
+@app.route(f"{URL_PREFIX}/members-page")
+@admin_required
+def members_light_page():
+    """회원관리 경량 페이지"""
+    return render_template("members_light.html", url_prefix=URL_PREFIX)
+
+
+@app.route(f"{URL_PREFIX}/analytics")
+@admin_required
+def analytics_page():
+    """접속 통계 전용 페이지 (경량)"""
+    return render_template("analytics.html", url_prefix=URL_PREFIX)
+
+
+@app.route(f"{URL_PREFIX}/todo")
+@admin_required
+def todo_page():
+    """To Do List 전용 페이지"""
+    return render_template("todo.html", url_prefix=URL_PREFIX)
+
+
+@app.route(f"{URL_PREFIX}/api/todo", methods=["GET"])
+@admin_required
+def get_todos():
+    path = os.path.join(get_path("db"), "todos.json")
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return jsonify({"ok": True, "todos": json.load(f)})
+    return jsonify({"ok": True, "todos": []})
+
+
+@app.route(f"{URL_PREFIX}/api/todo", methods=["POST"])
+@admin_required
+def save_todos():
+    data = request.get_json() or {}
+    todos = data.get("todos", [])
+    # 이미지 제거하여 용량 절약 (이미지는 별도 저장)
+    path = os.path.join(get_path("db"), "todos.json")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(todos, f, ensure_ascii=False, indent=2)
+    return jsonify({"ok": True})
+
+
+# ── 접속 통계 ─────────────────────
+@app.route(f"{URL_PREFIX}/api/analytics/log", methods=["POST"])
+def analytics_log():
+    """접속 로그 수집"""
+    data = request.get_json() or {}
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
+    ua = data.get("ua", "")
+    referrer = data.get("referrer", "")
+    path = data.get("path", "/shop")
+
+    # 디바이스 판별
+    ua_lower = ua.lower()
+    if "mobile" in ua_lower or "android" in ua_lower or "iphone" in ua_lower:
+        device = "모바일"
+    elif "tablet" in ua_lower or "ipad" in ua_lower:
+        device = "태블릿"
+    else:
+        device = "PC"
+
+    # 검색 키워드 추출
+    keyword = ""
+    ref_source = ""
+    if referrer:
+        from urllib.parse import urlparse, parse_qs
+        try:
+            parsed = urlparse(referrer)
+            host = parsed.hostname or ""
+            if "google" in host:
+                ref_source = "Google"
+                keyword = parse_qs(parsed.query).get("q", [""])[0]
+            elif "naver" in host:
+                ref_source = "Naver"
+                keyword = parse_qs(parsed.query).get("query", [""])[0]
+            elif "daum" in host or "kakao" in host:
+                ref_source = "Daum/Kakao"
+                keyword = parse_qs(parsed.query).get("q", [""])[0]
+            elif "bing" in host:
+                ref_source = "Bing"
+                keyword = parse_qs(parsed.query).get("q", [""])[0]
+            else:
+                ref_source = host
+        except Exception:
+            ref_source = referrer[:50]
+
+    # 회원 정보
+    member_username = session.get("username", "") if session.get("logged_in") else ""
+    member_name = session.get("name", "") if session.get("logged_in") else ""
+    member_type = "회원" if session.get("logged_in") else "비회원"
+
+    # 로그 저장 (JSON 파일)
+    log_path = os.path.join(get_path("db"), "analytics.json")
+    logs = []
+    if os.path.exists(log_path):
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                logs = json.load(f)
+        except Exception:
+            logs = []
+
+    logs.append({
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "ip": ip,
+        "path": path,
+        "referrer": ref_source or referrer[:80],
+        "keyword": keyword,
+        "device": device,
+        "ua": ua[:100],
+        "username": member_username,
+        "name": member_name,
+        "member_type": member_type,
+    })
+
+    # 최대 5000건 유지
+    if len(logs) > 5000:
+        logs = logs[-3000:]
+
+    with open(log_path, "w", encoding="utf-8") as f:
+        json.dump(logs, f, ensure_ascii=False)
+
+    return jsonify({"ok": True})
+
+
+@app.route(f"{URL_PREFIX}/api/analytics", methods=["GET"])
+@admin_required
+def analytics_stats():
+    """접속 통계 조회"""
+    period = request.args.get("period", "7d")
+    log_path = os.path.join(get_path("db"), "analytics.json")
+    logs = []
+    if os.path.exists(log_path):
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                logs = json.load(f)
+        except Exception:
+            pass
+
+    from datetime import timedelta
+    now = datetime.now()
+    if period == "today":
+        cutoff = now.strftime("%Y-%m-%d")
+        filtered = [l for l in logs if l.get("time", "").startswith(cutoff)]
+    elif period == "yesterday":
+        yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+        filtered = [l for l in logs if l.get("time", "").startswith(yesterday)]
+    elif period == "30d":
+        cutoff = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+        filtered = [l for l in logs if l.get("time", "") >= cutoff]
+    else:
+        cutoff = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+        filtered = [l for l in logs if l.get("time", "") >= cutoff]
+
+    today_str = now.strftime("%Y-%m-%d")
+    today_count = sum(1 for l in logs if l.get("time", "").startswith(today_str))
+    unique_ips = len(set(l.get("ip", "") for l in filtered))
+
+    # 유입 경로
+    from collections import Counter
+    ref_counter = Counter(l.get("referrer", "") or "직접 접속" for l in filtered)
+    referrers = [{"name": k, "count": v} for k, v in ref_counter.most_common(15)]
+
+    # 검색 키워드
+    kw_counter = Counter(l["keyword"] for l in filtered if l.get("keyword"))
+    keywords = [{"keyword": k, "count": v} for k, v in kw_counter.most_common(20)]
+    search_count = sum(1 for l in filtered if l.get("keyword"))
+
+    # 디바이스
+    dev_counter = Counter(l.get("device", "기타") for l in filtered)
+    devices = [{"name": k, "count": v} for k, v in dev_counter.most_common(5)]
+
+    # 일별
+    day_counter = Counter(l.get("time", "")[:10] for l in filtered)
+    daily = [{"date": k, "count": v} for k, v in sorted(day_counter.items(), reverse=True)[:14]]
+
+    # 회원/비회원 분류
+    member_count = sum(1 for l in filtered if l.get("member_type") == "회원")
+    guest_count = len(filtered) - member_count
+
+    # 회원별 접속 이력
+    from collections import defaultdict
+    filtered_names = {}
+    member_visits = defaultdict(list)
+    for l in filtered:
+        if l.get("username"):
+            member_visits[l["username"]].append(l.get("time", ""))
+            if l.get("name"):
+                filtered_names[l["username"]] = l["name"]
+    members = [{"username": k, "name": filtered_names.get(k, k), "count": len(v), "last": max(v) if v else ""}
+               for k, v in sorted(member_visits.items(), key=lambda x: -len(x[1]))]
+
+    # 최근 로그
+    recent = filtered[-50:]
+    recent.reverse()
+    log_list = [{"time": l.get("time", "")[11:19], "ip": l.get("ip", ""), "path": l.get("path", ""),
+                 "referrer": l.get("referrer", ""), "device": l.get("device", ""),
+                 "username": l.get("username", ""), "name": l.get("name", ""),
+                 "member_type": l.get("member_type", "비회원")} for l in recent]
+
+    return jsonify({
+        "ok": True,
+        "total": len(filtered),
+        "today": today_count,
+        "unique": unique_ips,
+        "search_count": search_count,
+        "member_count": member_count,
+        "guest_count": guest_count,
+        "referrers": referrers,
+        "keywords": keywords,
+        "devices": devices,
+        "daily": daily,
+        "members": members,
+        "logs": log_list,
+    })
+
+
+# ── 견적서 다운로드 ─────────────────────
+@app.route(f"{URL_PREFIX}/api/quote/download")
+@admin_required
+def download_quote():
+    """선택 주문 견적서 Excel 다운로드"""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+
+    ids_str = request.args.get("ids", "")
+    if not ids_str:
+        return "주문을 선택해주세요", 400
+    ids = [int(x) for x in ids_str.split(",") if x.strip().isdigit()]
+
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        placeholders = ",".join(["?"] * len(ids))
+        rows = conn.execute(f"SELECT * FROM orders WHERE id IN ({placeholders}) ORDER BY id", ids).fetchall()
+        orders = [{c: r[c] for c in r.keys()} for r in rows]
+        if not orders:
+            return "주문을 찾을 수 없습니다", 404
+
+        # 고객 정보
+        username = orders[0].get("username", "")
+        customer = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+        cust = {c: customer[c] for c in customer.keys()} if customer else {}
+        user_level = cust.get("level", "b2c")
+    finally:
+        conn.close()
+
+    # 상품 링크 + 레벨별 가격 재계산
+    from product_db import _conn as prod_conn
+    pconn = prod_conn()
+    for o in orders:
+        code = o.get("product_code", "")
+        if code:
+            pr = pconn.execute("SELECT link, price_jpy FROM products WHERE internal_code=? OR product_code=? LIMIT 1", (code, code)).fetchone()
+            o["product_link"] = pr["link"] if pr else ""
+            # 레벨별 가격 재계산
+            jpy = pr["price_jpy"] if pr else (o.get("price_jpy", 0) or 0)
+            if jpy > 0:
+                o["quote_price"] = _calc_vintage_price(jpy, user_level)
+            else:
+                o["quote_price"] = int("".join(ch for ch in str(o.get("price", "0")) if ch.isdigit()) or 0)
+        else:
+            o["quote_price"] = int("".join(ch for ch in str(o.get("price", "0")) if ch.isdigit()) or 0)
+    pconn.close()
+
+    # Excel 생성
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "견적서"
+
+    # 스타일 정의
+    thin = Side(style="thin")
+    bd = Border(left=thin, right=thin, top=thin, bottom=thin)
+    center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    left_al = Alignment(horizontal="left", vertical="center")
+    right_al = Alignment(horizontal="right", vertical="center")
+    title_font = Font(name="맑은 고딕", size=22, bold=True)
+    company_font = Font(name="맑은 고딕", size=14, bold=True)
+    label_font = Font(name="맑은 고딕", size=10, bold=True)
+    val_font = Font(name="맑은 고딕", size=10)
+    hdr_font = Font(name="맑은 고딕", size=10, bold=True, color="000000")
+    hdr_fill = PatternFill(start_color="DAEEF3", end_color="DAEEF3", fill_type="solid")
+    total_font = Font(name="맑은 고딕", size=11, bold=True)
+    note_font = Font(name="맑은 고딕", size=13, bold=True)
+    label_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+
+    # 열 너비
+    for c, w in [("A", 12), ("B", 22), ("C", 20), ("D", 14), ("E", 30), ("F", 14)]:
+        ws.column_dimensions[c].width = w
+
+    # 행 높이
+    def set_row(r, h=20):
+        ws.row_dimensions[r].height = h
+
+    def cell_style(r, c, val, font=val_font, align=left_al, border=bd, fill=None):
+        cell = ws.cell(row=r, column=c, value=val)
+        cell.font = font; cell.alignment = align; cell.border = border
+        if fill: cell.fill = fill
+        return cell
+
+    def merge_border(r1, c1, r2, c2):
+        ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
+        for r in range(r1, r2+1):
+            for c in range(c1, c2+1):
+                ws.cell(row=r, column=c).border = bd
+
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # ── 제목 ──
+    set_row(2, 36)
+    merge_border(2, 1, 2, 6)
+    cell_style(2, 1, "견 적 서", title_font, center, bd)
+
+    # ── 주문일자 + 판매자 구분 ──
+    set_row(3, 18)
+    cell_style(3, 1, f"주문일자: {today}", val_font, left_al, Border())
+    set_row(4, 18)
+    level_text = "B2B" if user_level == "b2b" else "B2C"
+    cell_style(4, 1, f"판매자 구분 : {level_text}", Font(name="맑은 고딕", size=10, bold=True, color="0000FF" if user_level=="b2b" else "008000"), left_al, Border())
+
+    # ── 회사명 ──
+    set_row(5, 28)
+    merge_border(5, 1, 5, 6)
+    cell_style(5, 1, "더원 빈티지", company_font, center, bd)
+
+    # ── 고객 정보 ──
+    info = [
+        ("이름", cust.get("name", "")),
+        ("연락처", cust.get("phone", "")),
+        ("주소", f'{cust.get("address", "")} {cust.get("address_detail", "")}'),
+        ("사업자 명", cust.get("business_name", cust.get("name", ""))),
+        ("사업자 번호", cust.get("business_number", "")),
+        ("견적내용", "빈티지 명품 구매대행"),
+    ]
+    for i, (label, value) in enumerate(info):
+        r = 7 + i
+        set_row(r, 22)
+        cell_style(r, 1, label, label_font, center, bd, label_fill)
+        merge_border(r, 2, r, 6)
+        cell_style(r, 2, value, val_font, left_al, bd)
+
+    # 비고
+    set_row(13, 22)
+    set_row(14, 22)
+    cell_style(13, 1, "비고", label_font, center, bd, label_fill)
+    ws.merge_cells("A13:A14")
+    merge_border(13, 2, 14, 6)
+
+    # ── 견적내용 제목 ──
+    set_row(16, 28)
+    merge_border(16, 1, 16, 6)
+    cell_style(16, 1, "견 적 내 용", company_font, center, bd)
+
+    # 빈 행
+    set_row(17, 6)
+
+    # ── 테이블 헤더 ──
+    set_row(18, 24)
+    hdrs = ["번호", "주문번호", "상품번호", "브랜드", "상품명", "판매가"]
+    for c, h in enumerate(hdrs, 1):
+        cell_style(18, c, h, hdr_font, center, bd, hdr_fill)
+
+    # ── 주문 데이터 ──
+    total = 0
+    for i, o in enumerate(orders):
+        r = 19 + i
+        set_row(r, 22)
+        price_num = o.get("quote_price", 0) or 0
+        total += price_num
+
+        cell_style(r, 1, i + 1, val_font, center, bd)
+        cell_style(r, 2, o.get("order_number", ""), val_font, center, bd)
+        cell_style(r, 3, o.get("product_code", ""), val_font, center, bd)
+        cell_style(r, 4, o.get("brand", ""), val_font, center, bd)
+        cell_style(r, 5, o.get("product_name", ""), val_font, left_al, bd)
+        pc = cell_style(r, 6, price_num, val_font, right_al, bd)
+        pc.number_format = '₩#,##0'
+
+    # ── 합계 행 ──
+    tr = 19 + len(orders)
+    set_row(tr, 24)
+    cell_style(tr, 1, "합계", total_font, center, bd, label_fill)
+    for c in range(2, 6):
+        cell_style(tr, c, "", total_font, center, bd, label_fill)
+    tc = cell_style(tr, 6, total, total_font, right_al, bd, label_fill)
+    tc.number_format = '₩#,##0'
+
+    # ── Note ──
+    nr = tr + 2
+    set_row(nr, 18)
+    cell_style(nr, 1, "*Note", label_font, left_al, Border())
+
+    set_row(nr+1, 26)
+    cell_style(nr+1, 1, "합계", note_font, left_al, Border())
+    cell_style(nr+1, 2, f"₩{total:,}", note_font, left_al, Border())
+
+    set_row(nr+3, 18)
+    merge_border(nr+3, 1, nr+3, 6)
+    cell_style(nr+3, 1, "계좌번호", label_font, left_al, bd)
+
+    set_row(nr+4, 18)
+    merge_border(nr+4, 1, nr+4, 6)
+    cell_style(nr+4, 1, "하나은행 박수현 307-910169-58305", val_font, left_al, bd)
+
+    # 파일 저장 후 전송
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    customer_name = cust.get("name", username)
+    short_date = datetime.now().strftime("%y-%m-%d")
+    filename = f"{short_date} {customer_name}.xlsx"
+    return Response(
+        output.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{__import__('urllib.parse', fromlist=['quote']).quote(filename)}"}
+    )
+
+
 # ── 관리자 장바구니 조회 ─────────────────────
 @app.route(f"{URL_PREFIX}/api/admin/carts", methods=["GET"])
 @admin_required
@@ -5068,11 +5670,7 @@ def admin_carts():
         """).fetchall()
         carts = [{col: r[col] for col in r.keys()} for r in rows]
 
-        # 미체크 상품이 있으면 백그라운드 체크 시작
-        unchecked = [c for c in carts if not c.get("checked_at")]
-        if unchecked and not _cart_check_running:
-            t = threading.Thread(target=_bg_check_cart_soldout_all, daemon=True)
-            t.start()
+        # 품절 체크는 장바구니 담을 때 개별 실행 (자동 전체 체크 제거)
 
         # cart 테이블의 is_sold_out 값 사용
         for c in carts:
