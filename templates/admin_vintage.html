@@ -298,7 +298,8 @@ function renderMembers() {
     return `<tr><td style="color:var(--dim);">${i+1}</td><td style="font-weight:600;">${m.username}</td><td>${m.name||'-'}</td><td>${m.phone||'-'}</td>
     <td><select onchange="chgMemberSt('${m.username}',this.value)" style="background:var(--bg);border:1px solid var(--border);color:${stC[st]};padding:2px 4px;border-radius:4px;font-size:0.7rem;font-weight:600;">
       <option value="approved" ${st==='approved'?'selected':''}>승인</option><option value="pending" ${st==='pending'?'selected':''}>대기</option><option value="suspended" ${st==='suspended'?'selected':''}>사용불가</option><option value="rejected" ${st==='rejected'?'selected':''}>거절</option></select></td>
-    <td><span style="color:${lvl==='b2b'?'var(--blue)':'var(--green)'};font-weight:700;font-size:0.75rem;">${lvl.toUpperCase()}</span></td>
+    <td><select onchange="chgMemberLvl('${m.username}',this.value)" style="background:var(--bg);border:1px solid var(--border);color:${lvl==='b2b'?'var(--blue)':'var(--green)'};padding:2px 4px;border-radius:4px;font-size:0.7rem;font-weight:700;">
+      <option value="b2c" ${lvl==='b2c'?'selected':''}>B2C</option><option value="b2b" ${lvl==='b2b'?'selected':''}>B2B</option></select></td>
     <td style="font-size:0.72rem;color:var(--muted);">${(m.created_at||'').substring(0,10)}</td>
     <td style="font-size:0.72rem;color:${m.last_login?'var(--green)':'var(--dim)'};">${m.last_login||'없음'}</td></tr>`;
   }).join(""):'<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">회원 없음</td></tr>';
@@ -306,6 +307,11 @@ function renderMembers() {
 async function chgMemberSt(user,st) {
   if(!confirm(`'${user}' → '${st}'로 변경?`)){loadMembers(true);return;}
   await fetch(PREFIX+"/members/"+encodeURIComponent(user)+"/status",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:st})});
+  loadMembers(true);
+}
+async function chgMemberLvl(user,lvl) {
+  if(!confirm(`'${user}' 레벨을 ${lvl.toUpperCase()}로 변경?`)){loadMembers(true);return;}
+  await fetch(PREFIX+"/members/"+encodeURIComponent(user)+"/level",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({level:lvl})});
   loadMembers(true);
 }
 
