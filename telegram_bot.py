@@ -184,6 +184,8 @@ _AI_COMMANDS = {
     "/중지": "stop_task",
     "/멈춤": "stop_all",
     "/브랜드수집": "run_per_brand",
+    "/투두": "todo_list",
+    "/todo": "todo_list",
 }
 
 def _process_ai_chat(message: dict, log_callback=None):
@@ -208,10 +210,30 @@ def _process_ai_chat(message: dict, log_callback=None):
     if cmd == "server_status":
         _send_server_status()
         return
+    if cmd == "todo_list":
+        if len(parts) > 1:
+            arg = parts[1]
+            # /투두 완료 번호 → 완료 처리
+            if arg in ("완료", "done") and len(parts) > 2:
+                _complete_todo(parts[2])
+            # /투두 삭제 번호 → 삭제
+            elif arg in ("삭제", "del") and len(parts) > 2:
+                _delete_todo(parts[2])
+            else:
+                # /투두 할일내용 → 추가
+                todo_text = " ".join(parts[1:])
+                _add_todo(todo_text)
+        else:
+            _send_todo_list()
+        return
     if cmd == "help":
         send_telegram(
             "🤖 <b>AI 어시스턴트 명령어</b>\n\n"
             "/상태 — 서버 상태 확인\n"
+            "/투두 — To Do List 확인\n"
+            "/투두 내용 — To Do 추가\n"
+            "/투두 완료 번호 — 완료 처리\n"
+            "/투두 삭제 번호 — 삭제\n"
             "/리스트 — 수집 작업 리스트 보기\n"
             "/수집 번호 — 해당 번호 작업 수집 시작\n"
             "  예: /수집 3\n"
@@ -530,6 +552,108 @@ def _get_server_context() -> str:
         return f"총 상품: {total}개\n브랜드: {brand_info}"
     except Exception:
         return "상태 조회 불가"
+
+
+def _load_todos():
+    from data_manager import get_path
+    todo_path = os.path.join(get_path("db"), "todos.json")
+    if os.path.exists(todo_path):
+        with open(todo_path, "r", encoding="utf-8") as f:
+            return json.load(f), todo_path
+    return [], todo_path
+
+def _save_todos(todos, path):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(todos, f, ensure_ascii=False, indent=2)
+
+def _complete_todo(num_str):
+    """To Do 완료 처리"""
+    try:
+        todos, path = _load_todos()
+        active = [t for t in todos if not t.get("done")]
+        num = int(num_str)
+        if num < 1 or num > len(active):
+            send_telegram(f"❌ 번호 {num}이 범위 밖입니다 (1~{len(active)})")
+            return
+        target = active[num - 1]
+        target["done"] = True
+        import time as _time
+        target["completed"] = _time.strftime("%Y-%m-%d %H:%M")
+        _save_todos(todos, path)
+        send_telegram(f"✅ 완료 처리\n\n<s>{target['text']}</s>")
+    except Exception as e:
+        send_telegram(f"❌ 완료 처리 실패: {e}")
+
+def _delete_todo(num_str):
+    """To Do 삭제"""
+    try:
+        todos, path = _load_todos()
+        active = [t for t in todos if not t.get("done")]
+        num = int(num_str)
+        if num < 1 or num > len(active):
+            send_telegram(f"❌ 번호 {num}이 범위 밖입니다 (1~{len(active)})")
+            return
+        target = active[num - 1]
+        todos.remove(target)
+        _save_todos(todos, path)
+        send_telegram(f"🗑 삭제 완료\n\n{target['text']}")
+    except Exception as e:
+        send_telegram(f"❌ 삭제 실패: {e}")
+
+def _add_todo(text):
+    """텔레그램에서 To Do 추가"""
+    try:
+        import time as _time
+        todos, path = _load_todos()
+        todos.insert(0, {
+            "id": int(_time.time() * 1000),
+            "text": text,
+            "priority": "normal",
+            "done": False,
+            "images": [],
+            "created": _time.strftime("%Y-%m-%d %H:%M"),
+        })
+        _save_todos(todos, path)
+        send_telegram(f"✅ To Do 추가 완료\n\n📝 {text}")
+    except Exception as e:
+        send_telegram(f"❌ To Do 추가 실패: {e}")
+
+
+def _send_todo_list():
+    """To Do List 텔레그램 전송"""
+    try:
+        from data_manager import get_path
+        todo_path = os.path.join(get_path("db"), "todos.json")
+        if not os.path.exists(todo_path):
+            send_telegram("📝 <b>To Do List</b>\n\n할 일이 없습니다.")
+            return
+        with open(todo_path, "r", encoding="utf-8") as f:
+            todos = json.load(f)
+        if not todos:
+            send_telegram("📝 <b>To Do List</b>\n\n할 일이 없습니다.")
+            return
+
+        priority_icon = {"high": "🔴", "normal": "🟡", "low": "⚪"}
+        active = [t for t in todos if not t.get("done")]
+        done = [t for t in todos if t.get("done")]
+
+        lines = ["📝 <b>To Do List</b>\n"]
+        if active:
+            lines.append(f"<b>진행중 ({len(active)}건)</b>")
+            for i, t in enumerate(active, 1):
+                icon = priority_icon.get(t.get("priority", "normal"), "🟡")
+                lines.append(f"  {icon} {i}. {t['text']}")
+        if done:
+            lines.append(f"\n<b>완료 ({len(done)}건)</b>")
+            for t in done[:5]:
+                lines.append(f"  ✅ <s>{t['text']}</s>")
+            if len(done) > 5:
+                lines.append(f"  ... 외 {len(done)-5}건")
+
+        lines.append(f"\n총 {len(todos)}건 (진행 {len(active)} / 완료 {len(done)})")
+        send_telegram("\n".join(lines))
+    except Exception as e:
+        send_telegram(f"📝 To Do List 로드 실패: {e}")
 
 
 def _send_server_status():
