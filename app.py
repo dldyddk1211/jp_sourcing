@@ -1644,10 +1644,13 @@ def bulk_order():
         conn3 = user_conn()
         try:
             batch_number = _generate_order_number(conn3)
+            # 대표 상품명: "첫 상품명 외 N건"
+            first_name = (items[0].get("name") or "")[:30]
+            batch_name = f"{first_name} 외 {len(items)-1}건" if len(items) > 1 else first_name
             detail_json = json.dumps([{"order_number": on, "brand": it["brand"], "name": it["name"], "code": it["code"], "price": it["price"]} for on, it in zip(order_numbers, items)], ensure_ascii=False)
             conn3.execute("""INSERT INTO orders (type, username, customer_name, brand, product_name, product_code, price, price_jpy, order_number, memo)
                             VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                         ("order", username, customer_name, brand_text, f"다중주문 ({len(items)}건)", ",".join(order_numbers), f"총 {len(items)}건", total_jpy, batch_number, detail_json))
+                         ("order", username, customer_name, brand_text, batch_name, ",".join(order_numbers), f"총 {len(items)}건", total_jpy, batch_number, detail_json))
             conn3.commit()
         finally:
             conn3.close()

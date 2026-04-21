@@ -44,6 +44,81 @@ def _log(msg):
     logger.info(f"[체커] {msg}")
 
 
+# 배치 내 사용자별 할인 상품 누적 (유저당 1회 SMS 발송을 위함)
+_batch_user_discounts = {}  # {username: {"phone": str, "items": [...]}}
+
+
+def _queue_cart_price_drop(product_code, brand, name, old_price, new_price):
+    """장바구니 고객별 할인 상품 누적 (배치 종료 시 1회 SMS 발송)"""
+    if not product_code or old_price <= 0 or new_price <= 0:
+        return
+    discount_pct = (1 - new_price / old_price) * 100
+    if discount_pct < 5:  # 최소 5% 이상 할인만
+        return
+    try:
+        import sqlite3
+        from data_manager import get_path
+        user_db_path = f"{get_path('db')}/users.db"
+        conn = sqlite3.connect(user_db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute("""
+                SELECT DISTINCT c.username, u.phone, u.name
+                FROM cart c LEFT JOIN users u ON c.username = u.username
+                WHERE c.product_code = ? AND u.phone IS NOT NULL AND u.phone != ''
+            """, (product_code,)).fetchall()
+        finally:
+            conn.close()
+
+        for row in rows:
+            username = row["username"]
+            phone = (row["phone"] or "").replace("-", "")
+            if not phone or len(phone) < 10:
+                continue
+            if username not in _batch_user_discounts:
+                _batch_user_discounts[username] = {"phone": phone, "items": []}
+            _batch_user_discounts[username]["items"].append({
+                "brand": brand,
+                "name": name,
+                "old_price": old_price,
+                "new_price": new_price,
+                "discount_pct": discount_pct,
+            })
+    except Exception as e:
+        logger.warning(f"cart SMS 큐 오류: {e}")
+
+
+def _send_batch_cart_sms():
+    """배치 종료 시 누적된 고객별 할인 상품을 SMS로 1회 발송"""
+    global _batch_user_discounts
+    if not _batch_user_discounts:
+        return
+    try:
+        from aligo_sms import send_sms
+        for username, data in _batch_user_discounts.items():
+            items = data["items"]
+            if not items:
+                continue
+            phone = data["phone"]
+            # 메시지 구성
+            header = f"[TheOne Vintage] 장바구니 상품 할인!\n"
+            lines = []
+            for it in items[:5]:  # 최대 5개까지 표시
+                short = (it["brand"] + " " + (it["name"] or "").split("/")[0])[:20]
+                lines.append(f"• {short}\n  ¥{it['old_price']:,} → ¥{it['new_price']:,} ({it['discount_pct']:.0f}%↓)")
+            if len(items) > 5:
+                lines.append(f"• 외 {len(items)-5}건 더")
+            footer = "\n지금 주문하세요!"
+            msg = header + "\n".join(lines) + footer
+            try:
+                send_sms(phone, msg, title="할인알림", msg_type="LMS")
+                _log(f"   📱 SMS 발송: {username} ({phone}) - {len(items)}개 할인 통합")
+            except Exception as e:
+                logger.warning(f"SMS 실패 ({username}): {e}")
+    finally:
+        _batch_user_discounts = {}
+
+
 def get_unchecked_products(limit=300):
     """체크가 필요한 상품 조회 (오래된 순)"""
     from product_db import _conn
@@ -216,6 +291,30 @@ async def check_products_batch(products, status_callback=None):
                             update_sql = "UPDATE products SET product_status='available', checked_at=?, price_jpy=? WHERE id=?"
                             update_params = [now, new_price, pid]
                             result["price_changed"] += 1
+                            # 가격 이력 기록 (기존 price_changes 테이블 사용)
+                            try:
+                                old_price = p["price_jpy"] or 0
+                                change_type = "가격인하" if new_price < old_price else "가격인상"
+                                conn.execute("""INSERT INTO price_changes
+                                    (product_id, site_id, product_code, brand_ko, category_id,
+                                     old_price, new_price, change_type, updated_at)
+                                    VALUES (?,?,?,?,?,?,?,?,?)""",
+                                    (pid, p.get("site_id", ""), p.get("product_code", ""),
+                                     p.get("brand", ""), "",
+                                     old_price, new_price, change_type, now))
+                            except Exception:
+                                pass
+                            # 장바구니 고객 할인 상품 누적 (배치 종료 시 1회 SMS 발송)
+                            if new_price < p["price_jpy"]:
+                                try:
+                                    _queue_cart_price_drop(
+                                        p.get("product_code", ""),
+                                        p.get("brand", ""),
+                                        p.get("name", ""),
+                                        p["price_jpy"], new_price
+                                    )
+                                except Exception as e:
+                                    logger.warning(f"SMS 큐 실패: {e}")
                             log(f"   [{i+1}] 가격변동: {p['brand']} {(p.get('name') or '')[:25]} ¥{p['price_jpy']:,} → ¥{new_price:,}")
                         else:
                             log(f"   [{i+1}] 판매중: {p['brand']} {(p.get('name') or '')[:30]} ¥{new_price or p['price_jpy']:,}")
@@ -269,6 +368,11 @@ async def check_products_batch(products, status_callback=None):
             await browser.close()
         if playwright:
             await playwright.stop()
+        # 배치 종료 → 장바구니 고객별 할인 SMS 1회 통합 발송
+        try:
+            _send_batch_cart_sms()
+        except Exception as e:
+            logger.warning(f"배치 SMS 발송 실패: {e}")
 
     return result
 
