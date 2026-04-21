@@ -94,7 +94,7 @@
         {{ error or '' }}
       </div>
 
-      <form method="POST" action="{{ url_prefix }}/signup">
+      <form method="POST" action="{{ url_prefix }}/signup" enctype="multipart/form-data">
         <div class="form-group">
           <label>아이디 <span style="color:var(--red)">*</span></label>
           <input type="text" name="username" placeholder="아이디를 입력하세요" autofocus required>
@@ -137,6 +137,11 @@
         <div class="form-group">
           <label>개인통관고유번호</label>
           <input type="text" name="customs_id" placeholder="P000-0000-000000 (선택)">
+        </div>
+        <div class="form-group">
+          <label>사업자등록증 <span style="font-size:0.7rem;color:var(--muted);font-weight:400;">(B2B 신청 시 첨부)</span></label>
+          <input type="file" name="biz_cert" accept=".jpg,.jpeg,.png,.pdf" style="padding:8px;background:var(--input);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.82rem;">
+          <div style="font-size:0.65rem;color:var(--dim);margin-top:4px;">JPG, PNG, PDF 파일 (B2B 회원 신청 시 필수)</div>
         </div>
         <button type="submit" class="signup-btn">회원가입</button>
       </form>

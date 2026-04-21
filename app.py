@@ -316,6 +316,17 @@ def signup():
                         username,
                     ))
                     conn.commit()
+                    # 사업자등록증 첨부
+                    cert_file = request.files.get("biz_cert")
+                    if cert_file and cert_file.filename:
+                        ext = os.path.splitext(cert_file.filename)[1].lower()
+                        if ext in (".jpg", ".jpeg", ".png", ".pdf"):
+                            upload_dir = os.path.join(get_path("db"), "certs")
+                            os.makedirs(upload_dir, exist_ok=True)
+                            cert_filename = f"{username}_cert{ext}"
+                            cert_file.save(os.path.join(upload_dir, cert_filename))
+                            conn.execute("UPDATE users SET business_cert_file=? WHERE username=?", (cert_filename, username))
+                            conn.commit()
                     conn.close()
                 except Exception:
                     pass
@@ -3255,10 +3266,48 @@ def update_member_info(username):
         conn.close()
 
 
+@app.route(f"{URL_PREFIX}/shop/api/upload-cert", methods=["POST"])
+@login_required
+def upload_my_cert():
+    """고객이 직접 사업자등록증 업로드"""
+    username = session.get("username", "")
+    if not username:
+        return jsonify({"ok": False, "message": "로그인이 필요합니다"})
+    if "file" not in request.files:
+        return jsonify({"ok": False, "message": "파일이 없습니다"})
+    f = request.files["file"]
+    if not f.filename:
+        return jsonify({"ok": False, "message": "파일이 없습니다"})
+    allowed = {".jpg", ".jpeg", ".png", ".pdf"}
+    ext = os.path.splitext(f.filename)[1].lower()
+    if ext not in allowed:
+        return jsonify({"ok": False, "message": f"허용 파일: {', '.join(allowed)}"})
+    upload_dir = os.path.join(get_path("db"), "certs")
+    os.makedirs(upload_dir, exist_ok=True)
+    filename = f"{username}_cert{ext}"
+    filepath = os.path.join(upload_dir, filename)
+    f.save(filepath)
+    from user_db import _conn
+    conn = _conn()
+    try:
+        conn.execute("UPDATE users SET business_cert_file = ? WHERE username = ?", (filename, username))
+        conn.commit()
+        logger.info(f"사업자등록증 업로드 (고객): {username} → {filename}")
+        # 텔레그램 알림
+        try:
+            from notifier import send_telegram
+            send_telegram(f"📎 <b>사업자등록증 첨부</b>\n👤 {username}\n📄 {filename}")
+        except Exception:
+            pass
+        return jsonify({"ok": True, "message": "사업자등록증이 업로드되었습니다", "filename": filename})
+    finally:
+        conn.close()
+
+
 @app.route(f"{URL_PREFIX}/members/<path:username>/upload-cert", methods=["POST"])
 @admin_required
 def upload_member_cert(username):
-    """사업자등록증 파일 업로드"""
+    """사업자등록증 파일 업로드 (관리자)"""
     if "file" not in request.files:
         return jsonify({"ok": False, "message": "파일이 없습니다"})
     f = request.files["file"]

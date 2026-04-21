@@ -198,6 +198,15 @@
           <label>통관고유번호</label><input id="my-customs" placeholder="P000-0000-000000">
           <label>사업자번호</label><input id="my-biznum" placeholder="000-00-00000">
         </div>
+        <div style="margin-top:12px;">
+          <label style="font-size:0.78rem;font-weight:600;color:var(--text);display:block;margin-bottom:6px;">사업자등록증 첨부 <span style="font-size:0.65rem;color:var(--muted);font-weight:400;">(B2B 신청 시)</span></label>
+          <div id="my-cert-status" style="font-size:0.72rem;color:var(--muted);margin-bottom:6px;"></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="file" id="my-cert-file" accept=".jpg,.jpeg,.png,.pdf" style="font-size:0.78rem;flex:1;">
+            <button onclick="uploadMyCert()" class="btn btn-accent" style="padding:6px 14px;font-size:0.75rem;white-space:nowrap;">업로드</button>
+          </div>
+          <div style="font-size:0.62rem;color:var(--dim);margin-top:4px;">JPG, PNG, PDF 파일</div>
+        </div>
       </div>
       <div id="info-msg" class="msg"></div>
       <button onclick="saveMyInfo()" class="btn btn-accent" style="width:100%;">저장</button>
@@ -703,9 +712,29 @@ async function loadMyInfo() {
     document.getElementById("my-address2").value = u.address_detail || "";
     document.getElementById("my-customs").value = u.customs_id || "";
     document.getElementById("my-biznum").value = u.business_number || "";
+    // 사업자등록증 상태
+    const certEl = document.getElementById("my-cert-status");
+    if (u.business_cert_file) {
+      certEl.innerHTML = `✅ 첨부완료: <b>${u.business_cert_file}</b>`;
+    } else {
+      certEl.innerHTML = `<span style="color:var(--dim);">미첨부</span>`;
+    }
   } catch(e) {}
 }
 loadMyInfo();
+
+async function uploadMyCert() {
+  const fileInput = document.getElementById("my-cert-file");
+  if (!fileInput.files.length) { alert("파일을 선택해주세요"); return; }
+  const formData = new FormData();
+  formData.append("file", fileInput.files[0]);
+  try {
+    const res = await fetch(PREFIX + "/shop/api/upload-cert", { method: "POST", body: formData });
+    const d = await res.json();
+    alert(d.message);
+    if (d.ok) { fileInput.value = ""; loadMyInfo(); }
+  } catch(e) { alert("업로드 오류: " + e); }
+}
 
 async function saveMyInfo() {
   const msg = document.getElementById("info-msg");
