@@ -1349,7 +1349,10 @@ def update_my_order_status():
 @app.route(f"{URL_PREFIX}/shop/api/cancel-order/<int:order_id>", methods=["POST"])
 @login_required
 def cancel_my_order(order_id):
-    """고객이 직접 주문 취소 (신규/확인 상태만)"""
+    """고객이 직접 주문 취소
+    - new(신규): 즉시 취소
+    - confirmed(주문확인) 이후: 취소요청 → 관리자 승인 필요
+    """
     username = session.get("username", "")
     from user_db import _conn as user_conn
     conn = user_conn()
@@ -1357,17 +1360,83 @@ def cancel_my_order(order_id):
         row = conn.execute("SELECT * FROM orders WHERE id=? AND username=?", (order_id, username)).fetchone()
         if not row:
             return jsonify({"ok": False, "message": "주문을 찾을 수 없습니다"})
-        if row["status"] not in ("new", "confirmed"):
-            return jsonify({"ok": False, "message": f"'{row['status']}' 상태에서는 취소할 수 없습니다"})
-        conn.execute("UPDATE orders SET status='cancelled' WHERE id=?", (order_id,))
-        conn.commit()
-        # 텔레그램 알림
-        try:
-            from notifier import send_telegram
-            send_telegram(f"🚫 <b>주문 취소</b>\n👤 {username}\n📦 {row['product_name'] or ''}\n💰 {row['price'] or ''}")
-        except Exception:
-            pass
-        return jsonify({"ok": True, "message": "주문이 취소되었습니다"})
+
+        st = row["status"]
+        if st in ("cancelled", "cancel_request"):
+            return jsonify({"ok": False, "message": "이미 취소되었거나 취소 요청 중입니다"})
+        if st not in ("new", "confirmed", "processing"):
+            return jsonify({"ok": False, "message": f"'{st}' 상태에서는 취소할 수 없습니다"})
+
+        if st == "new":
+            # 신규 주문은 즉시 취소
+            conn.execute("UPDATE orders SET status='cancelled' WHERE id=?", (order_id,))
+            conn.commit()
+            try:
+                from notifier import send_telegram
+                send_telegram(f"🚫 <b>주문 취소</b>\n👤 {username}\n📦 {row['product_name'] or ''}\n💰 {row['price'] or ''}")
+            except Exception:
+                pass
+            return jsonify({"ok": True, "message": "주문이 취소되었습니다"})
+        else:
+            # 주문확인 이후는 취소요청 → 관리자 승인 필요
+            conn.execute("UPDATE orders SET status='cancel_request' WHERE id=?", (order_id,))
+            conn.commit()
+            try:
+                from notifier import send_telegram
+                send_telegram(f"⚠️ <b>취소 요청</b>\n👤 {username}\n📦 {row['product_name'] or ''}\n💰 {row['price'] or ''}\n\n관리자 승인이 필요합니다.")
+            except Exception:
+                pass
+            return jsonify({"ok": True, "message": "취소 요청이 접수되었습니다. 관리자 승인 후 취소됩니다."})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/orders/<int:order_id>/approve-cancel", methods=["POST"])
+@admin_required
+def approve_cancel(order_id):
+    """관리자: 취소 요청 승인/거절"""
+    data = request.get_json() or {}
+    action = data.get("action", "approve")  # approve / reject
+    from user_db import _conn as user_conn
+    conn = user_conn()
+    try:
+        row = conn.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+        if not row:
+            return jsonify({"ok": False, "message": "주문을 찾을 수 없습니다"})
+        if row["status"] != "cancel_request":
+            return jsonify({"ok": False, "message": "취소 요청 상태가 아닙니다"})
+
+        if action == "approve":
+            conn.execute("UPDATE orders SET status='cancelled' WHERE id=?", (order_id,))
+            conn.commit()
+            # 고객에게 문자 알림
+            try:
+                user = conn.execute("SELECT phone FROM users WHERE username=?", (row["username"],)).fetchone()
+                if user and user["phone"]:
+                    from aligo_sms import send_sms, load_config
+                    load_config()
+                    send_sms(user["phone"], f"[TheOne Vintage] 주문 취소가 승인되었습니다.\n주문번호: {row.get('order_number','')}\n상품: {row.get('brand','')} {(row.get('product_name',''))[:20]}")
+            except Exception:
+                pass
+            try:
+                from notifier import send_telegram
+                send_telegram(f"✅ <b>취소 승인</b>\n주문번호: {row.get('order_number','')}\n👤 {row['username']}\n📦 {row['product_name'] or ''}")
+            except Exception:
+                pass
+            return jsonify({"ok": True, "message": "취소가 승인되었습니다"})
+        else:
+            # 거절 → 이전 상태(confirmed)로 복원
+            conn.execute("UPDATE orders SET status='confirmed' WHERE id=?", (order_id,))
+            conn.commit()
+            try:
+                user = conn.execute("SELECT phone FROM users WHERE username=?", (row["username"],)).fetchone()
+                if user and user["phone"]:
+                    from aligo_sms import send_sms, load_config
+                    load_config()
+                    send_sms(user["phone"], f"[TheOne Vintage] 주문 취소 요청이 거절되었습니다.\n주문번호: {row.get('order_number','')}\n문의사항은 카카오톡으로 연락주세요.")
+            except Exception:
+                pass
+            return jsonify({"ok": True, "message": "취소 요청이 거절되었습니다"})
     finally:
         conn.close()
 

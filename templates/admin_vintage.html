@@ -129,7 +129,7 @@
       <div style="display:flex;gap:6px;">
         <input id="order-search" placeholder="검색..." onkeydown="if(event.key==='Enter')loadOrders()" style="padding:5px 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:0.78rem;width:180px;">
         <select id="order-status-filter" onchange="loadOrders()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.78rem;">
-          <option value="">전체</option><option value="new">신규</option><option value="confirmed">확인</option><option value="processing">처리중</option><option value="shipped">배송중</option><option value="completed">완료</option><option value="sold_out">품절취소</option><option value="cancelled">취소</option>
+          <option value="">전체</option><option value="new">신규</option><option value="confirmed">확인</option><option value="processing">처리중</option><option value="shipped">배송중</option><option value="completed">완료</option><option value="cancel_request">취소요청</option><option value="sold_out">품절취소</option><option value="cancelled">취소</option>
         </select>
         <button class="btn b-gray" onclick="loadOrders()">🔄</button>
       </div>
@@ -310,8 +310,8 @@ async function chgMemberSt(user,st) {
 }
 
 // ── 주문확인 ──
-const SL={"new":"신규","confirmed":"확인","processing":"처리중","shipped":"배송중","completed":"완료","sold_out":"품절취소","cancelled":"취소"};
-const SC={"new":"var(--yellow)","confirmed":"var(--blue)","processing":"var(--accent)","shipped":"#6cf","completed":"var(--green)","sold_out":"var(--red)","cancelled":"var(--red)"};
+const SL={"new":"신규","confirmed":"확인","processing":"처리중","shipped":"배송중","completed":"완료","cancel_request":"취소요청","sold_out":"품절취소","cancelled":"취소"};
+const SC={"new":"var(--yellow)","confirmed":"var(--blue)","processing":"var(--accent)","shipped":"#6cf","completed":"var(--green)","cancel_request":"#ff9800","sold_out":"var(--red)","cancelled":"var(--red)"};
 async function loadOrders() {
   const q=document.getElementById("order-search")?.value?.trim()||"";
   const st=document.getElementById("order-status-filter")?.value||"";
@@ -336,12 +336,18 @@ async function loadOrders() {
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.product_name||''}</td>
       <td style="font-family:monospace;font-size:0.68rem;">${o.product_code||''}</td>
       <td style="font-weight:700;color:var(--accent);">${o.price||''}</td>
-      <td><select onchange="chgOrderSt(${o.id},this.value)" style="background:var(--bg);border:1px solid var(--border);color:${sc};padding:2px 4px;border-radius:4px;font-size:0.68rem;font-weight:600;">${Object.entries(SL).map(([k,v])=>`<option value="${k}" ${k===o.status?'selected':''}>${v}</option>`).join('')}</select></td></tr>`;
+      <td><select onchange="chgOrderSt(${o.id},this.value)" style="background:var(--bg);border:1px solid var(--border);color:${sc};padding:2px 4px;border-radius:4px;font-size:0.68rem;font-weight:600;">${Object.entries(SL).map(([k,v])=>`<option value="${k}" ${k===o.status?'selected':''}>${v}</option>`).join('')}</select>${o.status==='cancel_request'?`<div style="margin-top:4px;display:flex;gap:4px;"><button onclick="approveCancel(${o.id},'approve')" style="padding:2px 6px;font-size:0.62rem;background:var(--green);color:#fff;border:none;border-radius:3px;cursor:pointer;">승인</button><button onclick="approveCancel(${o.id},'reject')" style="padding:2px 6px;font-size:0.62rem;background:var(--red);color:#fff;border:none;border-radius:3px;cursor:pointer;">거절</button></div>`:''}</td></tr>`;
     }).join("");
   }catch(e){}
 }
 async function chgOrderSt(id,st) {
   await fetch(PREFIX+"/orders/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:st})});
+  loadOrders();
+}
+async function approveCancel(id, action) {
+  const msg = action === 'approve' ? '취소를 승인하시겠습니까?' : '취소 요청을 거절하시겠습니까?';
+  if (!confirm(msg)) return;
+  await fetch(PREFIX+"/orders/"+id+"/approve-cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action})});
   loadOrders();
 }
 

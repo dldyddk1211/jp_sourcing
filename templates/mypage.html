@@ -587,7 +587,7 @@
 
 <script>
 const PREFIX = "{{ url_prefix }}";
-const statusMap = {"new":["신규","st-new"],"confirmed":["확인","st-confirmed"],"processing":["처리중","st-processing"],"shipped":["배송중","st-shipped"],"completed":["완료","st-completed"],"sold_out":["품절취소","st-cancelled"],"cancelled":["취소","st-cancelled"]};
+const statusMap = {"new":["신규","st-new"],"confirmed":["확인","st-confirmed"],"processing":["처리중","st-processing"],"shipped":["배송중","st-shipped"],"completed":["완료","st-completed"],"cancel_request":["취소요청","st-processing"],"sold_out":["품절취소","st-cancelled"],"cancelled":["취소","st-cancelled"]};
 
 // 일본어→한국어 번역
 const jaKoDict = {
@@ -832,11 +832,15 @@ async function loadMyOrders() {
     // Desktop table
     tbody.innerHTML = filteredOrders.map((o, i) => {
       const [sl, sc] = statusMap[o.status] || [o.status, ""];
-      const canCancel = o.status === "new" || o.status === "confirmed";
+      const canCancel = ["new","confirmed","processing"].includes(o.status);
+      const isCancelReq = o.status === "cancel_request";
       const canPay = o.status === "new" && o.type === "order";
       const isBatch = (o.product_name||'').includes('다중주문') || (o.product_name||'').includes('일괄결제');
       const priceNum = isBatch ? (batchPriceMap[o.id] || 0) : (parseInt((o.price||'0').replace(/[^0-9]/g,'')) || 0);
       const onum = o.order_number || '';
+      let cancelBtn = '';
+      if (canCancel) cancelBtn = `<button onclick="cancelMyOrder(${o.id})" style="padding:4px 10px;font-size:0.72rem;background:var(--red);color:#fff;border:none;border-radius:4px;cursor:pointer;">취소</button>`;
+      else if (isCancelReq) cancelBtn = `<span style="font-size:0.68rem;color:#ff9800;font-weight:600;">승인 대기중</span>`;
       return `<tr>
         <td style="text-align:center;">${canPay ? `<input type="checkbox" class="my-order-chk" data-id="${o.id}" data-price="${priceNum}" data-name="${(o.brand||'')+' '+(o.product_name||'')}" onchange="updateMyOrderPayInfo()">` : ''}</td>
         <td><a href="#" onclick="event.preventDefault();openOrderDetail('${onum}');" style="color:var(--accent);font-family:monospace;font-size:0.72rem;text-decoration:underline;text-underline-offset:3px;">${onum}</a></td>
@@ -845,16 +849,20 @@ async function loadMyOrders() {
         <td>${(o.product_name||'').includes('다중주문') || (o.product_name||'').includes('일괄결제') ? `<a href="#" onclick="event.preventDefault();toggleMyBatchDetail(${o.id},this)" style="color:var(--yellow);text-decoration:underline;cursor:pointer;">${o.product_name} ▼</a>` : (o.product_code ? `<a href="#" onclick="event.preventDefault();openCartDetail('${o.product_code.replace(/'/g,"\\'")}');" style="color:var(--text);text-decoration:underline;text-underline-offset:3px;">${o.brand} ${o.product_name||''}</a>` : `${o.brand} ${o.product_name||''}`)}</td>
         <td style="font-weight:700;color:var(--accent);">${isBatch ? priceNum.toLocaleString()+'원' : (o.price||'')}</td>
         <td class="${sc}" style="font-weight:600;">${sl}</td>
-        <td>${canCancel ? `<button onclick="cancelMyOrder(${o.id})" style="padding:4px 10px;font-size:0.72rem;background:var(--red);color:#fff;border:none;border-radius:4px;cursor:pointer;">취소</button>` : ''}</td>
+        <td>${cancelBtn}</td>
       </tr>`;
     }).join("");
     // Mobile cards
     mobileEl.innerHTML = filteredOrders.map((o) => {
       const [sl, sc] = statusMap[o.status] || [o.status, ""];
-      const canCancel = o.status === "new" || o.status === "confirmed";
+      const canCancel = ["new","confirmed","processing"].includes(o.status);
+      const isCancelReq = o.status === "cancel_request";
       const canPay = o.status === "new" && o.type === "order";
       const priceNum = parseInt((o.price||'0').replace(/[^0-9]/g,'')) || 0;
       const onum = o.order_number || '';
+      let cancelBtn = '';
+      if (canCancel) cancelBtn = `<button onclick="cancelMyOrder(${o.id})" style="padding:5px 12px;font-size:0.74rem;background:var(--red);color:#fff;border:none;border-radius:6px;cursor:pointer;">취소</button>`;
+      else if (isCancelReq) cancelBtn = `<span style="font-size:0.72rem;color:#ff9800;font-weight:600;">승인 대기중</span>`;
       return `<div class="order-card">
         <div class="order-card-top">
           ${canPay ? `<input type="checkbox" class="my-order-chk" data-id="${o.id}" data-price="${priceNum}" data-name="${(o.brand||'')+' '+(o.product_name||'')}" onchange="updateMyOrderPayInfo()">` : '<div style="width:18px;"></div>'}
@@ -871,7 +879,7 @@ async function loadMyOrders() {
         <div class="order-card-bottom">
           <span class="order-card-price">${o.price||''}</span>
           <div class="order-card-actions">
-            ${canCancel ? `<button onclick="cancelMyOrder(${o.id})" style="padding:5px 12px;font-size:0.74rem;background:var(--red);color:#fff;border:none;border-radius:6px;cursor:pointer;">취소</button>` : ''}
+            ${cancelBtn}
           </div>
         </div>
       </div>`;
