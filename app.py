@@ -3344,6 +3344,31 @@ def serve_cert(filename):
     return send_from_directory(cert_dir, filename)
 
 
+@app.route(f"{URL_PREFIX}/members/<path:username>/reset-password", methods=["POST"])
+@admin_required
+def reset_member_password(username):
+    """관리자: 고객 비밀번호 초기화/변경"""
+    data = request.json or {}
+    new_pw = data.get("new_password", "").strip()
+    if not new_pw:
+        return jsonify({"ok": False, "message": "새 비밀번호를 입력하세요"})
+    if len(new_pw) < 4:
+        return jsonify({"ok": False, "message": "비밀번호는 4자 이상이어야 합니다"})
+    from user_db import _conn
+    conn = _conn()
+    try:
+        row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+        if not row:
+            return jsonify({"ok": False, "message": "회원을 찾을 수 없습니다"})
+        hashed = generate_password_hash(new_pw)
+        conn.execute("UPDATE users SET password_hash=? WHERE username=?", (hashed, username))
+        conn.commit()
+        logger.info(f"회원 비밀번호 초기화: {username}")
+        return jsonify({"ok": True, "message": f"{username} 비밀번호가 변경되었습니다"})
+    finally:
+        conn.close()
+
+
 @app.route(f"{URL_PREFIX}/admin/change-password", methods=["POST"])
 @admin_required
 def admin_change_password():

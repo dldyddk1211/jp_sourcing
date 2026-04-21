@@ -187,6 +187,49 @@
     <div id="dbu-log" style="max-height:300px;overflow-y:auto;font-size:0.72rem;font-family:monospace;color:var(--muted);white-space:pre-wrap;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;">대기 중...</div>
   </div>
 </div>
+
+<!-- 회원 상세 모달 -->
+<div id="member-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:rgba(0,0,0,0.6);display:none;align-items:center;justify-content:center;">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;width:90%;max-width:480px;max-height:85vh;overflow-y:auto;position:relative;">
+    <button onclick="closeMemberModal()" style="position:absolute;top:12px;right:14px;background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer;">✕</button>
+    <div style="font-size:1rem;font-weight:700;margin-bottom:16px;">👤 회원 상세 — <span id="md-username" style="color:var(--accent);"></span></div>
+    <div style="display:grid;grid-template-columns:90px 1fr;gap:8px 12px;font-size:0.82rem;">
+      <label style="color:var(--muted);font-weight:600;">이름</label>
+      <input id="md-name" style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.82rem;">
+      <label style="color:var(--muted);font-weight:600;">이메일</label>
+      <input id="md-email" style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.82rem;">
+      <label style="color:var(--muted);font-weight:600;">연락처</label>
+      <input id="md-phone" style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.82rem;">
+      <label style="color:var(--muted);font-weight:600;">우편번호</label>
+      <input id="md-postal" style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.82rem;">
+      <label style="color:var(--muted);font-weight:600;">주소</label>
+      <input id="md-address" style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.82rem;">
+      <label style="color:var(--muted);font-weight:600;">상세주소</label>
+      <input id="md-address2" style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.82rem;">
+      <label style="color:var(--muted);font-weight:600;">통관번호</label>
+      <input id="md-customs" style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.82rem;">
+      <label style="color:var(--muted);font-weight:600;">사업자번호</label>
+      <input id="md-biznum" style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.82rem;">
+      <label style="color:var(--muted);font-weight:600;">사업자등록증</label>
+      <div id="md-cert" style="font-size:0.78rem;padding:6px 0;"></div>
+      <label style="color:var(--muted);font-weight:600;">가입일</label>
+      <div id="md-created" style="font-size:0.78rem;color:var(--muted);padding:6px 0;"></div>
+      <label style="color:var(--muted);font-weight:600;">최근접속</label>
+      <div id="md-login" style="font-size:0.78rem;color:var(--muted);padding:6px 0;"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;">
+      <button onclick="saveMemberInfo()" class="btn b-blue" style="flex:1;">💾 정보 저장</button>
+    </div>
+    <!-- 비밀번호 초기화 -->
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
+      <div style="font-size:0.82rem;font-weight:600;margin-bottom:8px;">🔑 비밀번호 초기화</div>
+      <div style="display:flex;gap:8px;">
+        <input id="md-newpw" type="text" placeholder="새 비밀번호 (4자 이상)" style="flex:1;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.82rem;">
+        <button onclick="resetMemberPw()" class="btn b-red" style="white-space:nowrap;">변경</button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -295,7 +338,7 @@ function renderMembers() {
   const tbody=document.getElementById("member-tbody");
   const stC={approved:'var(--green)',pending:'var(--yellow)',suspended:'var(--red)',rejected:'var(--red)'};
   tbody.innerHTML=_memberList.length?_memberList.map((m,i)=>{const st=m.status||'approved';const lvl=m.level||'b2c';
-    return `<tr><td style="color:var(--dim);">${i+1}</td><td style="font-weight:600;">${m.username}</td><td>${m.name||'-'}</td><td>${m.phone||'-'}</td>
+    return `<tr><td style="color:var(--dim);">${i+1}</td><td style="font-weight:600;"><a href="#" onclick="event.preventDefault();openMemberDetail('${m.username}')" style="color:var(--accent);text-decoration:underline;text-underline-offset:3px;">${m.username}</a></td><td>${m.name||'-'}</td><td>${m.phone||'-'}</td>
     <td><select onchange="chgMemberSt('${m.username}',this.value)" style="background:var(--bg);border:1px solid var(--border);color:${stC[st]};padding:2px 4px;border-radius:4px;font-size:0.7rem;font-weight:600;">
       <option value="approved" ${st==='approved'?'selected':''}>승인</option><option value="pending" ${st==='pending'?'selected':''}>대기</option><option value="suspended" ${st==='suspended'?'selected':''}>사용불가</option><option value="rejected" ${st==='rejected'?'selected':''}>거절</option></select></td>
     <td><select onchange="chgMemberLvl('${m.username}',this.value)" style="background:var(--bg);border:1px solid var(--border);color:${lvl==='b2b'?'var(--blue)':'var(--green)'};padding:2px 4px;border-radius:4px;font-size:0.7rem;font-weight:700;">
@@ -406,6 +449,65 @@ async function runDbUpdate() {
 }
 async function stopDbUpdate() {
   await fetch(PREFIX+"/api/db-update/stop", {method:"POST"});
+}
+
+// ── 회원 상세 모달 ──
+let _mdUser = '';
+async function openMemberDetail(username) {
+  _mdUser = username;
+  document.getElementById("md-username").textContent = username;
+  try {
+    const r = await fetch(PREFIX+"/members/"+encodeURIComponent(username)+"/info");
+    const d = await r.json();
+    if (!d.ok) { alert("회원 정보를 불러올 수 없습니다"); return; }
+    const u = d.user;
+    document.getElementById("md-name").value = u.name || "";
+    document.getElementById("md-email").value = u.email || "";
+    document.getElementById("md-phone").value = u.phone || "";
+    document.getElementById("md-postal").value = u.postal_code || "";
+    document.getElementById("md-address").value = u.address || "";
+    document.getElementById("md-address2").value = u.address_detail || "";
+    document.getElementById("md-customs").value = u.customs_id || "";
+    document.getElementById("md-biznum").value = u.business_number || "";
+    document.getElementById("md-created").textContent = (u.created_at||'').slice(0,16);
+    document.getElementById("md-login").textContent = u.last_login || '없음';
+    document.getElementById("md-newpw").value = "";
+    // 사업자등록증
+    const certEl = document.getElementById("md-cert");
+    if (u.business_cert_file) {
+      certEl.innerHTML = `<a href="${PREFIX}/members/cert/${u.business_cert_file}" target="_blank" style="color:var(--green);">📎 ${u.business_cert_file}</a>`;
+    } else {
+      certEl.innerHTML = `<span style="color:var(--dim);">미첨부</span>`;
+    }
+    const modal = document.getElementById("member-modal");
+    modal.style.display = "flex";
+  } catch(e) { alert("오류: "+e); }
+}
+function closeMemberModal() { document.getElementById("member-modal").style.display = "none"; }
+async function saveMemberInfo() {
+  const body = {
+    name: document.getElementById("md-name").value,
+    phone: document.getElementById("md-phone").value,
+    postal_code: document.getElementById("md-postal").value,
+    address: document.getElementById("md-address").value,
+    address_detail: document.getElementById("md-address2").value,
+    customs_id: document.getElementById("md-customs").value,
+    business_number: document.getElementById("md-biznum").value,
+  };
+  const r = await fetch(PREFIX+"/members/"+encodeURIComponent(_mdUser)+"/info",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const d = await r.json();
+  alert(d.message);
+  if (d.ok) loadMembers(true);
+}
+async function resetMemberPw() {
+  const pw = document.getElementById("md-newpw").value.trim();
+  if (!pw) { alert("새 비밀번호를 입력하세요"); return; }
+  if (pw.length < 4) { alert("비밀번호는 4자 이상이어야 합니다"); return; }
+  if (!confirm(`'${_mdUser}'의 비밀번호를 변경하시겠습니까?`)) return;
+  const r = await fetch(PREFIX+"/members/"+encodeURIComponent(_mdUser)+"/reset-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({new_password:pw})});
+  const d = await r.json();
+  alert(d.message);
+  if (d.ok) document.getElementById("md-newpw").value = "";
 }
 
 // 초기 로드
