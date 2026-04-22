@@ -325,9 +325,15 @@ def login():
             else:
                 session["logged_in"] = True
                 session["username"] = username
-                session["role"] = "customer"
                 session["level"] = customer["level"] if "level" in customer.keys() else "b2c"
                 session["name"] = customer["name"] if "name" in customer.keys() else ""
+                # LOGIN_USERS에 등록된 계정이면 부관리자 권한 부여
+                if username in LOGIN_USERS:
+                    menus = ADMIN_MENU_ACCESS.get(username, [])
+                    session["role"] = "sub_admin" if menus else "admin"
+                    session["admin_menus"] = menus if menus else ["vintage", "brand", "kabinet", "setting"]
+                else:
+                    session["role"] = "customer"
                 # 마지막 접속 시간 업데이트
                 try:
                     from user_db import _conn as _uc
