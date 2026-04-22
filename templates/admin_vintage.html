@@ -123,7 +123,13 @@
 
 <!-- ═══ 주문확인 ═══ -->
 <div class="page-section" id="page-orders">
-  <div class="panel">
+  <!-- 탭 -->
+  <div style="display:flex;border-bottom:2px solid var(--border);margin-bottom:12px;">
+    <div class="order-tab active" data-tab="orders" onclick="switchOrderTab('orders')" style="padding:10px 20px;font-size:0.85rem;cursor:pointer;border-bottom:2px solid var(--accent);margin-bottom:-2px;font-weight:700;color:var(--accent);">📦 주문/문의</div>
+    <div class="order-tab" data-tab="cart" onclick="switchOrderTab('cart')" style="padding:10px 20px;font-size:0.85rem;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;">🛒 장바구니 <span id="cart-tab-cnt" style="font-size:0.72rem;color:var(--yellow);"></span></div>
+  </div>
+  <!-- 주문 탭 -->
+  <div id="tab-orders" class="panel">
     <div class="panel-title">
       <span>📦 주문 리스트</span>
       <div style="display:flex;gap:6px;">
@@ -138,6 +144,25 @@
       <table class="tbl">
         <thead><tr><th style="width:28px"><input type="checkbox" onchange="document.querySelectorAll('.oc').forEach(c=>c.checked=this.checked)"></th><th>주문번호</th><th>고객</th><th>레벨</th><th>이미지</th><th>브랜드</th><th>상품명</th><th>상품코드</th><th>판매가</th><th>상태</th></tr></thead>
         <tbody id="order-tbody"><tr><td colspan="10" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <!-- 장바구니 탭 -->
+  <div id="tab-cart" class="panel" style="display:none;">
+    <div class="panel-title">
+      <span>🛒 고객 장바구니</span>
+      <div style="display:flex;gap:6px;">
+        <button class="btn b-red" onclick="deleteCheckedCarts()" style="font-size:0.72rem;">🗑 선택 삭제</button>
+        <button class="btn b-gray" onclick="loadAdminCarts()">🔄</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="tbl" style="font-size:0.75rem;">
+        <thead><tr>
+          <th style="width:28px;"><input type="checkbox" onchange="document.querySelectorAll('.cc').forEach(c=>c.checked=this.checked)"></th>
+          <th>고객</th><th>이미지</th><th>브랜드</th><th>상품명</th><th>상품코드</th><th>가격</th><th>품절</th><th>담은날</th>
+        </tr></thead>
+        <tbody id="admin-cart-tbody"><tr><td colspan="9" style="text-align:center;color:var(--muted);padding:30px;">로딩 중...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -399,6 +424,55 @@ async function approveCancel(id, action) {
   if (!confirm(msg)) return;
   await fetch(PREFIX+"/orders/"+id+"/approve-cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action})});
   loadOrders();
+}
+
+// ── 주문/장바구니 탭 전환 ──
+function switchOrderTab(tab) {
+  document.querySelectorAll('.order-tab').forEach(t => {
+    const isActive = t.dataset.tab === tab;
+    t.style.borderBottomColor = isActive ? 'var(--accent)' : 'transparent';
+    t.style.color = isActive ? 'var(--accent)' : 'var(--muted)';
+    t.style.fontWeight = isActive ? '700' : '400';
+  });
+  document.getElementById('tab-orders').style.display = tab === 'orders' ? '' : 'none';
+  document.getElementById('tab-cart').style.display = tab === 'cart' ? '' : 'none';
+  if (tab === 'cart') loadAdminCarts();
+}
+async function loadAdminCarts() {
+  try {
+    const r = await fetch(PREFIX + "/api/admin/carts");
+    const d = await r.json();
+    const tbody = document.getElementById("admin-cart-tbody");
+    if (!d.ok || !d.items || !d.items.length) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:30px;">장바구니가 비어있습니다</td></tr>';
+      document.getElementById("cart-tab-cnt").textContent = "";
+      return;
+    }
+    document.getElementById("cart-tab-cnt").textContent = `(${d.items.length})`;
+    tbody.innerHTML = d.items.map(c => {
+      const sold = c.is_sold_out ? '<span style="color:var(--red);font-weight:700;">품절</span>' : '<span style="color:var(--green);">정상</span>';
+      return `<tr>
+        <td><input type="checkbox" class="cc" data-id="${c.id}"></td>
+        <td style="font-weight:600;">${c.username||''}</td>
+        <td><img src="${c.img_url||''}" style="width:32px;height:32px;object-fit:cover;border-radius:4px;" onerror="this.style.display='none'"></td>
+        <td>${c.brand||''}</td>
+        <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.product_name||''}</td>
+        <td style="font-family:monospace;font-size:0.68rem;">${c.product_code||''}</td>
+        <td style="font-weight:700;color:var(--accent);">${c.price||''}</td>
+        <td>${sold}</td>
+        <td style="font-size:0.68rem;color:var(--muted);">${(c.created_at||'').slice(5,16)}</td>
+      </tr>`;
+    }).join("");
+  } catch(e) {}
+}
+async function deleteCheckedCarts() {
+  const checked = [...document.querySelectorAll('.cc:checked')].map(c => parseInt(c.dataset.id));
+  if (!checked.length) { alert("삭제할 항목을 선택해주세요"); return; }
+  if (!confirm(`${checked.length}개 장바구니 항목을 삭제하시겠습니까?`)) return;
+  for (const id of checked) {
+    await fetch(PREFIX + "/api/admin/cart/" + id, {method:"DELETE"}).catch(()=>{});
+  }
+  loadAdminCarts();
 }
 
 // ── 가격 변경 이력 ──
