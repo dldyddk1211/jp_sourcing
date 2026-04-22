@@ -736,7 +736,7 @@
       </button>
       <div id="user-dropdown" class="user-dropdown">
         {% if is_admin %}
-        <a href="{{ url_prefix }}/admin/vintage" style="color:var(--accent);font-weight:700;">⚙️ 관리자 설정</a>
+        <a href="{{ url_prefix }}/admin/{{ admin_menus[0] if admin_menus else 'vintage' }}" style="color:var(--accent);font-weight:700;">⚙️ 관리자 설정</a>
         <div style="border-top:1px solid var(--border);margin:4px 0;"></div>
         {% endif %}
         <a href="{{ url_prefix }}/shop/mypage">회원정보</a>

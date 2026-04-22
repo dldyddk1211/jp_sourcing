@@ -577,7 +577,8 @@ def shop():
     return render_template("shop.html",
                            url_prefix=URL_PREFIX, env=APP_ENV,
                            username=display_name,
-                           is_admin=session.get("role", "") == "admin",
+                           is_admin=session.get("role", "") in ("admin", "sub_admin"),
+                           admin_menus=session.get("admin_menus", []),
                            user_level=user_level,
                            logged_in=logged_in)
 
@@ -589,7 +590,8 @@ def shop_mypage():
     return render_template("mypage.html",
                            url_prefix=URL_PREFIX, env=APP_ENV,
                            username=session.get("username"),
-                           is_admin=session.get("role", "admin") == "admin")
+                           is_admin=session.get("role", "") in ("admin", "sub_admin"),
+                           admin_menus=session.get("admin_menus", []))
 
 
 @app.route(f"{URL_PREFIX}/shop/my-orders")
