@@ -43,8 +43,54 @@
   </div>
 </div>
 <div class="page-section" id="page-st-keyword">
-  <div class="panel"><div class="panel-title"><span>🔍 키워드 분석</span></div>
-    <div style="text-align:center;padding:30px;color:var(--muted);"><a href="{{ url_prefix }}/dashboard#seo-keyword" style="color:var(--accent);">전체 대시보드에서 설정 →</a></div>
+  <div class="panel">
+    <div class="panel-title"><span>🔍 네이버 키워드 분석</span></div>
+    <!-- API 키 설정 -->
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:16px;">
+      <div style="font-size:0.8rem;font-weight:600;margin-bottom:10px;">API 키 설정</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+        <div style="flex:1;min-width:160px;">
+          <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">API Key</label>
+          <input id="kw-api-key" type="password" placeholder="액세스 라이선스" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.78rem;">
+        </div>
+        <div style="flex:1;min-width:160px;">
+          <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">Secret Key</label>
+          <input id="kw-secret-key" type="password" placeholder="비밀키" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.78rem;">
+        </div>
+        <div style="min-width:120px;">
+          <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">Customer ID</label>
+          <input id="kw-customer-id" placeholder="고객 ID" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.78rem;">
+        </div>
+        <button class="btn b-green" onclick="saveKwApiKeys()" style="padding:7px 14px;font-size:0.78rem;">저장</button>
+      </div>
+      <div id="kw-api-status" style="margin-top:6px;font-size:0.72rem;color:var(--muted);"></div>
+    </div>
+    <!-- 키워드 조회 -->
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:16px;">
+      <div style="font-size:0.8rem;font-weight:600;margin-bottom:10px;">키워드 검색량 조회</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+        <div style="flex:1;min-width:250px;">
+          <textarea id="kw-input" rows="3" placeholder="키워드 입력 (줄바꿈 구분)&#10;예: 루이비통 중고&#10;프라다 가방" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.82rem;resize:vertical;"></textarea>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <button class="btn b-blue" onclick="searchKeywords()" id="btn-kw-search" style="padding:8px 16px;font-size:0.82rem;">조회</button>
+          <button class="btn b-blue" onclick="searchBrandKeywords()" style="padding:8px 16px;font-size:0.78rem;">브랜드별 자동</button>
+        </div>
+      </div>
+    </div>
+    <!-- 결과 -->
+    <div class="panel" style="margin:0;">
+      <div class="panel-title">
+        <span>조회 결과</span>
+        <button class="btn b-green" onclick="downloadKwCsv()" style="padding:5px 12px;font-size:0.75rem;">CSV 다운로드</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="tbl" style="width:100%;font-size:0.78rem;">
+          <thead><tr><th style="text-align:left;width:40%;">키워드</th><th style="text-align:right;width:15%;">PC 검색</th><th style="text-align:right;width:15%;">모바일 검색</th><th style="text-align:right;width:15%;">합계</th><th style="text-align:center;width:15%;">경쟁도</th></tr></thead>
+          <tbody id="kw-result-body"><tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px;">키워드를 입력하고 [조회]를 눌러주세요</td></tr></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -55,6 +101,61 @@ function onPageShow(page) {
   document.getElementById("topbar-title").textContent = pageTitles[page] || page;
   if (page === "st-data") loadDataPath();
   if (page === "st-sms") loadSmsBalance();
+  if (page === "st-keyword") loadKwApiKeys();
+}
+async function loadKwApiKeys() {
+  try {
+    const r = await fetch(PREFIX + "/api/keyword/config");
+    const d = await r.json();
+    if (d.ok && d.config) {
+      document.getElementById("kw-api-key").value = d.config.api_key || "";
+      document.getElementById("kw-secret-key").value = d.config.secret_key || "";
+      document.getElementById("kw-customer-id").value = d.config.customer_id || "";
+      document.getElementById("kw-api-status").innerHTML = d.config.api_key ? '<span style="color:var(--green);">API 키 설정됨</span>' : '';
+    }
+  } catch(e) {}
+}
+async function saveKwApiKeys() {
+  const body = {api_key: document.getElementById("kw-api-key").value.trim(), secret_key: document.getElementById("kw-secret-key").value.trim(), customer_id: document.getElementById("kw-customer-id").value.trim()};
+  if (!body.api_key || !body.secret_key || !body.customer_id) { alert("3개 값을 모두 입력해주세요"); return; }
+  const r = await fetch(PREFIX + "/api/keyword/config", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+  const d = await r.json();
+  document.getElementById("kw-api-status").innerHTML = d.ok ? '<span style="color:var(--green);">저장 완료</span>' : '<span style="color:var(--red);">실패</span>';
+}
+var _kwResults = [];
+async function searchKeywords() {
+  const text = document.getElementById("kw-input").value.trim();
+  if (!text) { alert("키워드를 입력해주세요"); return; }
+  const keywords = text.split("\n").map(s=>s.trim()).filter(Boolean);
+  const btn = document.getElementById("btn-kw-search");
+  btn.disabled=true; btn.textContent="조회 중...";
+  const tbody = document.getElementById("kw-result-body");
+  tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);">조회 중...</td></tr>';
+  try {
+    const r = await fetch(PREFIX+"/api/keyword/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({keywords})});
+    const d = await r.json();
+    if (!d.ok) { tbody.innerHTML=`<tr><td colspan="5" style="color:var(--red);text-align:center;padding:20px;">${d.message||'조회 실패'}</td></tr>`; return; }
+    _kwResults = d.results||[];
+    renderKwResults();
+  } catch(e) { tbody.innerHTML=`<tr><td colspan="5" style="color:var(--red);text-align:center;padding:20px;">오류: ${e}</td></tr>`; }
+  finally { btn.disabled=false; btn.textContent="조회"; }
+}
+async function searchBrandKeywords() {
+  const brands=["루이비통","프라다","구찌","샤넬","에르메스","셀린느","발렌시아가","보테가베네타","펜디","버버리"];
+  document.getElementById("kw-input").value=brands.map(b=>`${b} 중고\n${b} 가방\n${b} 빈티지`).join("\n");
+  searchKeywords();
+}
+function renderKwResults() {
+  const tbody=document.getElementById("kw-result-body");
+  if (!_kwResults.length) { tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px;">결과 없음</td></tr>'; return; }
+  const cc={"높음":"var(--red)","중간":"var(--yellow)","낮음":"var(--green)"};
+  tbody.innerHTML=_kwResults.map(r=>`<tr><td style="text-align:left;font-weight:600;">${r.relKeyword||''}</td><td style="text-align:right;">${(r.monthlyPcQcCnt||0).toLocaleString()}</td><td style="text-align:right;">${(r.monthlyMobileQcCnt||0).toLocaleString()}</td><td style="text-align:right;font-weight:700;color:var(--accent);">${(r.total||0).toLocaleString()}</td><td style="text-align:center;color:${cc[r.compIdx]||'var(--muted)'};">${r.compIdx||'-'}</td></tr>`).join("");
+}
+function downloadKwCsv() {
+  if (!_kwResults.length) return;
+  let csv="키워드,PC검색,모바일검색,합계,경쟁도\n";
+  _kwResults.forEach(r=>{csv+=`"${r.relKeyword}",${r.monthlyPcQcCnt},${r.monthlyMobileQcCnt},${r.total},"${r.compIdx||''}"\n`;});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"})); a.download="keyword_analysis.csv"; a.click();
 }
 async function loadDataPath() {
   try {
