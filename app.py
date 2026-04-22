@@ -6636,38 +6636,37 @@ def _run_musinsa_scrape(keyword, max_items=50, search_mode="keyword", url=""):
                         except Exception:
                             pass
 
-                    # ── 가격 추출 (정가 + 최대혜택가 분리) ──
+                    # ── 가격 추출 (정가 + 쿠폰적용가 + 최대혜택가) ──
                     original_price = 0  # 정가 (할인 전)
-                    best_price = 0      # 최대혜택가 (쿠폰 적용)
+                    best_price = 0      # 최대혜택가 (쿠폰+적립 최저가)
 
                     # JS로 모든 가격 한번에 추출
                     try:
                         prices = page.evaluate("""() => {
-                            const result = {original: 0, best: 0};
+                            const result = {original: 0, coupon: 0, best: 0};
                             const allText = document.body.innerText;
 
-                            // 1) 최대혜택가: "XX,XXX원 최대혜택가" 또는 "최대혜택가 XX,XXX원"
+                            // ★ 1순위: "XX,XXX원 최대혜택가" 텍스트 패턴 (가장 정확)
                             let m = allText.match(/([0-9]{1,3}(?:,?[0-9]{3})*)\\s*원\\s*최대혜택가/);
                             if (m && m[1]) result.best = parseInt(m[1].replace(/,/g,''));
+
+                            // ★ 2순위: "최대혜택가" 뒤의 가격
                             if (!result.best) {
-                                m = allText.match(/최대혜택가\\s*([0-9]{1,3}(?:,?[0-9]{3})*)\\s*원/);
+                                m = allText.match(/최대혜택가[^0-9]*([0-9]{1,3}(?:,?[0-9]{3})*)\\s*원/);
                                 if (m && m[1]) result.best = parseInt(m[1].replace(/,/g,''));
                             }
 
-                            // 2) 할인가 (빨간색 가격)
+                            // 3) 쿠폰적용가 (빨간색 큰 가격 — 쿠폰가이지 최대혜택가 아님)
                             const redEl = document.querySelector('span.text-title_18px_semi.text-red');
                             if (redEl) {
                                 const t = redEl.textContent;
                                 if (t && t.includes('원')) {
                                     const n = parseInt(t.replace(/[^0-9]/g,''));
-                                    if (n >= 1000 && n <= 10000000) {
-                                        if (!result.best) result.best = n;
-                                    }
+                                    if (n >= 1000 && n <= 10000000) result.coupon = n;
                                 }
                             }
 
-                            // 3) 정가 (취소선 가격 또는 일반 가격)
-                            // del, s 태그 또는 text-gray 클래스의 가격
+                            // 4) 정가 (취소선/회색 가격)
                             const dels = document.querySelectorAll('del, s, span[class*="origin"], span[class*="Origin"], span.text-body_13px_reg.text-gray-600');
                             for (const d of dels) {
                                 const t = d.textContent;
@@ -6677,13 +6676,13 @@ def _run_musinsa_scrape(keyword, max_items=50, search_mode="keyword", url=""):
                                 }
                             }
 
-                            // 4) 정가 폴백: "XX,XXX원 YY%" 패턴 (정가 옆에 할인율)
+                            // 5) 정가 폴백: "XX,XXX원 YY%" 패턴
                             if (!result.original) {
                                 const pm = allText.match(/([0-9]{1,3}(?:,?[0-9]{3})*)\\s*원\\s*\\d{1,2}%/);
                                 if (pm && pm[1]) result.original = parseInt(pm[1].replace(/,/g,''));
                             }
 
-                            // 5) 정가 없으면 모든 가격 중 가장 큰 값
+                            // 6) 정가 없으면 가장 큰 가격
                             if (!result.original) {
                                 const allPrices = allText.match(/([0-9]{1,3}(?:,[0-9]{3})+)\\s*원/g);
                                 if (allPrices) {
@@ -6692,7 +6691,10 @@ def _run_musinsa_scrape(keyword, max_items=50, search_mode="keyword", url=""):
                                 }
                             }
 
-                            // 최대혜택가 없으면 → span.text-red에서 찾기
+                            // 최대혜택가 없으면 쿠폰적용가 사용
+                            if (!result.best && result.coupon) result.best = result.coupon;
+
+                            // 최대혜택가 없으면 span.text-red 폴백
                             if (!result.best) {
                                 const reds = document.querySelectorAll('span.text-red');
                                 for (const s of reds) {
@@ -6704,7 +6706,7 @@ def _run_musinsa_scrape(keyword, max_items=50, search_mode="keyword", url=""):
                                 }
                             }
 
-                            // 최대혜택가가 정가보다 크면 스왑 (오류 방지)
+                            // 정합성 체크: best > original이면 스왑
                             if (result.best > result.original && result.original > 0) {
                                 [result.best, result.original] = [result.original, result.best];
                             }
@@ -6717,8 +6719,8 @@ def _run_musinsa_scrape(keyword, max_items=50, search_mode="keyword", url=""):
                     except Exception:
                         pass
 
-                    # Playwright locator 폴백 (JS 실패 시)
-                    if not best_price and not original_price:
+                    # Playwright locator 폴백 (포이즌 서치 원본)
+                    if not best_price:
                         try:
                             pe = page.locator('span.text-title_18px_semi.text-red').first
                             if pe.count() > 0 and pe.is_visible(timeout=3000):
@@ -6733,7 +6735,6 @@ def _run_musinsa_scrape(keyword, max_items=50, search_mode="keyword", url=""):
                     # 최대혜택가가 없으면 정가를 사용
                     if not best_price:
                         best_price = original_price
-                    # 정가가 없으면 최대혜택가를 정가로
                     if not original_price:
                         original_price = best_price
 
