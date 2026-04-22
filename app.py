@@ -6200,13 +6200,14 @@ def kabinet_products():
         cfg = _load_musinsa_config()
         for r in rows:
             price_krw = r["price_jpy"]  # musinsa는 KRW를 price_jpy 컬럼에 저장
+            img = (r["img_url"] or "").replace("/images/images/", "/images/")
             products.append({
                 "id": r["id"],
                 "name": r["name"],
                 "brand": r["brand"],
                 "price_krw": price_krw,
                 "price_jpy": _calc_buyma_price(price_krw, cfg),
-                "img_url": r["img_url"],
+                "img_url": img,
                 "link": r["link"],
                 "created_at": r["created_at"],
                 "product_code": r["product_code"],
@@ -6758,6 +6759,8 @@ def _run_musinsa_scrape(keyword, max_items=50, search_mode="keyword", url=""):
                     if img_url:
                         if "/thumbnails/" in img_url:
                             img_url = img_url.replace("/thumbnails/", "/images/")
+                        # /images/images/ 중복 제거
+                        img_url = img_url.replace("/images/images/", "/images/")
 
                     collected.append({
                         "site_id": "musinsa",
