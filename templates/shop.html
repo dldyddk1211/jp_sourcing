@@ -2085,7 +2085,7 @@ async function loadKeywordStats(tags) {
         <tbody>
         ${results.map(r => `
           <tr style="border-top:1px solid var(--border);">
-            <td style="padding:6px 8px;color:var(--text);">#${r.keyword || '-'}</td>
+            <td style="padding:6px 8px;color:var(--text);">#${r.relKeyword || r.keyword || '-'}</td>
             <td style="padding:6px 8px;text-align:right;">${(r.monthlyPcQcCnt||0).toLocaleString()}</td>
             <td style="padding:6px 8px;text-align:right;">${(r.monthlyMobileQcCnt||0).toLocaleString()}</td>
             <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--accent);">${(r.total||0).toLocaleString()}</td>
