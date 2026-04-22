@@ -191,6 +191,53 @@
   </div>
 </div>
 
+<!-- 상품 상세 모달 -->
+<div id="kv-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:rgba(0,0,0,0.75);">
+  <!-- 좌/우 화살표 -->
+  <button id="kv-modal-prev" onclick="navKvModal(-1)" style="position:fixed;left:12px;top:50%;transform:translateY(-50%);z-index:10001;background:rgba(0,0,0,0.6);border:none;color:#fff;font-size:1.5rem;width:40px;height:40px;border-radius:50%;cursor:pointer;">&#x276E;</button>
+  <button id="kv-modal-next" onclick="navKvModal(1)" style="position:fixed;right:12px;top:50%;transform:translateY(-50%);z-index:10001;background:rgba(0,0,0,0.6);border:none;color:#fff;font-size:1.5rem;width:40px;height:40px;border-radius:50%;cursor:pointer;">&#x276F;</button>
+  <!-- 닫기 -->
+  <button onclick="closeKvModal()" style="position:fixed;top:12px;right:16px;z-index:10001;background:none;border:none;color:#fff;font-size:1.8rem;cursor:pointer;">✕</button>
+  <!-- 모달 본문 -->
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:92%;max-width:520px;max-height:90vh;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;">
+    <!-- 이미지 -->
+    <div style="text-align:center;margin-bottom:14px;">
+      <img id="kv-modal-img" src="" style="max-width:100%;max-height:360px;border-radius:10px;object-fit:contain;" onerror="this.style.display='none'">
+    </div>
+    <!-- 썸네일 -->
+    <div id="kv-modal-thumbs" style="display:flex;gap:6px;overflow-x:auto;margin-bottom:14px;padding:4px 0;"></div>
+    <!-- 정보 -->
+    <div style="font-size:0.75rem;color:var(--accent);font-weight:700;margin-bottom:2px;" id="kv-modal-brand"></div>
+    <div style="font-size:0.92rem;font-weight:700;margin-bottom:10px;line-height:1.4;" id="kv-modal-name"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:0.68rem;color:var(--muted);">정가</div>
+        <div style="font-size:1rem;font-weight:700;text-decoration:line-through;color:var(--dim);" id="kv-modal-orig"></div>
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:0.68rem;color:var(--muted);">최대혜택가</div>
+        <div style="font-size:1rem;font-weight:800;color:var(--red);" id="kv-modal-best"></div>
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:0.68rem;color:var(--muted);">바이마 출품가</div>
+        <div style="font-size:1rem;font-weight:800;color:var(--green);" id="kv-modal-buyma"></div>
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:0.68rem;color:var(--muted);">상품코드</div>
+        <div style="font-size:0.82rem;font-weight:600;color:var(--accent);" id="kv-modal-code"></div>
+      </div>
+    </div>
+    <!-- 색상/사이즈 -->
+    <div id="kv-modal-options" style="margin-bottom:12px;"></div>
+    <!-- 설명 -->
+    <div id="kv-modal-desc" style="font-size:0.78rem;color:var(--muted);line-height:1.6;margin-bottom:12px;"></div>
+    <!-- 하단 버튼 -->
+    <div style="display:flex;gap:8px;">
+      <a id="kv-modal-link" href="#" target="_blank" class="btn b-blue" style="flex:1;text-align:center;padding:8px;font-size:0.82rem;text-decoration:none;">무신사에서 보기 ↗</a>
+      <span id="kv-modal-counter" style="font-size:0.75rem;color:var(--muted);display:flex;align-items:center;"></span>
+    </div>
+  </div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -300,9 +347,10 @@ async function loadProducts(page) {
       return;
     }
     let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;">';
-    d.products.forEach(p => {
-      html += `<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;position:relative;">
-        <div style="position:absolute;top:8px;left:8px;z-index:1;">
+    _kvProducts = d.products;
+    d.products.forEach((p, idx) => {
+      html += `<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;position:relative;cursor:pointer;" onclick="openKvModal(${idx})">
+        <div style="position:absolute;top:8px;left:8px;z-index:1;" onclick="event.stopPropagation()">
           <input type="checkbox" class="kv-cb" data-id="${p.id}" data-name="${p.name}">
         </div>
         <div style="display:flex;gap:10px;">
@@ -323,7 +371,7 @@ async function loadProducts(page) {
         </div>
         <div style="margin-top:6px;font-size:0.68rem;color:var(--dim);display:flex;justify-content:space-between;">
           <span>${p.product_code}</span>
-          ${p.link ? `<a href="${p.link}" target="_blank" style="color:var(--accent);">원본↗</a>` : ''}
+          ${p.link ? `<a href="${p.link}" target="_blank" style="color:var(--accent);" onclick="event.stopPropagation()">원본↗</a>` : ''}
         </div>
       </div>`;
     });
@@ -428,6 +476,58 @@ function simulate() {
   const rounded = Math.ceil(jpy / 100) * 100;
   document.getElementById("sim-jpy").textContent = "¥" + rounded.toLocaleString();
 }
+
+// ── 상품 상세 모달 ──
+let _kvProducts = [];
+let _kvModalIdx = 0;
+
+function openKvModal(idx) {
+  _kvModalIdx = idx;
+  const p = _kvProducts[idx];
+  if (!p) return;
+  document.getElementById("kv-modal-brand").textContent = p.brand || '';
+  document.getElementById("kv-modal-name").textContent = p.name || '';
+  document.getElementById("kv-modal-orig").textContent = (p.original_price||0).toLocaleString() + '원';
+  document.getElementById("kv-modal-best").textContent = (p.price_krw||0).toLocaleString() + '원';
+  document.getElementById("kv-modal-buyma").textContent = '¥' + (p.price_jpy||0).toLocaleString();
+  document.getElementById("kv-modal-code").textContent = p.product_code || '';
+  document.getElementById("kv-modal-link").href = p.link || '#';
+  document.getElementById("kv-modal-counter").textContent = `${idx+1} / ${_kvProducts.length}`;
+  // 메인 이미지
+  const mainImg = document.getElementById("kv-modal-img");
+  mainImg.src = p.img_url || '';
+  mainImg.style.display = p.img_url ? '' : 'none';
+  // 썸네일
+  const thumbs = document.getElementById("kv-modal-thumbs");
+  const imgs = (p.detail_images && p.detail_images.length) ? p.detail_images : (p.img_url ? [p.img_url] : []);
+  if (imgs.length > 1) {
+    thumbs.innerHTML = imgs.map((img,i) => `<img src="${img}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid ${i===0?'var(--accent)':'transparent'};" onclick="document.getElementById('kv-modal-img').src='${img}';this.parentElement.querySelectorAll('img').forEach(x=>x.style.borderColor='transparent');this.style.borderColor='var(--accent)';" onerror="this.style.display='none'">`).join('');
+    thumbs.style.display = 'flex';
+  } else { thumbs.style.display = 'none'; }
+  // 색상/사이즈
+  const optEl = document.getElementById("kv-modal-options");
+  let optHtml = '';
+  const sizes = p.sizes || [];
+  const colors = (p.color || '').split(',').map(s=>s.trim()).filter(Boolean);
+  if (colors.length) optHtml += `<div style="margin-bottom:6px;"><span style="font-size:0.72rem;color:var(--muted);font-weight:600;">컬러:</span> <span style="font-size:0.78rem;">${colors.join(', ')}</span></div>`;
+  if (sizes.length) optHtml += `<div><span style="font-size:0.72rem;color:var(--muted);font-weight:600;">사이즈:</span> <span style="font-size:0.78rem;">${sizes.join(', ')}</span></div>`;
+  optEl.innerHTML = optHtml;
+  // 설명
+  document.getElementById("kv-modal-desc").textContent = p.description || '';
+  // 화살표
+  document.getElementById("kv-modal-prev").style.display = idx > 0 ? '' : 'none';
+  document.getElementById("kv-modal-next").style.display = idx < _kvProducts.length - 1 ? '' : 'none';
+  document.getElementById("kv-modal").style.display = 'block';
+  document.body.style.overflow = 'hidden';
+}
+function closeKvModal() { document.getElementById("kv-modal").style.display = 'none'; document.body.style.overflow = ''; }
+function navKvModal(dir) { const n = _kvModalIdx + dir; if (n >= 0 && n < _kvProducts.length) openKvModal(n); }
+document.addEventListener('keydown', e => {
+  if (document.getElementById("kv-modal").style.display !== 'block') return;
+  if (e.key === 'ArrowLeft') navKvModal(-1);
+  else if (e.key === 'ArrowRight') navKvModal(1);
+  else if (e.key === 'Escape') closeKvModal();
+});
 
 loadDashboard();
 </script>

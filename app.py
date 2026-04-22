@@ -6467,6 +6467,8 @@ def kabinet_products():
                 "created_at": r["created_at"],
                 "product_code": r["product_code"],
                 "sizes": json.loads(r["sizes"]) if r["sizes"] and r["sizes"] != "[]" else [],
+                "color": r["color"] if "color" in r.keys() else "",
+                "detail_images": json.loads(r["detail_images"]) if ("detail_images" in r.keys() and r["detail_images"] and r["detail_images"] != "[]") else [],
                 "category_id": r["category_id"],
                 "description": r["description"] or "",
             })
