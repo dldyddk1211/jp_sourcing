@@ -6373,7 +6373,7 @@ def kabinet_csv():
             link = r["link"] or ""
             desc = r["description"] or ""
             product_code = r["product_code"] or ""
-            detail_images = json.loads(r["detail_images"]) if r.get("detail_images") and r["detail_images"] != "[]" else []
+            detail_images = json.loads(r["detail_images"]) if ("detail_images" in r.keys() and r["detail_images"] and r["detail_images"] != "[]") else []
 
             # 상품 코멘트 구성
             comment = comment_tpl
