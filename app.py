@@ -6187,13 +6187,15 @@ def kabinet_products():
         products = []
         cfg = _load_musinsa_config()
         for r in rows:
-            price_krw = r["price_jpy"]  # musinsa는 KRW를 price_jpy 컬럼에 저장
+            price_krw = r["price_jpy"]  # musinsa는 최대혜택가(KRW)를 price_jpy 컬럼에 저장
+            orig_price = r["original_price"] if "original_price" in r.keys() else 0
             img = (r["img_url"] or "").replace("/images/images/", "/images/")
             products.append({
                 "id": r["id"],
                 "name": r["name"],
                 "brand": r["brand"],
                 "price_krw": price_krw,
+                "original_price": orig_price or price_krw,
                 "price_jpy": _calc_buyma_price(price_krw, cfg),
                 "img_url": img,
                 "link": r["link"],
@@ -6453,10 +6455,12 @@ def kabinet_csv():
                 ])
 
         # ZIP 생성 (UTF-8)
+        # ZIP 생성 (UTF-8 BOM 추가)
+        bom = "\ufeff"
         zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("items.csv", items_buf.getvalue())
-            zf.writestr("colorsizes.csv", cs_buf.getvalue())
+            zf.writestr("items.utf8.csv", (bom + items_buf.getvalue()).encode("utf-8"))
+            zf.writestr("colorsizes.utf8.csv", (bom + cs_buf.getvalue()).encode("utf-8"))
         zip_buf.seek(0)
 
         resp = make_response(zip_buf.read())
@@ -6632,69 +6636,109 @@ def _run_musinsa_scrape(keyword, max_items=50, search_mode="keyword", url=""):
                         except Exception:
                             pass
 
-                    # ── 가격 추출 (포이즌 서치 4단계 로직) ──
-                    price = None
-                    # 1순위: span.text-title_18px_semi.text-red (최대혜택가)
+                    # ── 가격 추출 (정가 + 최대혜택가 분리) ──
+                    original_price = 0  # 정가 (할인 전)
+                    best_price = 0      # 최대혜택가 (쿠폰 적용)
+
+                    # JS로 모든 가격 한번에 추출
                     try:
-                        pe = page.locator('span.text-title_18px_semi.text-red').first
-                        if pe.count() > 0 and pe.is_visible(timeout=3000):
-                            pt = pe.text_content()
-                            if pt and '원' in pt:
-                                nums = re_mod.findall(r'\d+', pt.replace(',', ''))
-                                if nums:
-                                    price = int(''.join(nums))
+                        prices = page.evaluate("""() => {
+                            const result = {original: 0, best: 0};
+                            const allText = document.body.innerText;
+
+                            // 1) 최대혜택가: "XX,XXX원 최대혜택가" 또는 "최대혜택가 XX,XXX원"
+                            let m = allText.match(/([0-9]{1,3}(?:,?[0-9]{3})*)\\s*원\\s*최대혜택가/);
+                            if (m && m[1]) result.best = parseInt(m[1].replace(/,/g,''));
+                            if (!result.best) {
+                                m = allText.match(/최대혜택가\\s*([0-9]{1,3}(?:,?[0-9]{3})*)\\s*원/);
+                                if (m && m[1]) result.best = parseInt(m[1].replace(/,/g,''));
+                            }
+
+                            // 2) 할인가 (빨간색 가격)
+                            const redEl = document.querySelector('span.text-title_18px_semi.text-red');
+                            if (redEl) {
+                                const t = redEl.textContent;
+                                if (t && t.includes('원')) {
+                                    const n = parseInt(t.replace(/[^0-9]/g,''));
+                                    if (n >= 1000 && n <= 10000000) {
+                                        if (!result.best) result.best = n;
+                                    }
+                                }
+                            }
+
+                            // 3) 정가 (취소선 가격 또는 일반 가격)
+                            // del, s 태그 또는 text-gray 클래스의 가격
+                            const dels = document.querySelectorAll('del, s, span[class*="origin"], span[class*="Origin"], span.text-body_13px_reg.text-gray-600');
+                            for (const d of dels) {
+                                const t = d.textContent;
+                                if (t && t.includes('원')) {
+                                    const n = parseInt(t.replace(/[^0-9]/g,''));
+                                    if (n >= 1000 && n <= 10000000) { result.original = n; break; }
+                                }
+                            }
+
+                            // 4) 정가 폴백: "XX,XXX원 YY%" 패턴 (정가 옆에 할인율)
+                            if (!result.original) {
+                                const pm = allText.match(/([0-9]{1,3}(?:,?[0-9]{3})*)\\s*원\\s*\\d{1,2}%/);
+                                if (pm && pm[1]) result.original = parseInt(pm[1].replace(/,/g,''));
+                            }
+
+                            // 5) 정가 없으면 모든 가격 중 가장 큰 값
+                            if (!result.original) {
+                                const allPrices = allText.match(/([0-9]{1,3}(?:,[0-9]{3})+)\\s*원/g);
+                                if (allPrices) {
+                                    const nums = allPrices.map(s => parseInt(s.replace(/[^0-9]/g,''))).filter(n => n >= 1000 && n <= 10000000);
+                                    if (nums.length > 0) result.original = Math.max(...nums);
+                                }
+                            }
+
+                            // 최대혜택가 없으면 → span.text-red에서 찾기
+                            if (!result.best) {
+                                const reds = document.querySelectorAll('span.text-red');
+                                for (const s of reds) {
+                                    const t = s.textContent;
+                                    if (t && t.includes('원') && t.length < 25) {
+                                        const n = parseInt(t.replace(/[^0-9]/g,''));
+                                        if (n >= 1000 && n <= 10000000) { result.best = n; break; }
+                                    }
+                                }
+                            }
+
+                            // 최대혜택가가 정가보다 크면 스왑 (오류 방지)
+                            if (result.best > result.original && result.original > 0) {
+                                [result.best, result.original] = [result.original, result.best];
+                            }
+
+                            return result;
+                        }""")
+                        if prices:
+                            original_price = prices.get("original", 0) or 0
+                            best_price = prices.get("best", 0) or 0
                     except Exception:
                         pass
-                    # 2순위: "XX,XXX원 최대혜택가" 텍스트 패턴
-                    if not price:
+
+                    # Playwright locator 폴백 (JS 실패 시)
+                    if not best_price and not original_price:
                         try:
-                            price = page.evaluate("""() => {
-                                const t = document.body.innerText;
-                                const m = t.match(/([0-9]{1,3}(?:,?[0-9]{3})*)\\s*원\\s*최대혜택가/);
-                                if (m && m[1]) return parseInt(m[1].replace(/,/g,''));
-                                return null;
-                            }""")
-                            if not price or price <= 0:
-                                price = None
+                            pe = page.locator('span.text-title_18px_semi.text-red').first
+                            if pe.count() > 0 and pe.is_visible(timeout=3000):
+                                pt = pe.text_content()
+                                if pt and '원' in pt:
+                                    nums = re_mod.findall(r'\d+', pt.replace(',', ''))
+                                    if nums:
+                                        best_price = int(''.join(nums))
                         except Exception:
                             pass
-                    # 3순위: span.text-red 중에서 "원" 포함
-                    if not price:
-                        try:
-                            reds = page.locator('span.text-red').all()
-                            for sp in reds:
-                                try:
-                                    t = sp.text_content()
-                                    if t and '원' in t:
-                                        nums = re_mod.findall(r'\d+', t.replace(',', ''))
-                                        if nums:
-                                            tp = int(''.join(nums))
-                                            if 10000 <= tp <= 10000000:
-                                                price = tp
-                                                break
-                                except Exception:
-                                    continue
-                        except Exception:
-                            pass
-                    # 4순위: 모든 span에서 "원" 포함
-                    if not price:
-                        try:
-                            spans = page.locator('span').all()
-                            for sp in spans[:100]:
-                                try:
-                                    t = sp.text_content()
-                                    if t and '원' in t and len(t) < 20:
-                                        nums = re_mod.findall(r'\d+', t.replace(',', ''))
-                                        if nums:
-                                            tp = int(''.join(nums))
-                                            if 10000 <= tp <= 10000000:
-                                                price = tp
-                                                break
-                                except Exception:
-                                    continue
-                        except Exception:
-                            pass
-                    info["price"] = price or 0
+
+                    # 최대혜택가가 없으면 정가를 사용
+                    if not best_price:
+                        best_price = original_price
+                    # 정가가 없으면 최대혜택가를 정가로
+                    if not original_price:
+                        original_price = best_price
+
+                    info["price"] = best_price or 0           # 최대혜택가 (바이마 판매가 기준)
+                    info["original_price"] = original_price or 0  # 정가
 
                     # ── 브랜드 추출 ──
                     try:
@@ -6756,13 +6800,17 @@ def _run_musinsa_scrape(keyword, max_items=50, search_mode="keyword", url=""):
                         "product_code": code,
                         "name": info.get("name", ""),
                         "brand": info.get("brand", ""),
-                        "price_jpy": info.get("price", 0),
+                        "price_jpy": info.get("price", 0),          # 최대혜택가 (KRW)
+                        "original_price": info.get("original_price", 0),  # 정가
                         "img_url": img_url,
                         "link": product_url,
                         "category_id": "",
                         "scraped_at": datetime.now().isoformat(),
                     })
-                    _kv_log(f"  [{idx}/{len(product_links)}] {info.get('brand','')} {info.get('name','')[:40]} — {info.get('price',0):,}원")
+                    op = info.get("original_price", 0)
+                    bp = info.get("price", 0)
+                    price_info = f"{bp:,}원" if op == bp else f"정가 {op:,}원 → 최대혜택가 {bp:,}원"
+                    _kv_log(f"  [{idx}/{len(product_links)}] {info.get('brand','')} {info.get('name','')[:40]} — {price_info}")
 
                     time.sleep(random.uniform(1.0, 2.0))
 

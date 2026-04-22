@@ -313,7 +313,8 @@ async function loadProducts(page) {
             <div style="font-size:0.72rem;color:var(--accent);font-weight:600;margin-bottom:2px;">${p.brand||''}</div>
             <div style="font-size:0.78rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${p.name}">${p.name}</div>
             <div style="font-size:0.75rem;margin-top:4px;">
-              <span style="color:var(--muted);">무신사</span> <b>${(p.price_krw||0).toLocaleString()}원</b>
+              ${p.original_price && p.original_price !== p.price_krw ? `<span style="color:var(--dim);text-decoration:line-through;font-size:0.68rem;">${(p.original_price||0).toLocaleString()}원</span> ` : ''}
+              <span style="color:var(--muted);">최대혜택가</span> <b style="color:var(--red);">${(p.price_krw||0).toLocaleString()}원</b>
             </div>
             <div style="font-size:0.75rem;">
               <span style="color:var(--muted);">바이마</span> <b style="color:var(--green);">¥${(p.price_jpy||0).toLocaleString()}</b>
