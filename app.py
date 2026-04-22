@@ -6359,7 +6359,7 @@ def _load_musinsa_config() -> dict:
     """무신사→바이마 마진 설정 로드"""
     defaults = {
         "margin_pct": 30.0,           # 마진율 (%)
-        "krw_to_jpy_rate": 0.11,      # 원→엔 환율 (1원 = 0.11엔 기본)
+        "jpy_to_krw_rate": 9.26,      # 엔→원 환율 (1엔 = 9.26원)
         "shipping_jpy": 800,          # 배송비 (엔)
         "buyma_fee_pct": 5.0,         # 바이마 수수료 (%)
         "category_id": "",            # 바이마 カテゴリ ID
@@ -6414,9 +6414,11 @@ def _calc_buyma_price(price_krw: int, cfg: dict) -> int:
     """KRW 가격 → 바이마 출품가 (JPY) 계산"""
     margin = 1 + cfg.get("margin_pct", 30) / 100
     fee = 1 + cfg.get("buyma_fee_pct", 5) / 100
-    rate = cfg.get("krw_to_jpy_rate", 0.11)
+    jpy_to_krw = cfg.get("jpy_to_krw_rate", 9.26)
+    if jpy_to_krw <= 0:
+        jpy_to_krw = 9.26
     shipping = cfg.get("shipping_jpy", 800)
-    jpy = math.ceil(price_krw * margin * fee * rate + shipping)
+    jpy = math.ceil(price_krw * margin * fee / jpy_to_krw + shipping)
     # 100엔 단위 올림
     return math.ceil(jpy / 100) * 100
 
@@ -6493,13 +6495,13 @@ def kabinet_config_set():
     """무신사→바이마 마진 설정 저장"""
     data = request.get_json() or {}
     cfg = _load_musinsa_config()
-    for key in ["margin_pct", "krw_to_jpy_rate", "shipping_jpy", "buyma_fee_pct",
+    for key in ["margin_pct", "jpy_to_krw_rate", "shipping_jpy", "buyma_fee_pct",
                 "category_id", "brand_id", "shipping_method", "buying_area", "buying_city",
                 "shipping_area", "shipping_city", "purchase_deadline", "tariff_included",
                 "tags", "quantity", "control", "comment_template", "max_items"]:
         if key in data:
             val = data[key]
-            if key in ("margin_pct", "krw_to_jpy_rate", "buyma_fee_pct"):
+            if key in ("margin_pct", "jpy_to_krw_rate", "buyma_fee_pct"):
                 val = float(val)
             elif key in ("shipping_jpy", "purchase_deadline", "tariff_included", "quantity", "max_items"):
                 val = int(val)
