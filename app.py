@@ -5819,23 +5819,11 @@ def download_quote():
     finally:
         conn.close()
 
-    # 상품 링크 + 레벨별 가격 재계산
-    from product_db import _conn as prod_conn
-    pconn = prod_conn()
+    # 견적서 가격: 주문 DB에 저장된 price를 그대로 사용 (환율 고정)
     for o in orders:
-        code = o.get("product_code", "")
-        if code:
-            pr = pconn.execute("SELECT link, price_jpy FROM products WHERE internal_code=? OR product_code=? LIMIT 1", (code, code)).fetchone()
-            o["product_link"] = pr["link"] if pr else ""
-            # 레벨별 가격 재계산
-            jpy = pr["price_jpy"] if pr else (o.get("price_jpy", 0) or 0)
-            if jpy > 0:
-                o["quote_price"] = _calc_vintage_price(jpy, user_level)
-            else:
-                o["quote_price"] = int("".join(ch for ch in str(o.get("price", "0")) if ch.isdigit()) or 0)
-        else:
-            o["quote_price"] = int("".join(ch for ch in str(o.get("price", "0")) if ch.isdigit()) or 0)
-    pconn.close()
+        # 주문 DB의 price 문자열에서 숫자 추출
+        price_str = o.get("price", "0") or "0"
+        o["quote_price"] = int("".join(ch for ch in price_str if ch.isdigit()) or 0)
 
     # Excel 생성
     wb = Workbook()
