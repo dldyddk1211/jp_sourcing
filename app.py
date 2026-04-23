@@ -24,6 +24,7 @@ from config import (
     LOGIN_USERS, SECRET_KEY, APP_ENV,
     OUTPUT_DIR, DB_DIR, ADMIN_MENU_ACCESS,
     PC_ROLE, NAS_EXPORT_DB,
+    AUTO_AI_ENRICH_ON_SCRAPE, AUTO_AI_ENRICH_LIMIT,
 )
 from data_manager import get_status as get_data_status, set_data_root, get_data_root, get_path, ensure_dirs, is_connected
 from xebio_search import scrape_nike_sale, load_latest_products, set_app_status, force_close_browser
@@ -2432,6 +2433,9 @@ def update_order(order_id):
 
 _ai_enrich_status = {"running": False, "total": 0, "done": 0, "success": 0, "failed": 0, "log": [], "current": ""}
 
+# 자동 AI 분석 중복 실행 방지 락
+_auto_ai_enrich_running = {"running": False}
+
 
 def _ai_enrich_log(msg):
     ts = datetime.now().strftime("%H:%M:%S")
@@ -2440,6 +2444,66 @@ def _ai_enrich_log(msg):
     if len(_ai_enrich_status["log"]) > 300:
         _ai_enrich_status["log"] = _ai_enrich_status["log"][-200:]
     logger.info(f"[AI enrich] {msg}")
+
+
+def trigger_auto_ai_enrich(limit: int = None, reason: str = "scrape"):
+    """스크래핑 완료 후 AI 상품명/태그 자동 생성 (백그라운드, 최대 N개)
+
+    - ai_analyzed_at IS NULL 인 vintage 상품만 대상 (중복 분석 없음)
+    - 수동 배치(_ai_enrich_status) 또는 자동 배치가 실행 중이면 스킵
+    - shop_name / ai_tags 필드만 업데이트 (원본 name은 건드리지 않음)
+    """
+    if not AUTO_AI_ENRICH_ON_SCRAPE:
+        return
+
+    if _auto_ai_enrich_running["running"] or _ai_enrich_status.get("running"):
+        logger.info("[AI enrich auto] 이미 실행 중 — 스킵")
+        return
+
+    n = int(limit if limit is not None else AUTO_AI_ENRICH_LIMIT)
+    if n <= 0:
+        return
+
+    def _run():
+        from ai_product_enrich import enrich_product_by_id
+        from product_db import _conn as pdb_conn
+        import time as _t
+
+        _auto_ai_enrich_running["running"] = True
+        try:
+            c = pdb_conn()
+            try:
+                rows = c.execute(
+                    "SELECT id FROM products "
+                    "WHERE source_type='vintage' AND (ai_analyzed_at IS NULL OR ai_analyzed_at='') "
+                    "ORDER BY scraped_at DESC LIMIT ?",
+                    (n,)
+                ).fetchall()
+            finally:
+                c.close()
+            ids = [r[0] if isinstance(r, tuple) else r["id"] for r in rows]
+            if not ids:
+                return
+            push_log(f"🤖 AI 자동 분석 시작 ({reason}): {len(ids)}개 (최대 {n})")
+            success = failed = 0
+            for pid in ids:
+                try:
+                    r = enrich_product_by_id(pid)
+                    if r.get("ok"):
+                        success += 1
+                    else:
+                        failed += 1
+                except Exception as e:
+                    failed += 1
+                    logger.debug(f"auto enrich 예외: {e}")
+                _t.sleep(0.3)
+            push_log(f"🤖 AI 자동 분석 완료: 성공 {success} / 실패 {failed}")
+        except Exception as e:
+            logger.warning(f"[AI enrich auto] 실패: {e}")
+        finally:
+            _auto_ai_enrich_running["running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 @app.route(f"{URL_PREFIX}/admin/api/ai-enrich/run", methods=["POST"])
@@ -7789,6 +7853,13 @@ def _start_queue_worker():
                         except Exception:
                             pass
 
+                # AI 자동 분석 (백그라운드, 최대 N개) — 매 큐 작업 완료 시
+                if count > 0:
+                    try:
+                        trigger_auto_ai_enrich(reason="큐")
+                    except Exception as e:
+                        logger.debug(f"auto AI enrich trigger 실패: {e}")
+
             except Exception as e:
                 conn = sqlite3.connect(db_path)
                 conn.execute("UPDATE scrape_tasks SET status='오류' WHERE id=?", (task_id,))
@@ -8008,6 +8079,13 @@ def api_scrape_sync():
             push_log(f"📤 수집 완료 → NAS 자동 내보내기 완료")
         except Exception as e:
             push_log(f"⚠️ NAS 내보내기 실패: {e}")
+
+    # AI 자동 분석 (백그라운드, 최대 N개)
+    if count > 0:
+        try:
+            trigger_auto_ai_enrich(reason="테스트" if max_items > 0 else "작업리스트")
+        except Exception as e:
+            logger.debug(f"auto AI enrich trigger 실패: {e}")
 
     return jsonify({"ok": True, "count": count, "message": f"수집 완료: {count}개"})
 

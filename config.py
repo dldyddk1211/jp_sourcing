@@ -83,6 +83,10 @@ GEMINI_API_KEY    = os.environ.get("GEMINI_API_KEY", "")
 OPENAI_API_KEY    = os.environ.get("OPENAI_API_KEY", "")
 AI_PROVIDER       = os.environ.get("AI_PROVIDER", "gemini")  # "gemini" | "claude" | "openai" | "none"
 
+# ── AI 상품명/태그 자동 분석 (스크래핑 완료 후) ────
+AUTO_AI_ENRICH_ON_SCRAPE = True   # 스크래핑 완료 후 자동 AI 분석 ON/OFF
+AUTO_AI_ENRICH_LIMIT     = 20     # 1회당 최대 분석 개수 (ai_analyzed_at IS NULL인 것 중)
+
 # ── 텔레그램 알림 설정 ─────────────────────
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")   # @BotFather에서 발급
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")     # 개인 또는 그룹 채팅 ID
