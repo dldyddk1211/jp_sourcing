@@ -6668,6 +6668,157 @@ def kabinet_update_product(pid):
         conn.close()
 
 
+# ── 카비넷 아카이빙 게시판 ──
+_ARCHIVE_DB_INIT = False
+
+def _init_archive_db():
+    global _ARCHIVE_DB_INIT
+    if _ARCHIVE_DB_INIT:
+        return
+    from product_db import _conn
+    conn = _conn()
+    try:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS kabinet_archive (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL DEFAULT '',
+                content TEXT DEFAULT '',
+                category TEXT DEFAULT '일반',
+                tags TEXT DEFAULT '',
+                author TEXT DEFAULT '',
+                file_name TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_ka_created ON kabinet_archive(created_at DESC);
+        """)
+        conn.commit()
+        _ARCHIVE_DB_INIT = True
+    except Exception:
+        pass
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/api/kabinet/archive", methods=["GET"])
+@admin_required
+def kabinet_archive_list():
+    """아카이빙 목록"""
+    _init_archive_db()
+    from product_db import _conn
+    conn = _conn()
+    try:
+        page = int(request.args.get("page", 1))
+        per_page = 20
+        q = request.args.get("q", "").strip()
+        cat = request.args.get("category", "").strip()
+        where = "WHERE 1=1"
+        params = []
+        if q:
+            where += " AND (title LIKE ? OR content LIKE ? OR tags LIKE ?)"
+            params.extend([f"%{q}%", f"%{q}%", f"%{q}%"])
+        if cat:
+            where += " AND category = ?"
+            params.append(cat)
+        total = conn.execute(f"SELECT COUNT(*) FROM kabinet_archive {where}", params).fetchone()[0]
+        rows = conn.execute(
+            f"SELECT * FROM kabinet_archive {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            params + [per_page, (page-1)*per_page]
+        ).fetchall()
+        posts = [{c: r[c] for c in r.keys()} for r in rows]
+        return jsonify({"ok": True, "posts": posts, "total": total, "page": page, "pages": (total+per_page-1)//per_page})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/api/kabinet/archive/<int:aid>", methods=["GET"])
+@admin_required
+def kabinet_archive_detail(aid):
+    """아카이빙 상세"""
+    _init_archive_db()
+    from product_db import _conn
+    conn = _conn()
+    try:
+        row = conn.execute("SELECT * FROM kabinet_archive WHERE id=?", (aid,)).fetchone()
+        if not row:
+            return jsonify({"ok": False})
+        return jsonify({"ok": True, "post": {c: row[c] for c in row.keys()}})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/api/kabinet/archive", methods=["POST"])
+@app.route(f"{URL_PREFIX}/api/kabinet/archive/<int:aid>", methods=["POST"])
+@admin_required
+def kabinet_archive_save(aid=None):
+    """아카이빙 저장/수정"""
+    _init_archive_db()
+    # FormData 또는 JSON
+    if request.content_type and "multipart" in request.content_type:
+        data = json.loads(request.form.get("data", "{}"))
+        file = request.files.get("file")
+    else:
+        data = request.get_json() or {}
+        file = None
+
+    title = data.get("title", "").strip()
+    content = data.get("content", "").strip()
+    category = data.get("category", "일반")
+    tags = data.get("tags", "").strip()
+    author = session.get("username", "")
+
+    if not title:
+        return jsonify({"ok": False, "message": "제목을 입력해주세요"})
+
+    file_name = ""
+    if file and file.filename:
+        upload_dir = os.path.join(get_path("db"), "archive_files")
+        os.makedirs(upload_dir, exist_ok=True)
+        ext = os.path.splitext(file.filename)[1]
+        file_name = f"archive_{datetime.now().strftime('%Y%m%d_%H%M%S')}{ext}"
+        file.save(os.path.join(upload_dir, file_name))
+
+    from product_db import _conn
+    conn = _conn()
+    try:
+        if aid:
+            if file_name:
+                conn.execute("UPDATE kabinet_archive SET title=?,content=?,category=?,tags=?,file_name=? WHERE id=?",
+                             (title, content, category, tags, file_name, aid))
+            else:
+                conn.execute("UPDATE kabinet_archive SET title=?,content=?,category=?,tags=? WHERE id=?",
+                             (title, content, category, tags, aid))
+        else:
+            conn.execute("INSERT INTO kabinet_archive (title,content,category,tags,author,file_name) VALUES (?,?,?,?,?,?)",
+                         (title, content, category, tags, author, file_name))
+        conn.commit()
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/api/kabinet/archive/<int:aid>", methods=["DELETE"])
+@admin_required
+def kabinet_archive_delete(aid):
+    """아카이빙 삭제"""
+    _init_archive_db()
+    from product_db import _conn
+    conn = _conn()
+    try:
+        conn.execute("DELETE FROM kabinet_archive WHERE id=?", (aid,))
+        conn.commit()
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/api/kabinet/archive/file/<path:filename>")
+@admin_required
+def kabinet_archive_file(filename):
+    """아카이빙 첨부파일 다운로드"""
+    file_dir = os.path.join(get_path("db"), "archive_files")
+    return send_from_directory(file_dir, filename)
+
+
 @app.route(f"{URL_PREFIX}/api/kabinet/csv", methods=["POST"])
 @admin_required
 def kabinet_csv():

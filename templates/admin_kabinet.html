@@ -6,6 +6,7 @@
 <div class="sub-item" data-page="kv-products" onclick="showPage('kv-products')"><span class="sub-icon">📦</span>상품 목록</div>
 <div class="sub-item" data-page="kv-margin" onclick="showPage('kv-margin')"><span class="sub-icon">💰</span>마진 설정</div>
 <div class="sub-item" data-page="kv-csv" onclick="showPage('kv-csv')"><span class="sub-icon">📄</span>바이마 CSV</div>
+<div class="sub-item" data-page="kv-archive" onclick="showPage('kv-archive')"><span class="sub-icon">📂</span>아카이빙</div>
 {% endblock %}
 {% block topbar_title %}📋 무신사 → 바이마{% endblock %}
 {% block content %}
@@ -201,6 +202,53 @@
   </div>
 </div>
 
+<!-- 아카이빙 -->
+<div class="page-section" id="page-kv-archive">
+  <div class="panel">
+    <div class="panel-title">
+      <span>📂 아카이빙</span>
+      <button class="btn b-blue" onclick="toggleArchiveForm()" style="font-size:0.75rem;">✏️ 글쓰기</button>
+    </div>
+    <!-- 글쓰기 폼 -->
+    <div id="archive-form" style="display:none;margin-bottom:16px;padding:14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;">
+      <input id="archive-title" placeholder="제목" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.85rem;margin-bottom:8px;">
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <select id="archive-category" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.78rem;">
+          <option value="일반">일반</option>
+          <option value="바이마">바이마</option>
+          <option value="무신사">무신사</option>
+          <option value="리서치">리서치</option>
+          <option value="메모">메모</option>
+        </select>
+        <input id="archive-tags" placeholder="태그 (콤마 구분)" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.78rem;">
+      </div>
+      <textarea id="archive-content" rows="6" placeholder="내용을 입력하세요..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:0.82rem;resize:vertical;line-height:1.6;margin-bottom:8px;"></textarea>
+      <div style="display:flex;gap:8px;">
+        <input type="file" id="archive-file" accept="image/*,.pdf,.xlsx,.csv,.txt" style="font-size:0.75rem;flex:1;">
+        <button onclick="saveArchive()" class="btn b-green" style="padding:6px 16px;font-size:0.82rem;">💾 저장</button>
+        <button onclick="toggleArchiveForm()" class="btn b-gray" style="padding:6px 12px;font-size:0.82rem;">취소</button>
+      </div>
+    </div>
+    <!-- 검색 -->
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <input id="archive-search" placeholder="검색..." onkeydown="if(event.key==='Enter')loadArchive()" style="flex:1;min-width:150px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.78rem;">
+      <select id="archive-cat-filter" onchange="loadArchive()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.78rem;">
+        <option value="">전체</option>
+        <option value="바이마">바이마</option>
+        <option value="무신사">무신사</option>
+        <option value="리서치">리서치</option>
+        <option value="메모">메모</option>
+      </select>
+      <button class="btn b-gray" onclick="loadArchive()">🔄</button>
+    </div>
+    <!-- 목록 -->
+    <div id="archive-list" style="font-size:0.82rem;">
+      <div style="text-align:center;padding:30px;color:var(--muted);">로딩 중...</div>
+    </div>
+    <div id="archive-pagination" style="display:flex;justify-content:center;gap:6px;margin-top:12px;"></div>
+  </div>
+</div>
+
 <!-- 상품 상세 모달 -->
 <div id="kv-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:rgba(0,0,0,0.75);">
   <!-- 좌/우 화살표 -->
@@ -266,7 +314,7 @@
 {% endblock %}
 {% block scripts %}
 <script>
-const pageTitles = {"kv-dashboard":"📋 무신사 → 바이마","kv-scrape":"🔍 무신사 수집","kv-products":"📦 상품 목록","kv-margin":"💰 마진 설정","kv-csv":"📄 바이마 CSV"};
+const pageTitles = {"kv-dashboard":"📋 무신사 → 바이마","kv-scrape":"🔍 무신사 수집","kv-products":"📦 상품 목록","kv-margin":"💰 마진 설정","kv-csv":"📄 바이마 CSV","kv-archive":"📂 아카이빙"};
 let _prodPage = 1;
 let _statusTimer = null;
 
@@ -276,6 +324,7 @@ function onPageShow(page) {
   if (page === "kv-products") loadProducts();
   if (page === "kv-margin") loadConfig();
   if (page === "kv-scrape") pollStatus();
+  if (page === "kv-archive") loadArchive();
 }
 
 function toggleMode() {
@@ -507,6 +556,125 @@ function simulate() {
   const jpy = Math.ceil(krw * (1 + margin/100) * (1 + fee/100) * rate + shipping);
   const rounded = Math.ceil(jpy / 100) * 100;
   document.getElementById("sim-jpy").textContent = "¥" + rounded.toLocaleString();
+}
+
+// ── 아카이빙 게시판 ──
+let _archivePage = 1;
+let _archiveEdit = 0;
+
+function toggleArchiveForm(editData) {
+  const form = document.getElementById("archive-form");
+  if (editData) {
+    _archiveEdit = editData.id;
+    document.getElementById("archive-title").value = editData.title || '';
+    document.getElementById("archive-category").value = editData.category || '일반';
+    document.getElementById("archive-tags").value = editData.tags || '';
+    document.getElementById("archive-content").value = editData.content || '';
+    form.style.display = 'block';
+  } else if (form.style.display === 'none') {
+    _archiveEdit = 0;
+    document.getElementById("archive-title").value = '';
+    document.getElementById("archive-category").value = '일반';
+    document.getElementById("archive-tags").value = '';
+    document.getElementById("archive-content").value = '';
+    form.style.display = 'block';
+  } else {
+    form.style.display = 'none';
+  }
+}
+
+async function saveArchive() {
+  const title = document.getElementById("archive-title").value.trim();
+  const content = document.getElementById("archive-content").value.trim();
+  if (!title) { alert("제목을 입력해주세요"); return; }
+  const body = {
+    title, content,
+    category: document.getElementById("archive-category").value,
+    tags: document.getElementById("archive-tags").value.trim(),
+  };
+  const fileInput = document.getElementById("archive-file");
+  let url = PREFIX + "/api/kabinet/archive";
+  if (_archiveEdit) url += "/" + _archiveEdit;
+
+  // 파일 첨부 시 FormData 사용
+  if (fileInput.files.length > 0) {
+    const fd = new FormData();
+    fd.append("file", fileInput.files[0]);
+    fd.append("data", JSON.stringify(body));
+    if (_archiveEdit) fd.append("id", _archiveEdit);
+    const r = await fetch(url, {method:"POST", body: fd});
+    const d = await r.json();
+    if (d.ok) { toggleArchiveForm(); loadArchive(); } else alert(d.message||"저장 실패");
+  } else {
+    const r = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+    const d = await r.json();
+    if (d.ok) { toggleArchiveForm(); loadArchive(); } else alert(d.message||"저장 실패");
+  }
+}
+
+async function loadArchive() {
+  const q = document.getElementById("archive-search")?.value || "";
+  const cat = document.getElementById("archive-cat-filter")?.value || "";
+  try {
+    const r = await fetch(PREFIX+`/api/kabinet/archive?page=${_archivePage}&q=${encodeURIComponent(q)}&category=${encodeURIComponent(cat)}`);
+    const d = await r.json();
+    const el = document.getElementById("archive-list");
+    if (!d.ok || !d.posts || !d.posts.length) {
+      el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);">게시글이 없습니다.</div>';
+      document.getElementById("archive-pagination").innerHTML = '';
+      return;
+    }
+    const catColors = {"바이마":"var(--blue)","무신사":"var(--green)","리서치":"var(--yellow)","메모":"var(--dim)"};
+    el.innerHTML = d.posts.map(p => `
+      <div style="padding:12px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="openArchiveDetail(${p.id})">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <div>
+            <span style="font-size:0.65rem;padding:2px 6px;border-radius:3px;background:${catColors[p.category]||'var(--accent)'};color:#000;font-weight:600;margin-right:6px;">${p.category||'일반'}</span>
+            <b style="font-size:0.85rem;">${p.title}</b>
+          </div>
+          <span style="font-size:0.68rem;color:var(--dim);">${(p.created_at||'').slice(0,16)}</span>
+        </div>
+        <div style="font-size:0.72rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(p.content||'').slice(0,80)}</div>
+        ${p.tags ? `<div style="margin-top:4px;">${p.tags.split(',').map(t=>`<span style="font-size:0.62rem;color:var(--accent);margin-right:6px;">#${t.trim()}</span>`).join('')}</div>` : ''}
+      </div>
+    `).join('');
+    // 페이지네이션
+    let pgHtml = '';
+    if (d.pages > 1) {
+      for (let i=1;i<=d.pages;i++) pgHtml += `<button class="btn ${i===_archivePage?'b-blue':'b-gray'}" onclick="_archivePage=${i};loadArchive()" style="font-size:0.68rem;min-width:28px;">${i}</button>`;
+    }
+    document.getElementById("archive-pagination").innerHTML = pgHtml;
+  } catch(e) {}
+}
+
+async function openArchiveDetail(id) {
+  try {
+    const r = await fetch(PREFIX+"/api/kabinet/archive/"+id);
+    const d = await r.json();
+    if (!d.ok) return;
+    const p = d.post;
+    const catColors = {"바이마":"var(--blue)","무신사":"var(--green)","리서치":"var(--yellow)","메모":"var(--dim)"};
+    document.body.insertAdjacentHTML("beforeend",`
+      <div id="archive-detail-modal" style="position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:rgba(0,0,0,0.7);display:flex;justify-content:center;align-items:center;" onclick="if(event.target===this)this.remove()">
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;max-width:600px;width:92%;max-height:85vh;overflow-y:auto;padding:24px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+            <div>
+              <span style="font-size:0.68rem;padding:2px 6px;border-radius:3px;background:${catColors[p.category]||'var(--accent)'};color:#000;font-weight:600;margin-right:6px;">${p.category||'일반'}</span>
+              <b style="font-size:1rem;">${p.title}</b>
+            </div>
+            <button onclick="document.getElementById('archive-detail-modal').remove()" style="background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer;">✕</button>
+          </div>
+          <div style="font-size:0.72rem;color:var(--dim);margin-bottom:12px;">${(p.created_at||'').slice(0,16)} · ${p.author||''}</div>
+          ${p.tags ? `<div style="margin-bottom:12px;">${p.tags.split(',').map(t=>`<span style="font-size:0.7rem;color:var(--accent);margin-right:8px;">#${t.trim()}</span>`).join('')}</div>` : ''}
+          <div style="font-size:0.85rem;line-height:1.8;white-space:pre-wrap;color:var(--text);">${p.content||''}</div>
+          ${p.file_name ? `<div style="margin-top:14px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;"><a href="${PREFIX}/api/kabinet/archive/file/${p.file_name}" target="_blank" style="color:var(--accent);font-size:0.78rem;">📎 ${p.file_name}</a></div>` : ''}
+          <div style="display:flex;gap:8px;margin-top:16px;">
+            <button onclick="document.getElementById('archive-detail-modal').remove();toggleArchiveForm({id:${p.id},title:'${(p.title||'').replace(/'/g,"\\'")}',category:'${p.category||''}',tags:'${(p.tags||'').replace(/'/g,"\\'")}',content:document.querySelector('#archive-detail-modal [style*=pre-wrap]').textContent})" class="btn b-blue" style="font-size:0.75rem;">✏️ 수정</button>
+            <button onclick="if(confirm('삭제?')){fetch(PREFIX+'/api/kabinet/archive/${p.id}',{method:'DELETE'}).then(()=>{document.getElementById('archive-detail-modal').remove();loadArchive();})}" class="btn b-red" style="font-size:0.75rem;">🗑 삭제</button>
+          </div>
+        </div>
+      </div>`);
+  } catch(e) {}
 }
 
 // ── 바이마 마스터 데이터 (브랜드/카테고리 검색) ──
