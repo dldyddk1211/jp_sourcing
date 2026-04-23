@@ -6829,6 +6829,13 @@ def kabinet_csv():
 
     data = request.get_json() or {}
     ids = data.get("ids", [])
+    # 상품 목록에서 선택한 바이마 출품 옵션
+    csv_brand_id = data.get("brand_id", "")
+    csv_category_id = data.get("category_id", "")
+    csv_season = data.get("season", "0")
+    csv_theme = data.get("theme", "0")
+    csv_color_id = data.get("color_id", "")
+    csv_area_code = data.get("area_code", "2002003")
 
     from product_db import _conn
     conn = _conn()
@@ -6890,7 +6897,7 @@ def kabinet_csv():
             name_ja = (r["name_ko"] if "name_ko" in r.keys() and r["name_ko"] else "") or r["name"] or ""
             name = name_ja
             brand_name = r["brand"] or ""
-            brand_id = cfg.get("brand_id", "")
+            brand_id = csv_brand_id or cfg.get("brand_id", "")
             img = r["img_url"] or ""
             link = r["link"] or ""
             desc_ja = (r["description_ko"] if "description_ko" in r.keys() and r["description_ko"] else "") or r["description"] or ""
@@ -6922,9 +6929,9 @@ def kabinet_csv():
                 brand_id,                               # ブランド (ID)
                 brand_name,                             # ブランド名
                 "0",                                    # モデル
-                cfg.get("category_id", ""),              # カテゴリ
-                "0",                                    # シーズン
-                "0",                                    # テーマ
+                csv_category_id or cfg.get("category_id", ""),  # カテゴリ
+                csv_season or "0",                      # シーズン
+                csv_theme or "0",                       # テーマ
                 buyma_price,                            # 単価
                 cfg.get("quantity", 100),                # 買付可数量
                 deadline,                               # 購入期限
@@ -6934,10 +6941,10 @@ def kabinet_csv():
                 "",                                     # 色サイズ補足
                 cfg.get("tags", ""),                     # タグ
                 cfg.get("shipping_method", "1062886_1061293"),  # 配送方法
-                cfg.get("buying_area", "2002003"),       # 買付エリア
+                csv_area_code or cfg.get("buying_area", "2002003"),  # 買付エリア
                 cfg.get("buying_city", "000"),            # 買付都市
                 "",                                     # 買付ショップ
-                cfg.get("shipping_area", "2002003"),      # 発送エリア
+                csv_area_code or cfg.get("shipping_area", "2002003"),  # 発送エリア
                 cfg.get("shipping_city", "001"),          # 発送都市
                 cfg.get("tariff_included", 0),            # 関税込み
                 "",                                     # 出品メモ

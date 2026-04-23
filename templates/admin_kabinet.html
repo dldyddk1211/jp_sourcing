@@ -86,6 +86,40 @@
       <button class="btn b-gray" onclick="loadProducts()">🔄</button>
     </div>
   </div>
+  <!-- 바이마 출품 설정 -->
+  <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:12px;">
+    <div style="font-size:0.75rem;font-weight:600;color:var(--accent);margin-bottom:8px;">🎯 바이마 출품 설정 (CSV에 반영)</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;font-size:0.72rem;">
+      <div>
+        <label style="color:var(--muted);display:block;margin-bottom:2px;">ブランド</label>
+        <input id="csv-brand" type="text" placeholder="🔍 브랜드 검색..." oninput="searchCsvList('brand',this.value)" onfocus="showCsvPopular('brand')" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--text);font-size:0.72rem;">
+        <div id="csv-brand-val" style="font-size:0.65rem;color:var(--accent);margin-top:2px;"></div>
+        <div id="csv-brand-dd" style="display:none;position:absolute;z-index:20;width:260px;max-height:200px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
+      </div>
+      <div>
+        <label style="color:var(--muted);display:block;margin-bottom:2px;">カテゴリ</label>
+        <input id="csv-category" type="text" placeholder="🔍 카테고리 검색..." oninput="searchCsvList('category',this.value)" onfocus="showCsvPopular('category')" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--text);font-size:0.72rem;">
+        <div id="csv-category-val" style="font-size:0.65rem;color:var(--accent);margin-top:2px;"></div>
+        <div id="csv-category-dd" style="display:none;position:absolute;z-index:20;width:300px;max-height:200px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
+      </div>
+      <div>
+        <label style="color:var(--muted);display:block;margin-bottom:2px;">シーズン</label>
+        <select id="csv-season" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--text);font-size:0.72rem;"><option value="0">指定なし</option></select>
+      </div>
+      <div>
+        <label style="color:var(--muted);display:block;margin-bottom:2px;">テーマ</label>
+        <select id="csv-theme" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--text);font-size:0.72rem;"><option value="0">指定なし</option></select>
+      </div>
+      <div>
+        <label style="color:var(--muted);display:block;margin-bottom:2px;">色系統</label>
+        <select id="csv-color" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--text);font-size:0.72rem;"><option value="">선택안함</option></select>
+      </div>
+      <div>
+        <label style="color:var(--muted);display:block;margin-bottom:2px;">買付/発送エリア</label>
+        <select id="csv-area" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--text);font-size:0.72rem;"><option value="2002003">韓国</option></select>
+      </div>
+    </div>
+  </div>
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
     <label style="font-size:0.75rem;color:var(--muted);display:flex;align-items:center;gap:4px;">
       <input type="checkbox" id="kv-check-all" onchange="toggleAll(this.checked)"> 전체 선택
@@ -409,6 +443,7 @@ function pollStatus() {
 // ── 상품 목록 ──
 async function loadProducts(page) {
   if (page) _prodPage = page;
+  populateCsvDropdowns();
   const q = document.getElementById("kv-search")?.value || "";
   try {
     const r = await fetch(PREFIX + `/api/kabinet/products?page=${_prodPage}&per_page=50&q=${encodeURIComponent(q)}`);
@@ -482,7 +517,16 @@ async function downloadCSVAll() {
 }
 async function _downloadCSVRequest(ids) {
   try {
-    const r = await fetch(PREFIX + "/api/kabinet/csv", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ids})});
+    const csvOpts = {
+      ids,
+      brand_id: _csvBrandId || '',
+      category_id: _csvCategoryId || '',
+      season: document.getElementById("csv-season")?.value || '0',
+      theme: document.getElementById("csv-theme")?.value || '0',
+      color_id: document.getElementById("csv-color")?.value || '',
+      area_code: document.getElementById("csv-area")?.value || '2002003',
+    };
+    const r = await fetch(PREFIX + "/api/kabinet/csv", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(csvOpts)});
     if (r.headers.get("content-type")?.includes("application/zip")) {
       const blob = await r.blob();
       const a = document.createElement("a");
@@ -688,6 +732,77 @@ async function loadBuymaMaster() {
 loadBuymaMaster();
 
 const _popularBrands = [275,152,594,105,1854,295,395,793,131,150,158,190,203,210,290,312,343,82];
+
+// ── 상품 목록 CSV 드롭다운 ──
+function populateCsvDropdowns() {
+  if (!_buymaData) return;
+  // seasons
+  const sSel = document.getElementById("csv-season");
+  if (sSel && sSel.options.length <= 1) {
+    _buymaData.seasons.forEach(s => { const o=document.createElement("option"); o.value=s.id; o.textContent=s.name; sSel.appendChild(o); });
+  }
+  // themes
+  const tSel = document.getElementById("csv-theme");
+  if (tSel && tSel.options.length <= 1) {
+    _buymaData.themes.forEach(t => { const o=document.createElement("option"); o.value=t.id; o.textContent=t.name; tSel.appendChild(o); });
+  }
+  // colors
+  const cSel = document.getElementById("csv-color");
+  if (cSel && cSel.options.length <= 1) {
+    _buymaData.colors.forEach(c => { const o=document.createElement("option"); o.value=c.id; o.textContent=c.name; cSel.appendChild(o); });
+  }
+  // areas
+  const aSel = document.getElementById("csv-area");
+  if (aSel && aSel.options.length <= 1) {
+    const seen = new Set();
+    _buymaData.areas.forEach(a => {
+      if (a.city_code === "0" && !seen.has(a.area_code)) {
+        seen.add(a.area_code);
+        const o=document.createElement("option"); o.value=a.area_code; o.textContent=`${a.group} > ${a.area}`; aSel.appendChild(o);
+      }
+    });
+  }
+}
+
+let _csvBrandId = '', _csvCategoryId = '';
+
+function showCsvPopular(type) {
+  if (!_buymaData) return;
+  const dd = document.getElementById(`csv-${type}-dd`);
+  const source = type === 'brand' ? _buymaData.brands : _buymaData.categories;
+  let items = type === 'brand' ? _popularBrands.map(id => source.find(x=>x.id===id)).filter(Boolean) : source.slice(0,30);
+  renderCsvDD(type, items);
+}
+function searchCsvList(type, q) {
+  if (!_buymaData) return;
+  q = (q||'').toLowerCase().trim();
+  if (!q) { showCsvPopular(type); return; }
+  const source = type === 'brand' ? _buymaData.brands : _buymaData.categories;
+  renderCsvDD(type, source.filter(x => (x.name||'').toLowerCase().includes(q) || (x.path||'').toLowerCase().includes(q) || String(x.id).includes(q)).slice(0,30));
+}
+function renderCsvDD(type, items) {
+  const dd = document.getElementById(`csv-${type}-dd`);
+  if (!items.length) { dd.style.display='none'; return; }
+  dd.innerHTML = items.map(x => {
+    const label = type==='category' ? `${x.path} > ${x.name}` : x.name;
+    return `<div onclick="selectCsvItem('${type}',${x.id},'${label.replace(/'/g,"\\'")}')" style="padding:6px 10px;font-size:0.72rem;cursor:pointer;border-bottom:1px solid var(--border);" onmouseover="this.style.background='rgba(212,165,74,0.1)'" onmouseout="this.style.background=''"><span style="color:var(--dim);font-size:0.62rem;">[${x.id}]</span> ${label}</div>`;
+  }).join('');
+  dd.style.display='block';
+}
+function selectCsvItem(type, id, label) {
+  document.getElementById(`csv-${type}`).value = '';
+  document.getElementById(`csv-${type}-val`).innerHTML = `✅ [${id}] ${label}`;
+  document.getElementById(`csv-${type}-dd`).style.display = 'none';
+  if (type==='brand') _csvBrandId = id;
+  else _csvCategoryId = id;
+}
+document.addEventListener('click', e => {
+  ['brand','category'].forEach(t => {
+    const dd = document.getElementById(`csv-${t}-dd`);
+    const inp = document.getElementById(`csv-${t}`);
+    if (dd && inp && !dd.contains(e.target) && e.target !== inp) dd.style.display='none';
+  });
+});
 
 function showBuymaPopular(type) {
   if (!_buymaData) return;
