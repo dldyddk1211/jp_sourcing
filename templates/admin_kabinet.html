@@ -239,11 +239,26 @@
     </div>
     <!-- 색상/사이즈 -->
     <div id="kv-modal-options" style="margin-bottom:12px;"></div>
-    <!-- 설명 -->
-    <div id="kv-modal-desc" style="font-size:0.78rem;color:var(--muted);line-height:1.6;margin-bottom:12px;"></div>
+    <!-- AI 일본어 제목 -->
+    <div style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <label style="font-size:0.72rem;color:var(--muted);font-weight:600;">🇯🇵 바이마 상품명 (일본어)</label>
+        <button onclick="generateAiTitle()" id="btn-ai-title" style="padding:3px 10px;font-size:0.68rem;background:var(--accent);color:#000;border:none;border-radius:4px;cursor:pointer;font-weight:600;">🤖 AI 생성</button>
+      </div>
+      <input id="kv-modal-title-ja" type="text" placeholder="AI가 생성하거나 직접 입력..." style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.82rem;">
+    </div>
+    <!-- 상품 설명 (일본어) -->
+    <div style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <label style="font-size:0.72rem;color:var(--muted);font-weight:600;">📝 상품 설명 (일본어)</label>
+        <button onclick="generateAiDesc()" id="btn-ai-desc" style="padding:3px 10px;font-size:0.68rem;background:var(--accent);color:#000;border:none;border-radius:4px;cursor:pointer;font-weight:600;">🤖 AI 생성</button>
+      </div>
+      <textarea id="kv-modal-desc-ja" rows="6" placeholder="AI가 생성하거나 직접 입력..." style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.78rem;resize:vertical;line-height:1.6;"></textarea>
+    </div>
     <!-- 하단 버튼 -->
     <div style="display:flex;gap:8px;">
-      <a id="kv-modal-link" href="#" target="_blank" class="btn b-blue" style="flex:1;text-align:center;padding:8px;font-size:0.82rem;text-decoration:none;">무신사에서 보기 ↗</a>
+      <button onclick="saveKvModalData()" class="btn b-green" style="flex:1;padding:8px;font-size:0.82rem;">💾 저장</button>
+      <a id="kv-modal-link" href="#" target="_blank" class="btn b-blue" style="padding:8px 14px;font-size:0.82rem;text-decoration:none;">원본 ↗</a>
       <span id="kv-modal-counter" style="font-size:0.75rem;color:var(--muted);display:flex;align-items:center;"></span>
     </div>
   </div>
@@ -592,8 +607,9 @@ function openKvModal(idx) {
   if (colors.length) optHtml += `<div style="margin-bottom:6px;"><span style="font-size:0.72rem;color:var(--muted);font-weight:600;">컬러:</span> <span style="font-size:0.78rem;">${colors.join(', ')}</span></div>`;
   if (sizes.length) optHtml += `<div><span style="font-size:0.72rem;color:var(--muted);font-weight:600;">사이즈:</span> <span style="font-size:0.78rem;">${sizes.join(', ')}</span></div>`;
   optEl.innerHTML = optHtml;
-  // 설명
-  document.getElementById("kv-modal-desc").textContent = p.description || '';
+  // AI 제목/설명
+  document.getElementById("kv-modal-title-ja").value = p.title_ja || '';
+  document.getElementById("kv-modal-desc-ja").value = p.desc_ja || '';
   // 화살표
   document.getElementById("kv-modal-prev").style.display = idx > 0 ? '' : 'none';
   document.getElementById("kv-modal-next").style.display = idx < _kvProducts.length - 1 ? '' : 'none';
@@ -601,6 +617,45 @@ function openKvModal(idx) {
   document.body.style.overflow = 'hidden';
 }
 function closeKvModal() { document.getElementById("kv-modal").style.display = 'none'; document.body.style.overflow = ''; }
+
+async function generateAiTitle() {
+  const p = _kvProducts[_kvModalIdx]; if (!p) return;
+  const btn = document.getElementById("btn-ai-title");
+  btn.disabled=true; btn.textContent="생성중...";
+  try {
+    const r = await fetch(PREFIX+"/api/kabinet/ai-generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"title",brand:p.brand,name:p.name,colors:p.color||'',sizes:(p.sizes||[]).join(',')})});
+    const d = await r.json();
+    if (d.ok) document.getElementById("kv-modal-title-ja").value = d.text;
+    else alert(d.message||"생성 실패");
+  } catch(e) { alert("오류: "+e); }
+  finally { btn.disabled=false; btn.textContent="🤖 AI 생성"; }
+}
+
+async function generateAiDesc() {
+  const p = _kvProducts[_kvModalIdx]; if (!p) return;
+  const btn = document.getElementById("btn-ai-desc");
+  btn.disabled=true; btn.textContent="생성중...";
+  try {
+    const title = document.getElementById("kv-modal-title-ja").value || p.name;
+    const r = await fetch(PREFIX+"/api/kabinet/ai-generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"description",brand:p.brand,name:title,colors:p.color||'',sizes:(p.sizes||[]).join(',')})});
+    const d = await r.json();
+    if (d.ok) document.getElementById("kv-modal-desc-ja").value = d.text;
+    else alert(d.message||"생성 실패");
+  } catch(e) { alert("오류: "+e); }
+  finally { btn.disabled=false; btn.textContent="🤖 AI 생성"; }
+}
+
+async function saveKvModalData() {
+  const p = _kvProducts[_kvModalIdx]; if (!p) return;
+  const title = document.getElementById("kv-modal-title-ja").value.trim();
+  const desc = document.getElementById("kv-modal-desc-ja").value.trim();
+  try {
+    const r = await fetch(PREFIX+"/api/kabinet/product/"+p.id,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name_ko:title,description_ko:desc})});
+    const d = await r.json();
+    if (d.ok) { p.title_ja=title; p.desc_ja=desc; alert("저장 완료"); }
+    else alert(d.message||"저장 실패");
+  } catch(e) { alert("오류: "+e); }
+}
 function navKvModal(dir) { const n = _kvModalIdx + dir; if (n >= 0 && n < _kvProducts.length) openKvModal(n); }
 document.addEventListener('keydown', e => {
   if (document.getElementById("kv-modal").style.display !== 'block') return;

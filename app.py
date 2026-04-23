@@ -6475,6 +6475,8 @@ def kabinet_products():
                 "detail_images": json.loads(r["detail_images"]) if ("detail_images" in r.keys() and r["detail_images"] and r["detail_images"] != "[]") else [],
                 "category_id": r["category_id"],
                 "description": r["description"] or "",
+                "title_ja": r["name_ko"] if "name_ko" in r.keys() else "",
+                "desc_ja": r["description_ko"] if "description_ko" in r.keys() else "",
             })
         return jsonify({
             "ok": True, "products": products,
@@ -6572,6 +6574,100 @@ def kabinet_delete():
     return jsonify({"ok": True, "deleted": deleted})
 
 
+@app.route(f"{URL_PREFIX}/api/kabinet/ai-generate", methods=["POST"])
+@admin_required
+def kabinet_ai_generate():
+    """AI로 바이마용 일본어 상품명/설명 생성"""
+    data = request.get_json() or {}
+    brand = data.get("brand", "")
+    name = data.get("name", "")
+    gen_type = data.get("type", "title")  # title / description
+    colors = data.get("colors", "")
+    sizes = data.get("sizes", "")
+
+    try:
+        from post_generator import get_ai_config, _call_gemini, _call_claude, _call_openai
+        config = get_ai_config()
+        provider = config.get("provider", "none")
+        if provider == "none":
+            return jsonify({"ok": False, "message": "AI가 설정되지 않았습니다. 설정 > 빅데이터에서 API 키를 등록하세요."})
+
+        if gen_type == "title":
+            prompt = f"""あなたはBUYMA（バイマ）の出品タイトル作成の専門家です。
+以下の韓国ブランド商品を日本のお客様向けに魅力的な出品タイトルを作成してください。
+
+[商品情報]
+- ブランド: {brand}
+- 商品名(韓国語): {name}
+- カラー: {colors or '不明'}
+- サイズ: {sizes or '不明'}
+
+[ルール]
+- 60文字以内で作成
+- ブランド名を先頭に入れる
+- 韓国限定・日本未入荷などのアピールポイントを含める
+- 検索されやすいキーワードを入れる
+- タイトルのみ出力（説明不要）"""
+        else:
+            prompt = f"""あなたはBUYMA（バイマ）の商品説明文作成の専門家です。
+以下の韓国ブランド商品を日本のお客様向けに購買意欲を高める商品説明文を作成してください。
+
+[商品情報]
+- ブランド: {brand}
+- 商品名: {name}
+- カラー: {colors or '不明'}
+- サイズ: {sizes or '不明'}
+
+[ルール]
+- 日本語で自然な文章
+- 韓国の現地バイヤーが直接買い付ける100%正規品であることを強調
+- 商品の特徴・素材・着用感などを推測して記載
+- 韓国限定・日本未入荷のアピール
+- 注意事項（サイズ感、モニター環境による色味の違い等）を含める
+- 購入後のサポート体制を記載
+- 説明文のみ出力（前置き不要）"""
+
+        result = None
+        if provider == "gemini" and config.get("gemini_key"):
+            result = _call_gemini(prompt)
+        elif provider == "claude" and config.get("claude_key"):
+            result = _call_claude(prompt)
+        elif provider == "openai" and config.get("openai_key"):
+            result = _call_openai(prompt)
+
+        if result:
+            return jsonify({"ok": True, "text": result.strip()})
+        return jsonify({"ok": False, "message": "AI 생성 실패"})
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)})
+
+
+@app.route(f"{URL_PREFIX}/api/kabinet/product/<int:pid>", methods=["POST"])
+@admin_required
+def kabinet_update_product(pid):
+    """무신사 수집 상품 정보 업데이트 (일본어 제목/설명 저장)"""
+    data = request.get_json() or {}
+    from product_db import _conn
+    conn = _conn()
+    try:
+        updates = []
+        params = []
+        if "name_ko" in data:  # 일본어 제목 → name_ko 컬럼에 저장
+            updates.append("name_ko = ?")
+            params.append(data["name_ko"])
+        if "description_ko" in data:  # 일본어 설명 → description_ko 컬럼에 저장
+            updates.append("description_ko = ?")
+            params.append(data["description_ko"])
+        if not updates:
+            return jsonify({"ok": False, "message": "변경할 내용 없음"})
+        params.append(pid)
+        conn.execute(f"UPDATE products SET {', '.join(updates)} WHERE id = ?", params)
+        conn.commit()
+        return jsonify({"ok": True, "message": "저장 완료"})
+    finally:
+        conn.close()
+
+
 @app.route(f"{URL_PREFIX}/api/kabinet/csv", methods=["POST"])
 @admin_required
 def kabinet_csv():
@@ -6639,12 +6735,15 @@ def kabinet_csv():
             price_krw = r["price_jpy"]
             buyma_price = _calc_buyma_price(price_krw, cfg)
             mgmt_no = f"MS-{r['product_code']}"
-            name = r["name"] or ""
+            # 일본어 제목/설명 우선, 없으면 원본
+            name_ja = (r["name_ko"] if "name_ko" in r.keys() and r["name_ko"] else "") or r["name"] or ""
+            name = name_ja
             brand_name = r["brand"] or ""
             brand_id = cfg.get("brand_id", "")
             img = r["img_url"] or ""
             link = r["link"] or ""
-            desc = r["description"] or ""
+            desc_ja = (r["description_ko"] if "description_ko" in r.keys() and r["description_ko"] else "") or r["description"] or ""
+            desc = desc_ja
             product_code = r["product_code"] or ""
             detail_images = json.loads(r["detail_images"]) if ("detail_images" in r.keys() and r["detail_images"] and r["detail_images"] != "[]") else []
 
