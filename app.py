@@ -5507,7 +5507,7 @@ _freshness_status = {
     "last_result": {},
 }
 
-_auto_freshness_enabled = {"enabled": True}
+_auto_freshness_enabled = {"enabled": False}  # 기본 OFF — 관리자가 수동으로 ON
 
 
 def _freshness_log(msg):
