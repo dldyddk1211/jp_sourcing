@@ -524,6 +524,7 @@ let _taskLogTimer = null;
 async function loadTasks() {
   try {
     const r = await fetch(PREFIX+"/scrape/tasks");
+    if (r.status===401) return;
     const d = await r.json();
     const tbody = document.getElementById("task-tbody");
     const tasks = d.tasks || [];
@@ -533,9 +534,9 @@ async function loadTasks() {
       <td><input type="checkbox" class="tc" data-id="${t.id}"></td>
       <td style="color:var(--dim);">${i+1}</td>
       <td style="font-weight:600;">${t.brand_name||'전체'}</td>
-      <td>${t.category_name||'전체'}</td>
-      <td style="font-size:0.7rem;">${t.start_page||1}~${t.end_page||'?'}</td>
-      <td style="font-weight:700;color:var(--accent);">${t.collected||0}</td>
+      <td>${t.cat_name||'전체'}</td>
+      <td style="font-size:0.7rem;">${t.pages||'-'}</td>
+      <td style="font-weight:700;color:var(--accent);">${t.count||0}</td>
       <td style="color:${stC[t.status]||'var(--muted)'};font-weight:600;">${t.status||'대기'}</td>
       <td style="font-size:0.68rem;color:var(--dim);">${(t.started_at||'').slice(11,19)||'-'}</td>
     </tr>`).join("");
@@ -547,21 +548,44 @@ async function addTask() {
   const chunk=parseInt(document.getElementById("task-chunk").value)||5;
   const brandName=document.getElementById("task-brand").selectedOptions[0]?.textContent||'전체';
   const catName=document.getElementById("task-cat").selectedOptions[0]?.textContent||'전체';
-  await fetch(PREFIX+"/scrape/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"add_auto",site:"2ndstreet",brand_code:brand,category_id:cat,brand_name:brandName,category_name:catName,chunk_size:chunk})});
-  loadTasks();
+  const el=document.getElementById("task-log");
+  el.textContent="상품 수량 조회 중...";
+  try {
+    // 1) 수량 조회
+    const params=new URLSearchParams({site:"2ndstreet",category:cat,brand});
+    const cr=await fetch(PREFIX+"/scrape/check-count?"+params);
+    const cd=await cr.json();
+    if(!cd.ok||cd.total_pages<=0){el.textContent="상품 없음 또는 조회 실패";return;}
+    // 2) 분할 추가
+    for(let s=1;s<=cd.total_pages;s+=chunk){
+      const e=Math.min(s+chunk-1,cd.total_pages);
+      await fetch(PREFIX+"/scrape/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({site:"2ndstreet",siteName:"세컨드스트리트",cat,catName,brand,brandName,pages:`${s}-${e}`,totalItems:cd.total_items,totalPages:cd.total_pages})});
+    }
+    el.textContent=`${catName}/${brandName}: ${cd.total_items}개(${cd.total_pages}p) → ${Math.ceil(cd.total_pages/chunk)}개 작업 추가`;
+    loadTasks();
+  } catch(e) { el.textContent="추가 오류: "+e; }
 }
 async function testTask() {
   const brand=document.getElementById("task-brand").value;
   const cat=document.getElementById("task-cat").value;
-  const brandName=document.getElementById("task-brand").selectedOptions[0]?.textContent||'전체';
-  const catName=document.getElementById("task-cat").selectedOptions[0]?.textContent||'전체';
-  await fetch(PREFIX+"/scrape/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"test",site:"2ndstreet",brand_code:brand,category_id:cat,brand_name:brandName,category_name:catName})});
-  pollTaskLog();
+  const el=document.getElementById("task-log");
+  el.textContent="테스트 수집 중...";
+  try {
+    const params=new URLSearchParams({site:"2ndstreet",category:cat,brand,pages:"1",max_items:"1"});
+    const r=await fetch(PREFIX+"/scrape?"+params,{method:"POST"});
+    const d=await r.json();
+    el.textContent=d.ok?`테스트 완료: ${d.count||0}개 수집`:`테스트 실패: ${d.message||''}`;
+    loadTasks();
+  } catch(e) { el.textContent="테스트 오류: "+e; }
 }
 function getCheckedTaskIds() { return [...document.querySelectorAll(".tc:checked")].map(c=>c.dataset.id); }
 async function runTasks() {
   const ids=getCheckedTaskIds(); if(!ids.length){alert("작업을 선택해주세요");return;}
-  for(const id of ids) await fetch(PREFIX+"/scrape/tasks/"+id+"/run",{method:"POST"}).catch(()=>{});
+  for(const id of ids) {
+    await fetch(PREFIX+"/scrape/tasks/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:"예약"})}).catch(()=>{});
+  }
+  // 순환 실행 시작
+  await fetch(PREFIX+"/scrape/run-next",{method:"POST"}).catch(()=>{});
   pollTaskLog(); loadTasks();
 }
 async function resetTasks() {
@@ -578,12 +602,17 @@ async function deleteTasks() {
 }
 function pollTaskLog() {
   if(_taskLogTimer) clearInterval(_taskLogTimer);
+  const el=document.getElementById("task-log");
   _taskLogTimer=setInterval(async()=>{
     try{
-      const r=await fetch(PREFIX+"/scrape/log");const d=await r.json();
-      const el=document.getElementById("task-log");
-      el.textContent=d.log||'대기 중...'; el.scrollTop=999999;
-      if(!d.running){clearInterval(_taskLogTimer);_taskLogTimer=null;loadTasks();}
+      const r=await fetch(PREFIX+"/monitor/status");const d=await r.json();
+      if(d.ok){
+        let log=`상태: ${d.running?'수집중':'대기'}\n`;
+        if(d.current) log+=`현재: ${d.current}\n`;
+        if(d.log) log+=d.log;
+        el.textContent=log; el.scrollTop=999999;
+        if(!d.running){clearInterval(_taskLogTimer);_taskLogTimer=null;loadTasks();}
+      }
     }catch(e){}
   },2000);
 }
