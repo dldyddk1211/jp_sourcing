@@ -121,19 +121,23 @@
         <label style="font-size:0.75rem;color:var(--muted);display:block;margin-bottom:4px;">구매기한 (일)</label>
         <input id="cfg-deadline" type="number" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
       </div>
-      <div style="position:relative;">
-        <label style="font-size:0.75rem;color:var(--muted);display:block;margin-bottom:4px;">바이마 카테고리</label>
-        <input id="cfg-category-search" type="text" placeholder="카테고리 검색..." oninput="searchBuymaList('category',this.value)" onfocus="searchBuymaList('category',this.value)" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
-        <input id="cfg-category" type="hidden">
-        <div id="cfg-category-label" style="font-size:0.68rem;color:var(--accent);margin-top:2px;"></div>
-        <div id="cfg-category-list" style="display:none;position:absolute;z-index:10;width:100%;max-height:200px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
+      <div style="position:relative;grid-column:1/-1;">
+        <label style="font-size:0.75rem;color:var(--muted);display:block;margin-bottom:4px;">바이마 브랜드 <span style="font-size:0.65rem;color:var(--dim);">(검색하여 선택)</span></label>
+        <div style="display:flex;gap:6px;">
+          <input id="cfg-brand-search" type="text" placeholder="🔍 브랜드명 입력 (예: Nike, Calvin Klein...)" oninput="searchBuymaList('brand',this.value)" onfocus="showBuymaPopular('brand')" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+          <input id="cfg-brand" type="hidden">
+        </div>
+        <div id="cfg-brand-label" style="font-size:0.72rem;color:var(--accent);margin-top:4px;font-weight:600;"></div>
+        <div id="cfg-brand-list" style="display:none;position:absolute;z-index:10;width:100%;max-height:250px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.3);margin-top:2px;"></div>
       </div>
-      <div style="position:relative;">
-        <label style="font-size:0.75rem;color:var(--muted);display:block;margin-bottom:4px;">바이마 브랜드</label>
-        <input id="cfg-brand-search" type="text" placeholder="브랜드 검색..." oninput="searchBuymaList('brand',this.value)" onfocus="searchBuymaList('brand',this.value)" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
-        <input id="cfg-brand" type="hidden">
-        <div id="cfg-brand-label" style="font-size:0.68rem;color:var(--accent);margin-top:2px;"></div>
-        <div id="cfg-brand-list" style="display:none;position:absolute;z-index:10;width:100%;max-height:200px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
+      <div style="position:relative;grid-column:1/-1;">
+        <label style="font-size:0.75rem;color:var(--muted);display:block;margin-bottom:4px;">바이마 카테고리 <span style="font-size:0.65rem;color:var(--dim);">(검색하여 선택)</span></label>
+        <div style="display:flex;gap:6px;">
+          <input id="cfg-category-search" type="text" placeholder="🔍 카테고리명 입력 (예: スニーカー, バッグ...)" oninput="searchBuymaList('category',this.value)" onfocus="showBuymaPopular('category')" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+          <input id="cfg-category" type="hidden">
+        </div>
+        <div id="cfg-category-label" style="font-size:0.72rem;color:var(--accent);margin-top:4px;font-weight:600;"></div>
+        <div id="cfg-category-list" style="display:none;position:absolute;z-index:10;width:100%;max-height:250px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.3);margin-top:2px;"></div>
       </div>
       <div>
         <label style="font-size:0.75rem;color:var(--muted);display:block;margin-bottom:4px;">買付可数量</label>
@@ -500,31 +504,51 @@ async function loadBuymaMaster() {
 }
 loadBuymaMaster();
 
-function searchBuymaList(type, query) {
+const _popularBrands = [275,152,594,105,1854,295,395,793,131,150,158,190,203,210,290,312,343,82];
+
+function showBuymaPopular(type) {
   if (!_buymaData) return;
   const listEl = document.getElementById(`cfg-${type}-list`);
+  const source = type === 'brand' ? _buymaData.brands : _buymaData.categories;
+  let items;
+  if (type === 'brand') {
+    items = _popularBrands.map(id => source.find(x => x.id === id)).filter(Boolean);
+  } else {
+    items = source.slice(0, 30);
+  }
+  renderBuymaList(type, items);
+}
+
+function searchBuymaList(type, query) {
+  if (!_buymaData) return;
   const q = (query||'').toLowerCase().trim();
-  if (!q || q.length < 1) { listEl.style.display = 'none'; return; }
+  if (!q) { showBuymaPopular(type); return; }
   const source = type === 'brand' ? _buymaData.brands : _buymaData.categories;
   const filtered = source.filter(x => {
     const name = (x.name||'').toLowerCase();
     const path = (x.path||'').toLowerCase();
     return name.includes(q) || path.includes(q) || String(x.id).includes(q);
   }).slice(0, 30);
-  if (!filtered.length) { listEl.style.display = 'none'; return; }
-  listEl.innerHTML = filtered.map(x => {
+  renderBuymaList(type, filtered);
+}
+
+function renderBuymaList(type, items) {
+  const listEl = document.getElementById(`cfg-${type}-list`);
+  if (!items.length) { listEl.style.display = 'none'; return; }
+  listEl.innerHTML = items.map(x => {
     const label = type === 'category' ? `${x.path} > ${x.name}` : x.name;
-    return `<div onclick="selectBuymaItem('${type}',${x.id},'${label.replace(/'/g,"\\'")}')" style="padding:6px 10px;font-size:0.75rem;cursor:pointer;border-bottom:1px solid var(--border);" onmouseover="this.style.background='rgba(212,165,74,0.1)'" onmouseout="this.style.background=''"><span style="color:var(--dim);font-size:0.65rem;">[${x.id}]</span> ${label}</div>`;
+    const safeLabel = label.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    return `<div onclick="selectBuymaItem('${type}',${x.id},'${safeLabel}')" style="padding:8px 12px;font-size:0.78rem;cursor:pointer;border-bottom:1px solid var(--border);" onmouseover="this.style.background='rgba(212,165,74,0.1)'" onmouseout="this.style.background=''"><span style="color:var(--dim);font-size:0.65rem;margin-right:4px;">[${x.id}]</span> ${label}</div>`;
   }).join('');
   listEl.style.display = 'block';
 }
+
 function selectBuymaItem(type, id, label) {
   document.getElementById(`cfg-${type}`).value = id;
   document.getElementById(`cfg-${type}-search`).value = '';
-  document.getElementById(`cfg-${type}-label`).textContent = `[${id}] ${label}`;
+  document.getElementById(`cfg-${type}-label`).innerHTML = `✅ <b>[${id}]</b> ${label}`;
   document.getElementById(`cfg-${type}-list`).style.display = 'none';
 }
-// 다른 곳 클릭 시 목록 닫기
 document.addEventListener('click', e => {
   ['brand','category'].forEach(t => {
     const list = document.getElementById(`cfg-${t}-list`);
