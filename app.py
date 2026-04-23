@@ -7376,18 +7376,59 @@ def _run_musinsa_scrape(keyword, max_items=50, search_mode="keyword", url=""):
 
                     colors = info.get("colors", [])
                     sizes = info.get("sizes", [])
+
+                    # ── AI 일본어 제목/설명 자동 생성 ──
+                    title_ja = ""
+                    desc_ja = ""
+                    try:
+                        from post_generator import get_ai_config, _call_gemini, _call_claude, _call_openai
+                        ai_cfg = get_ai_config()
+                        ai_provider = ai_cfg.get("provider", "none")
+                        if ai_provider != "none":
+                            brand = info.get("brand", "")
+                            name_kr = info.get("name", "")
+                            color_str = ", ".join(colors) if colors else ""
+                            size_str = ", ".join(sizes) if sizes else ""
+
+                            # 제목 생성
+                            title_prompt = f"BUYMAの出品タイトルを60文字以内で作成。ブランド名を先頭に。韓国限定アピール含む。タイトルのみ出力。\nブランド: {brand}\n商品名: {name_kr}\nカラー: {color_str}\nサイズ: {size_str}"
+                            if ai_provider == "gemini" and ai_cfg.get("gemini_key"):
+                                title_ja = (_call_gemini(title_prompt) or "").strip()
+                            elif ai_provider == "claude" and ai_cfg.get("claude_key"):
+                                title_ja = (_call_claude(title_prompt) or "").strip()
+                            elif ai_provider == "openai" and ai_cfg.get("openai_key"):
+                                title_ja = (_call_openai(title_prompt) or "").strip()
+
+                            # 설명 생성
+                            if title_ja:
+                                desc_prompt = f"BUYMA商品説明文を作成。韓国バイヤー直接買付100%正規品を強調。特徴・素材・サイズ感・注意事項含む。説明文のみ出力。\nブランド: {brand}\n商品名: {title_ja}\nカラー: {color_str}\nサイズ: {size_str}"
+                                if ai_provider == "gemini" and ai_cfg.get("gemini_key"):
+                                    desc_ja = (_call_gemini(desc_prompt) or "").strip()
+                                elif ai_provider == "claude" and ai_cfg.get("claude_key"):
+                                    desc_ja = (_call_claude(desc_prompt) or "").strip()
+                                elif ai_provider == "openai" and ai_cfg.get("openai_key"):
+                                    desc_ja = (_call_openai(desc_prompt) or "").strip()
+
+                            if title_ja:
+                                _kv_log(f"    🤖 AI 제목: {title_ja[:50]}")
+                            time.sleep(0.5)  # API 레이트 리밋
+                    except Exception as e:
+                        _kv_log(f"    ⚠️ AI 생성 실패: {e}")
+
                     collected.append({
                         "site_id": "musinsa",
                         "source_type": "musinsa",
                         "product_code": code,
                         "name": info.get("name", ""),
+                        "name_ko": title_ja,            # 일본어 제목
                         "brand": info.get("brand", ""),
-                        "price_jpy": info.get("price", 0),          # 최대혜택가 (KRW)
-                        "original_price": info.get("original_price", 0),  # 정가
+                        "price_jpy": info.get("price", 0),
+                        "original_price": info.get("original_price", 0),
                         "img_url": img_url,
                         "detail_images": info.get("detail_images", []),
                         "sizes": sizes,
                         "color": ", ".join(colors) if colors else "",
+                        "description_ko": desc_ja,       # 일본어 설명
                         "link": product_url,
                         "category_id": "",
                         "scraped_at": datetime.now().isoformat(),
