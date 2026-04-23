@@ -121,13 +121,19 @@
         <label style="font-size:0.75rem;color:var(--muted);display:block;margin-bottom:4px;">구매기한 (일)</label>
         <input id="cfg-deadline" type="number" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
       </div>
-      <div>
-        <label style="font-size:0.75rem;color:var(--muted);display:block;margin-bottom:4px;">바이마 카테고리 ID</label>
-        <input id="cfg-category" type="text" placeholder="예: 3081" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+      <div style="position:relative;">
+        <label style="font-size:0.75rem;color:var(--muted);display:block;margin-bottom:4px;">바이마 카테고리</label>
+        <input id="cfg-category-search" type="text" placeholder="카테고리 검색..." oninput="searchBuymaList('category',this.value)" onfocus="searchBuymaList('category',this.value)" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+        <input id="cfg-category" type="hidden">
+        <div id="cfg-category-label" style="font-size:0.68rem;color:var(--accent);margin-top:2px;"></div>
+        <div id="cfg-category-list" style="display:none;position:absolute;z-index:10;width:100%;max-height:200px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
       </div>
-      <div>
-        <label style="font-size:0.75rem;color:var(--muted);display:block;margin-bottom:4px;">바이마 브랜드 ID</label>
-        <input id="cfg-brand" type="text" placeholder="예: 275 (Nike)" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+      <div style="position:relative;">
+        <label style="font-size:0.75rem;color:var(--muted);display:block;margin-bottom:4px;">바이마 브랜드</label>
+        <input id="cfg-brand-search" type="text" placeholder="브랜드 검색..." oninput="searchBuymaList('brand',this.value)" onfocus="searchBuymaList('brand',this.value)" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+        <input id="cfg-brand" type="hidden">
+        <div id="cfg-brand-label" style="font-size:0.68rem;color:var(--accent);margin-top:2px;"></div>
+        <div id="cfg-brand-list" style="display:none;position:absolute;z-index:10;width:100%;max-height:200px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
       </div>
       <div>
         <label style="font-size:0.75rem;color:var(--muted);display:block;margin-bottom:4px;">買付可数量</label>
@@ -436,6 +442,13 @@ async function loadConfig() {
       document.getElementById("cfg-deadline").value = c.purchase_deadline || 10;
       document.getElementById("cfg-category").value = c.category_id || "";
       document.getElementById("cfg-brand").value = c.brand_id || "";
+      // 브랜드/카테고리 이름 표시
+      if (_buymaData) {
+        const cat = _buymaData.categories.find(x => String(x.id) === String(c.category_id));
+        if (cat) { document.getElementById("cfg-category-search").value = ''; document.getElementById("cfg-category-label").textContent = `[${cat.id}] ${cat.path} > ${cat.name}`; }
+        const brand = _buymaData.brands.find(x => String(x.id) === String(c.brand_id));
+        if (brand) { document.getElementById("cfg-brand-search").value = ''; document.getElementById("cfg-brand-label").textContent = `[${brand.id}] ${brand.name}`; }
+      }
       document.getElementById("cfg-quantity").value = c.quantity || 100;
       document.getElementById("cfg-control").value = c.control || "下書き";
       document.getElementById("cfg-tariff").value = String(c.tariff_included || 0);
@@ -476,6 +489,49 @@ function simulate() {
   const rounded = Math.ceil(jpy / 100) * 100;
   document.getElementById("sim-jpy").textContent = "¥" + rounded.toLocaleString();
 }
+
+// ── 바이마 마스터 데이터 (브랜드/카테고리 검색) ──
+let _buymaData = null;
+async function loadBuymaMaster() {
+  try {
+    const r = await fetch(PREFIX + "/static/buyma_master.json");
+    _buymaData = await r.json();
+  } catch(e) {}
+}
+loadBuymaMaster();
+
+function searchBuymaList(type, query) {
+  if (!_buymaData) return;
+  const listEl = document.getElementById(`cfg-${type}-list`);
+  const q = (query||'').toLowerCase().trim();
+  if (!q || q.length < 1) { listEl.style.display = 'none'; return; }
+  const source = type === 'brand' ? _buymaData.brands : _buymaData.categories;
+  const filtered = source.filter(x => {
+    const name = (x.name||'').toLowerCase();
+    const path = (x.path||'').toLowerCase();
+    return name.includes(q) || path.includes(q) || String(x.id).includes(q);
+  }).slice(0, 30);
+  if (!filtered.length) { listEl.style.display = 'none'; return; }
+  listEl.innerHTML = filtered.map(x => {
+    const label = type === 'category' ? `${x.path} > ${x.name}` : x.name;
+    return `<div onclick="selectBuymaItem('${type}',${x.id},'${label.replace(/'/g,"\\'")}')" style="padding:6px 10px;font-size:0.75rem;cursor:pointer;border-bottom:1px solid var(--border);" onmouseover="this.style.background='rgba(212,165,74,0.1)'" onmouseout="this.style.background=''"><span style="color:var(--dim);font-size:0.65rem;">[${x.id}]</span> ${label}</div>`;
+  }).join('');
+  listEl.style.display = 'block';
+}
+function selectBuymaItem(type, id, label) {
+  document.getElementById(`cfg-${type}`).value = id;
+  document.getElementById(`cfg-${type}-search`).value = '';
+  document.getElementById(`cfg-${type}-label`).textContent = `[${id}] ${label}`;
+  document.getElementById(`cfg-${type}-list`).style.display = 'none';
+}
+// 다른 곳 클릭 시 목록 닫기
+document.addEventListener('click', e => {
+  ['brand','category'].forEach(t => {
+    const list = document.getElementById(`cfg-${t}-list`);
+    const input = document.getElementById(`cfg-${t}-search`);
+    if (list && input && !list.contains(e.target) && e.target !== input) list.style.display = 'none';
+  });
+});
 
 // ── 상품 상세 모달 ──
 let _kvProducts = [];
