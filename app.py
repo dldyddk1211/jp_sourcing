@@ -7377,37 +7377,45 @@ def _run_musinsa_scrape(keyword, max_items=50, search_mode="keyword", url=""):
                     colors = info.get("colors", [])
                     sizes = info.get("sizes", [])
 
-                    # ── AI 일본어 제목/설명 자동 생성 ──
+                    # ── AI 일본어 제목/설명 자동 생성 (자동 폴백) ──
                     title_ja = ""
                     desc_ja = ""
                     try:
                         from post_generator import get_ai_config, _call_gemini, _call_claude, _call_openai
                         ai_cfg = get_ai_config()
-                        ai_provider = ai_cfg.get("provider", "none")
-                        if ai_provider != "none":
+
+                        # 사용 가능한 AI 프로바이더 순서 (설정된 것 우선 + 나머지 폴백)
+                        def _try_ai(prompt):
+                            providers = []
+                            main = ai_cfg.get("provider", "none")
+                            if main == "openai" and ai_cfg.get("openai_key"): providers.append(("openai", _call_openai))
+                            if main == "gemini" and ai_cfg.get("gemini_key"): providers.append(("gemini", _call_gemini))
+                            if main == "claude" and ai_cfg.get("claude_key"): providers.append(("claude", _call_claude))
+                            # 폴백 (설정 외 나머지)
+                            if ai_cfg.get("gemini_key") and ("gemini", _call_gemini) not in providers: providers.append(("gemini", _call_gemini))
+                            if ai_cfg.get("claude_key") and ("claude", _call_claude) not in providers: providers.append(("claude", _call_claude))
+                            if ai_cfg.get("openai_key") and ("openai", _call_openai) not in providers: providers.append(("openai", _call_openai))
+                            for name, fn in providers:
+                                try:
+                                    result = fn(prompt)
+                                    if result and result.strip():
+                                        return result.strip()
+                                except Exception:
+                                    continue
+                            return ""
+
+                        if ai_cfg.get("provider", "none") != "none":
                             brand = info.get("brand", "")
                             name_kr = info.get("name", "")
                             color_str = ", ".join(colors) if colors else ""
                             size_str = ", ".join(sizes) if sizes else ""
 
-                            # 제목 생성
                             title_prompt = f"BUYMAの出品タイトルを60文字以内で作成。ブランド名を先頭に。韓国限定アピール含む。タイトルのみ出力。\nブランド: {brand}\n商品名: {name_kr}\nカラー: {color_str}\nサイズ: {size_str}"
-                            if ai_provider == "gemini" and ai_cfg.get("gemini_key"):
-                                title_ja = (_call_gemini(title_prompt) or "").strip()
-                            elif ai_provider == "claude" and ai_cfg.get("claude_key"):
-                                title_ja = (_call_claude(title_prompt) or "").strip()
-                            elif ai_provider == "openai" and ai_cfg.get("openai_key"):
-                                title_ja = (_call_openai(title_prompt) or "").strip()
+                            title_ja = _try_ai(title_prompt)
 
-                            # 설명 생성
                             if title_ja:
                                 desc_prompt = f"BUYMA商品説明文を作成。韓国バイヤー直接買付100%正規品を強調。特徴・素材・サイズ感・注意事項含む。説明文のみ出力。\nブランド: {brand}\n商品名: {title_ja}\nカラー: {color_str}\nサイズ: {size_str}"
-                                if ai_provider == "gemini" and ai_cfg.get("gemini_key"):
-                                    desc_ja = (_call_gemini(desc_prompt) or "").strip()
-                                elif ai_provider == "claude" and ai_cfg.get("claude_key"):
-                                    desc_ja = (_call_claude(desc_prompt) or "").strip()
-                                elif ai_provider == "openai" and ai_cfg.get("openai_key"):
-                                    desc_ja = (_call_openai(desc_prompt) or "").strip()
+                                desc_ja = _try_ai(desc_prompt)
 
                             if title_ja:
                                 _kv_log(f"    🤖 AI 제목: {title_ja[:50]}")
