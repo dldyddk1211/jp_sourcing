@@ -6585,6 +6585,7 @@ def kabinet_ai_generate():
     gen_type = data.get("type", "title")  # title / description
     colors = data.get("colors", "")
     sizes = data.get("sizes", "")
+    keywords = data.get("keywords", "").strip()
 
     try:
         from post_generator import get_ai_config, _call_gemini, _call_claude, _call_openai
@@ -6603,10 +6604,11 @@ def kabinet_ai_generate():
 - 商品名(韓国語): {name}
 - カラー: {colors or '不明'}
 - サイズ: {sizes or '不明'}
+{f'- ユーザー指定キーワード: {keywords}（このキーワードを必ずタイトルに含めること）' if keywords else ''}
 
 [タイトル作成ルール]
 - タイトルにブランド名「{brand}」は入れない（BUYMAでは別途ブランド欄があるため、タイトルの文字数を他のキーワードに使う）
-- 商品の魅力が伝わるキーワードを最大限に入れる
+{f'- ユーザーが指定したキーワード「{keywords}」を必ず含める' if keywords else ''}- 商品の魅力が伝わるキーワードを最大限に入れる
 - 以下のような注目キーワードを活用:
   【SALE】セール価格の場合
   【即発】手元在庫で即日発送可能な場合
@@ -6638,11 +6640,12 @@ def kabinet_ai_generate():
 - 商品名: {name}
 - カラー: {colors or '不明'}
 - サイズ: {sizes or '不明'}
+{f'- ユーザー指定キーワード: {keywords}（このキーワードを説明文に自然に含めること）' if keywords else ''}
 
 [ルール]
 - 韓国の現地バイヤーが直接買い付けた100%正規品を強調
 - 商品の特徴・素材・着用感を記載
-- 韓国人気・日本未入荷のアピール
+{f'- ユーザーが指定したキーワード「{keywords}」を自然に含める' if keywords else ''}- 韓国人気のアピール
 - サイズ感・モニター環境による色味の注意事項
 - 購入後のサポート体制を記載"""
 
