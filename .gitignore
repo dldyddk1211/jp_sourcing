@@ -3,6 +3,7 @@ output/
 logs/
 *.pyc
 data_path.json
+pc_role.json
 naver_cookies.json
 article_tg_map.json
 *.db

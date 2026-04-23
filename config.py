@@ -19,11 +19,24 @@ if os.path.exists(_env_path):
 # "server"  = Mac 서버 (웹서버, 쇼핑몰, DB 병합)
 # "crawl"   = Windows 수집 PC (상품 크롤링 전용)
 # "fresh"   = Windows 최신화 PC (품절 체크 전용)
+#
+# 설정 방법: 각 PC에서 pc_role.json 파일 생성
+#   {"role": "crawl"}  또는  {"role": "fresh"}
 import platform as _pf
+import json as _jr
+import os as _or2
+
 if _pf.system() == "Darwin":
     PC_ROLE = "server"
 else:
-    PC_ROLE = "crawl"  # ← 최신화 PC에서는 "fresh"로 변경
+    PC_ROLE = "crawl"  # 기본값
+    _role_file = _or2.path.join(_or2.path.dirname(__file__), "pc_role.json")
+    if _or2.path.exists(_role_file):
+        try:
+            with open(_role_file, "r") as _rf:
+                PC_ROLE = _jr.load(_rf).get("role", "crawl")
+        except Exception:
+            pass
 
 # NAS 내보내기 파일명 (역할별 분리)
 NAS_EXPORT_DB = {
