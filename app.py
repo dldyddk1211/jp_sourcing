@@ -6620,6 +6620,8 @@ def kabinet_ai_generate():
 - サイズ: {sizes or '不明'}
 
 [ルール]
+- BUYMAの「色サイズ補足」欄に入る文章です
+- 2000文字（半角基準）以内で作成
 - 日本語で自然な文章
 - 韓国の現地バイヤーが直接買い付ける100%正規品であることを強調
 - 商品の特徴・素材・着用感などを推測して記載
@@ -6902,16 +6904,13 @@ def kabinet_csv():
             img = r["img_url"] or ""
             link = r["link"] or ""
             desc_ja = (r["description_ko"] if "description_ko" in r.keys() and r["description_ko"] else "") or r["description"] or ""
-            desc = desc_ja
+            # 色サイズ補足용 (2000文字半角制限)
+            color_size_note = desc_ja[:2000] if desc_ja else ""
             product_code = r["product_code"] or ""
             detail_images = json.loads(r["detail_images"]) if ("detail_images" in r.keys() and r["detail_images"] and r["detail_images"] != "[]") else []
 
-            # 상품 코멘트 구성
-            comment = comment_tpl
-            if desc:
-                comment = f"{comment}\n\n{desc}" if comment else desc
-            if not comment:
-                comment = name
+            # 商品コメント (テンプレートのみ)
+            comment = comment_tpl or name
 
             # 이미지 리스트 (최대 20개)
             all_images = [img] if img else []
@@ -6939,7 +6938,7 @@ def kabinet_csv():
                 "0",                                    # 参考価格/通常出品価格
                 "",                                     # 参考価格
                 comment,                                # 商品コメント
-                "",                                     # 色サイズ補足
+                color_size_note,                        # 色サイズ補足 (AI 상품설명)
                 cfg.get("tags", ""),                     # タグ
                 cfg.get("shipping_method", "1062886_1061293"),  # 配送方法
                 csv_area_code or cfg.get("buying_area", "2002003"),  # 買付エリア
@@ -7415,7 +7414,7 @@ def _run_musinsa_scrape(keyword, max_items=50, search_mode="keyword", url=""):
                             title_ja = _try_ai(title_prompt)
 
                             if title_ja:
-                                desc_prompt = f"BUYMA商品説明文を作成。韓国バイヤー直接買付100%正規品を強調。特徴・素材・サイズ感・注意事項含む。説明文のみ出力。\nブランド: {brand}\n商品名: {title_ja}\nカラー: {color_str}\nサイズ: {size_str}"
+                                desc_prompt = f"BUYMAの「色サイズ補足」欄に入る商品説明文を2000文字(半角)以内で作成。韓国バイヤー直接買付100%正規品を強調。特徴・素材・サイズ感・注意事項含む。説明文のみ出力。\nブランド: {brand}\n商品名: {title_ja}\nカラー: {color_str}\nサイズ: {size_str}"
                                 desc_ja = _try_ai(desc_prompt)
 
                             if title_ja:
