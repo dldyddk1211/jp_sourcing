@@ -2081,6 +2081,10 @@ let _kwModalPage = 1;
 const _kwModalPerPage = 20;
 
 function openKwSearchModal() {
+  if (!IS_ADMIN && USER_LEVEL !== 'b2b') {
+    alert("B2B 사업자 회원 전용 기능입니다.\n\n사업자 회원 등록은 관리자에게 문의해주세요.");
+    return;
+  }
   document.getElementById("kw-search-modal").classList.add("show");
   document.getElementById("kw-search-input").focus();
 }

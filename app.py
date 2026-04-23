@@ -5450,7 +5450,11 @@ def keyword_config_save():
 
 @app.route(f"{URL_PREFIX}/shop/api/keyword-stats", methods=["POST"])
 def shop_keyword_stats():
-    """쇼핑몰 — 상품 태그 기반 키워드 검색량 조회 (누구나 가능)"""
+    """쇼핑몰 — 키워드 검색량 조회 (B2B/관리자 전용)"""
+    role = session.get("role", "")
+    level = session.get("level", "")
+    if role not in ("admin", "sub_admin") and level != "b2b":
+        return jsonify({"ok": False, "message": "B2B 사업자 회원 전용 기능입니다"})
     data = request.get_json() or {}
     tags = data.get("tags", [])
     if isinstance(tags, str):
