@@ -189,7 +189,13 @@
 </div>
 
 <!-- 나머지 페이지는 준비 중 표시 -->
-<div class="page-section" id="page-scrape-tasks"><div class="panel"><div style="text-align:center;padding:40px;color:var(--muted);">수집 작업리스트 — <a href="{{ url_prefix }}/dashboard#scrape-tasks" style="color:var(--accent);">전체 대시보드에서 보기</a></div></div></div>
+<div class="page-section" id="page-scrape-tasks">
+  <div class="panel">
+    <div class="panel-title"><span>📋 수집 작업리스트</span></div>
+    <iframe id="scrape-iframe" style="width:100%;border:none;border-radius:8px;min-height:70vh;display:none;"></iframe>
+    <div id="scrape-loading" style="text-align:center;padding:40px;color:var(--muted);">로딩 중...</div>
+  </div>
+</div>
 <div class="page-section" id="page-sns-upload"><div class="panel"><div style="text-align:center;padding:40px;color:var(--muted);">SNS 업로드 — <a href="{{ url_prefix }}/dashboard#sns-upload" style="color:var(--accent);">전체 대시보드에서 보기</a></div></div></div>
 <div class="page-section" id="page-nas-sync"><div class="panel"><div style="text-align:center;padding:40px;color:var(--muted);">NAS 동기화 — <a href="{{ url_prefix }}/dashboard#nas-sync" style="color:var(--accent);">전체 대시보드에서 보기</a></div></div></div>
 <div class="page-section" id="page-db-update">
@@ -293,6 +299,7 @@ function onPageShow(page) {
   if (page === "vt-todo") loadVtTodo();
   if (page === "members") loadMembers();
   if (page === "orders") loadOrders();
+  if (page === "scrape-tasks") loadScrapeFrame();
   if (page === "db-update") { loadPriceChanges(); pollDbLog(); }
 }
 
@@ -456,6 +463,15 @@ function copyOrderInfo(){const chks=[...document.querySelectorAll(".order-chk:ch
 function downloadQuote(){const ids=[];document.querySelectorAll(".order-chk:checked").forEach(c=>ids.push(+c.dataset.id));if(!ids.length){alert("견적서에 포함할 주문을 선택해주세요");return;}const a=document.createElement("a");a.href=PREFIX+"/api/quote/download?ids="+ids.join(",");a.download="";a.click();}
 async function toggleBatchDetail(orderId,el){const tr=el.closest("tr");const next=tr.nextElementSibling;if(next&&next.classList.contains("batch-detail-row")){next.remove();return;}try{const r=await fetch(PREFIX+"/orders/"+orderId+"/related");const d=await r.json();if(!d.ok||!d.orders.length)return;let html='<tr class="batch-detail-row"><td colspan="16" style="padding:8px 16px;background:rgba(212,165,74,0.05);"><div style="font-size:0.75rem;color:var(--muted);margin-bottom:6px;">세부 주문:</div><table style="width:100%;font-size:0.72rem;border-collapse:collapse;">';d.orders.forEach(o=>{html+=`<tr style="border-bottom:1px solid var(--border);"><td style="padding:4px 6px;">${o.order_number||''}</td><td>${o.brand||''}</td><td>${o.product_name||''}</td><td>${o.product_code||''}</td><td style="font-weight:700;color:var(--accent);">${o.price||''}</td></tr>`;});html+='</table></td></tr>';tr.insertAdjacentHTML("afterend",html);}catch(e){}}
 async function approveCancel(id,action){if(!confirm(action==='approve'?'취소를 승인하시겠습니까?':'취소 요청을 거절하시겠습니까?'))return;await fetch(PREFIX+"/orders/"+id+"/approve-cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action})});loadOrders();}
+
+// ── 수집 작업리스트 (대시보드 임베드) ──
+function loadScrapeFrame() {
+  const iframe = document.getElementById("scrape-iframe");
+  const loading = document.getElementById("scrape-loading");
+  if (iframe.src) return; // 이미 로드됨
+  iframe.src = PREFIX + "/dashboard#scrape-tasks";
+  iframe.onload = () => { loading.style.display = 'none'; iframe.style.display = 'block'; };
+}
 
 // ── 주문/장바구니 탭 전환 ──
 function switchOrderTab(tab) {
