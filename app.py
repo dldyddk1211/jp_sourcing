@@ -23,6 +23,7 @@ from config import (
     AUTO_SCHEDULE_HOUR, AUTO_SCHEDULE_MINUTE,
     LOGIN_USERS, SECRET_KEY, APP_ENV,
     OUTPUT_DIR, DB_DIR, ADMIN_MENU_ACCESS,
+    PC_ROLE, NAS_EXPORT_DB,
 )
 from data_manager import get_status as get_data_status, set_data_root, get_data_root, get_path, ensure_dirs, is_connected
 from xebio_search import scrape_nike_sale, load_latest_products, set_app_status, force_close_browser
@@ -4578,38 +4579,66 @@ def _start_scheduler_once():
     logger.info(f"📅 스케줄러 초기화 ({env_label})")
 
     if is_windows:
-        # ── 윈도우 전용: 수집 + NAS 내보내기 ──
-        _register_task_schedule_jobs()     # 자동 수집/체크/콤보
-        _register_check_schedule_job()     # 업로드 체크
-        # 오류 작업 자동 재시도 (매일 23:00)
-        scheduler.add_job(
-            func=_retry_failed_tasks_job,
-            trigger="cron", hour=23, minute=0,
-            id="retry_failed_tasks", replace_existing=True,
-            name="오류 작업 자동 재시도 (23:00)",
-        )
-        # 매시 NAS로 products.db 내보내기
-        try:
+        # ── 윈도우 전용: 역할에 따라 분기 ──
+        role_label = {"crawl": "수집PC", "fresh": "최신화PC"}.get(PC_ROLE, PC_ROLE)
+        logger.info(f"🖥️ [Windows] PC 역할: {role_label} (PC_ROLE={PC_ROLE})")
+
+        if PC_ROLE == "crawl":
+            # ── 수집 PC: 크롤링 + NAS 내보내기 (매시 정각) ──
+            _register_task_schedule_jobs()
+            _register_check_schedule_job()
             scheduler.add_job(
-                func=export_all_to_nas,
-                trigger="cron", minute=0,
-                id="nas_export", replace_existing=True,
-                name="NAS 전체 내보내기 (매시 정각)",
+                func=_retry_failed_tasks_job,
+                trigger="cron", hour=23, minute=0,
+                id="retry_failed_tasks", replace_existing=True,
+                name="오류 작업 자동 재시도 (23:00)",
             )
-            logger.info("📤 [Windows] NAS 내보내기 등록 (매시 정각)")
-        except NameError:
-            pass
-        # 상품DB 자동 업데이트 (7일 주기)
-        _register_db_update_job()
-        # 유휴 시간 상품 최신화 체크 (5분 간격)
-        scheduler.add_job(
-            func=_idle_product_check,
-            trigger="interval", minutes=5,
-            id="idle_product_check", replace_existing=True,
-            name="유휴 시간 상품 최신화 (5분 간격)",
-        )
-        logger.info("🔍 [Windows] 유휴 시간 상품 최신화 등록 (5분 간격)")
-        logger.info("🔄 [Windows] 수집 스케줄 등록 완료")
+            _register_db_update_job()
+            try:
+                scheduler.add_job(
+                    func=export_all_to_nas,
+                    trigger="cron", minute=0,
+                    id="nas_export", replace_existing=True,
+                    name="NAS 내보내기 → products_crawl.db (매시 정각)",
+                )
+                logger.info("📤 [수집PC] NAS 내보내기 등록 (매시 정각 → products_crawl.db)")
+            except NameError:
+                pass
+            logger.info("🔄 [수집PC] 크롤링 스케줄 등록 완료")
+
+        elif PC_ROLE == "fresh":
+            # ── 최신화 PC: 품절 체크 + NAS 내보내기 (매시 15분) ──
+            scheduler.add_job(
+                func=_idle_product_check,
+                trigger="interval", minutes=5,
+                id="idle_product_check", replace_existing=True,
+                name="상품 최신화 체크 (5분 간격)",
+            )
+            try:
+                scheduler.add_job(
+                    func=export_all_to_nas,
+                    trigger="cron", minute=15,
+                    id="nas_export", replace_existing=True,
+                    name="NAS 내보내기 → products_fresh.db (매시 15분)",
+                )
+                logger.info("📤 [최신화PC] NAS 내보내기 등록 (매시 15분 → products_fresh.db)")
+            except NameError:
+                pass
+            logger.info("🔍 [최신화PC] 최신화 스케줄 등록 완료")
+
+        else:
+            # 기존 호환 (역할 미지정 시 전체 동작)
+            _register_task_schedule_jobs()
+            _register_check_schedule_job()
+            _register_db_update_job()
+            scheduler.add_job(func=_idle_product_check, trigger="interval", minutes=5,
+                              id="idle_product_check", replace_existing=True, name="유휴 시간 상품 최신화 (5분 간격)")
+            try:
+                scheduler.add_job(func=export_all_to_nas, trigger="cron", minute=0,
+                                  id="nas_export", replace_existing=True, name="NAS 전체 내보내기 (매시 정각)")
+            except NameError:
+                pass
+            logger.info("🔄 [Windows] 전체 스케줄 등록 (역할 미지정)")
 
     if is_mac:
         # ── 맥 서버 전용: 카페 업로드(스포츠+빈티지)/기사/동기화 ──
@@ -10300,16 +10329,39 @@ def sync_all_from_nas(selected_files=None):
 
 
 def sync_products_from_nas():
-    """NAS products.db 파일을 로컬로 복사하여 동기화
-    NAS DB를 직접 열지 않음 — 파일 복사 후 로컬에서 병합
+    """NAS products DB 파일을 로컬로 복사하여 동기화
+    역할별 분리: products_crawl.db (수집PC) + products_fresh.db (최신화PC)
+    기존 호환: products.db도 지원
     """
     import sqlite3 as _sq
     import shutil
-    nas_db_path = os.path.join(NAS_IMPORT_PATH, "products.db")
 
-    if not os.path.exists(nas_db_path):
-        logger.debug(f"NAS DB 없음: {nas_db_path}")
-        return {"ok": False, "message": "NAS에 products.db 없음"}
+    # 병합 대상 파일 목록 (역할별 + 기존 호환)
+    db_files = []
+    for fn in ["products_crawl.db", "products_fresh.db", "products.db"]:
+        fpath = os.path.join(NAS_IMPORT_PATH, fn)
+        if os.path.exists(fpath):
+            db_files.append((fn, fpath))
+    if not db_files:
+        logger.debug("NAS에 products DB 없음")
+        return {"ok": False, "message": "NAS에 products DB 없음"}
+
+    total_result = {"inserted": 0, "updated": 0, "skipped": 0}
+    for db_name, nas_db_path in db_files:
+        push_log(f"📂 NAS 병합: {db_name}")
+        result = _sync_single_db(nas_db_path, db_name)
+        total_result["inserted"] += result.get("inserted", 0)
+        total_result["updated"] += result.get("updated", 0)
+        total_result["skipped"] += result.get("skipped", 0)
+
+    msg = f"📂 NAS 동기화 완료: {len(db_files)}개 DB (신규 {total_result['inserted']}, 업데이트 {total_result['updated']})"
+    push_log(msg)
+    return {"ok": True, "message": msg, **total_result}
+
+
+def _sync_single_db(nas_db_path, db_name="products.db"):
+    """NAS의 단일 DB 파일을 로컬로 병합"""
+    import sqlite3 as _sq
 
     try:
         nas_stat = os.stat(nas_db_path)
@@ -10420,21 +10472,20 @@ def sync_products_from_nas():
         with open(sync_info_path, "w") as f:
             _json.dump({"last_mtime": nas_mtime, "last_sync": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, f)
 
-        msg = f"📂 동기화 완료: 신규 {inserted} / 업데이트 {updated} / 스킵 {skipped} (변경 {len(rows)} / 전체 {nas_total:,})"
+        msg = f"📂 {db_name} 병합 완료: 신규 {inserted} / 업데이트 {updated} / 스킵 {skipped} (변경 {len(rows)} / 전체 {nas_total:,})"
         push_log(msg)
         logger.info(msg)
         return {"ok": True, "inserted": inserted, "updated": updated, "skipped": skipped, "total": nas_total}
 
     except Exception as e:
-        # 임시 파일 정리
         import tempfile
         tmp_path = os.path.join(tempfile.gettempdir(), "products_nas_tmp.db")
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
-        msg = f"❌ NAS 동기화 오류: {e}"
+        msg = f"❌ {db_name} 동기화 오류: {e}"
         push_log(msg)
         logger.error(msg)
-        return {"ok": False, "message": str(e)}
+        return {"ok": False, "inserted": 0, "updated": 0, "skipped": 0}
 
 
 def export_all_to_nas(selected_files=None):
@@ -10454,12 +10505,17 @@ def export_all_to_nas(selected_files=None):
         copied = []
         for fn in export_files:
             local_file = os.path.join(local_db_dir, fn)
-            nas_file = os.path.join(nas_db_dir, fn)
+            # products.db는 역할별 파일명으로 내보내기
+            if fn == "products.db" and PC_ROLE in NAS_EXPORT_DB:
+                nas_fn = NAS_EXPORT_DB[PC_ROLE]
+            else:
+                nas_fn = fn
+            nas_file = os.path.join(nas_db_dir, nas_fn)
             if os.path.exists(local_file):
                 try:
                     with open(local_file, "rb") as _sf, open(nas_file, "wb") as _df:
                         _df.write(_sf.read())
-                    copied.append(fn)
+                    copied.append(f"{fn}→{nas_fn}" if fn != nas_fn else fn)
                 except Exception as e:
                     push_log(f"⚠️ {fn} 내보내기 실패: {e}")
 

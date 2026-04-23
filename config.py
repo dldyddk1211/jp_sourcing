@@ -15,6 +15,22 @@ if os.path.exists(_env_path):
 # 전체 프로젝트 설정값
 # =============================================
 
+# ── PC 역할 설정 ──────────────────────────────
+# "server"  = Mac 서버 (웹서버, 쇼핑몰, DB 병합)
+# "crawl"   = Windows 수집 PC (상품 크롤링 전용)
+# "fresh"   = Windows 최신화 PC (품절 체크 전용)
+import platform as _pf
+if _pf.system() == "Darwin":
+    PC_ROLE = "server"
+else:
+    PC_ROLE = "crawl"  # ← 최신화 PC에서는 "fresh"로 변경
+
+# NAS 내보내기 파일명 (역할별 분리)
+NAS_EXPORT_DB = {
+    "crawl": "products_crawl.db",
+    "fresh": "products_fresh.db",
+}
+
 # ── 서버 설정 ──────────────────────────────
 SERVER_HOST = "0.0.0.0"
 SERVER_PORT = 3002
