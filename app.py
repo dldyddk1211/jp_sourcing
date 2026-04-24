@@ -10599,6 +10599,10 @@ def export_all_to_nas(selected_files=None):
             export_files = ["products.db"]
         else:
             export_files = [f for f in all_files if f in selected_files]
+        # Windows PC는 users.db 내보내기 금지 (Mac이 원본)
+        if PC_ROLE in ("crawl", "fresh") and "users.db" in export_files:
+            export_files.remove("users.db")
+            logger.info(f"[NAS 내보내기] users.db 제외 (PC_ROLE={PC_ROLE}, Mac이 원본)")
         copied = []
         for fn in export_files:
             local_file = os.path.join(local_db_dir, fn)
