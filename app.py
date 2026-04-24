@@ -10528,11 +10528,14 @@ def _sync_single_db(nas_db_path, db_name="products.db"):
                          rd.get("condition_grade",""), rd.get("color",""), rd.get("material",""), existing["id"]))
                     updated += 1
                 else:
+                    # 고유번호 자동 생성
+                    from product_db import _generate_internal_code
+                    internal_code = rd.get("internal_code", "") or _generate_internal_code(local_conn, site_id)
                     cols = ["site_id","category_id","product_code","name","name_ko","brand","brand_ko",
                             "price_jpy","link","img_url","description","description_ko","sizes","detail_images",
                             "original_price","discount_rate","in_stock","scraped_at","created_at","source_type",
-                            "condition_grade","color","material"]
-                    vals = [rd.get(c, "") for c in cols]
+                            "condition_grade","color","material","internal_code"]
+                    vals = [rd.get(c, "") for c in cols[:-1]] + [internal_code]
                     try:
                         local_conn.execute(f"INSERT OR REPLACE INTO products ({','.join(cols)}) VALUES ({','.join(['?']*len(cols))})", vals)
                         inserted += 1
