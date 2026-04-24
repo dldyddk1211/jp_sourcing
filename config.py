@@ -85,7 +85,7 @@ AI_PROVIDER       = os.environ.get("AI_PROVIDER", "gemini")  # "gemini" | "claud
 
 # ── AI 상품명/태그 자동 분석 (스크래핑 완료 후) ────
 AUTO_AI_ENRICH_ON_SCRAPE = True   # 스크래핑 완료 후 자동 AI 분석 ON/OFF
-AUTO_AI_ENRICH_LIMIT     = 500    # 1회당 최대 분석 개수 (수집된 상품 전부 처리)
+AUTO_AI_ENRICH_LIMIT     = 0      # 0 = 제한 없음 (수집된 미분석 상품 전부 처리)
 
 # ── 텔레그램 알림 설정 ─────────────────────
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")   # @BotFather에서 발급

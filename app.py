@@ -2462,7 +2462,7 @@ def trigger_auto_ai_enrich(limit: int = None, reason: str = "scrape"):
 
     n = int(limit if limit is not None else AUTO_AI_ENRICH_LIMIT)
     if n <= 0:
-        return
+        n = 99999  # 0 = 제한 없음
 
     def _run():
         from ai_product_enrich import enrich_product_by_id
