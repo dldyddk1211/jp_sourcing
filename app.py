@@ -10604,15 +10604,22 @@ def export_all_to_nas(selected_files=None):
             export_files.remove("users.db")
             logger.info(f"[NAS 내보내기] users.db 제외 (PC_ROLE={PC_ROLE}, Mac이 원본)")
         copied = []
+        skipped = []
         for fn in export_files:
             local_file = os.path.join(local_db_dir, fn)
-            # products.db는 역할별 파일명으로 내보내기
             if fn == "products.db" and PC_ROLE in NAS_EXPORT_DB:
                 nas_fn = NAS_EXPORT_DB[PC_ROLE]
             else:
                 nas_fn = fn
             nas_file = os.path.join(nas_db_dir, nas_fn)
             if os.path.exists(local_file):
+                # 변경 여부 체크: 파일 크기 + 수정시간 비교
+                local_stat = os.stat(local_file)
+                if os.path.exists(nas_file):
+                    nas_stat = os.stat(nas_file)
+                    if local_stat.st_size == nas_stat.st_size and local_stat.st_mtime <= nas_stat.st_mtime:
+                        skipped.append(nas_fn)
+                        continue  # 변경 없음 — 스킵
                 try:
                     with open(local_file, "rb") as _sf, open(nas_file, "wb") as _df:
                         _df.write(_sf.read())
@@ -10620,8 +10627,13 @@ def export_all_to_nas(selected_files=None):
                 except Exception as e:
                     push_log(f"⚠️ {fn} 내보내기 실패: {e}")
 
-        msg = f"📤 로컬 → NAS ({len(copied)}개: {', '.join(copied)})"
-        push_log(msg)
+        if copied:
+            msg = f"📤 로컬 → NAS ({len(copied)}개: {', '.join(copied)})"
+            if skipped:
+                msg += f" | 변경없음 스킵: {len(skipped)}개"
+            push_log(msg)
+        else:
+            logger.debug(f"[NAS 내보내기] 변경 없음 — 전체 스킵 ({len(skipped)}개)")
         return {"ok": True, "message": msg, "files": copied}
     except Exception as e:
         logger.error(f"NAS 내보내기 실패: {e}")
