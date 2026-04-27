@@ -3818,7 +3818,7 @@ def _unsubscribe_logs(q: queue.Queue):
 # 스크래핑 / 업로드 실행 함수 (백그라운드)
 # =============================================
 
-def run_scrape(site_id="xebio", category_id="sale", keyword="", pages="", brand_code=""):
+def run_scrape(site_id="xebio", category_id="sale", keyword="", pages="", brand_code="", sort_by="arrival", early_stop_dups=30):
     """백그라운드 스레드에서 스크래핑 실행 (사이트별 크롤러 디스패치)"""
     if status["scraping"]:
         push_log("⚠️ 이미 스크래핑이 진행 중입니다")
@@ -3827,7 +3827,7 @@ def run_scrape(site_id="xebio", category_id="sale", keyword="", pages="", brand_
     # 중단 요청 초기화
     status["stop_requested"] = False
 
-    push_log(f"🔧 run_scrape 시작: site={site_id}, cat={category_id}, brand={brand_code}, pages={pages}")
+    push_log(f"🔧 run_scrape 시작: site={site_id}, cat={category_id}, brand={brand_code}, pages={pages}, sort={sort_by}, early_stop={early_stop_dups}")
     status["scraping"] = True
     try:
         from site_config import get_site
@@ -3845,6 +3845,8 @@ def run_scrape(site_id="xebio", category_id="sale", keyword="", pages="", brand_
                 keyword=keyword,
                 pages=pages,
                 brand_code=brand_code,
+                sort_by=sort_by,
+                early_stop_dups=early_stop_dups,
             ))
             if isinstance(result, dict):
                 products = []
@@ -5487,15 +5489,21 @@ def manual_scrape():
     keyword = data.get("keyword", "")
     pages = data.get("pages", "")
     brand_code = data.get("brand_code", "")
+    sort_by = data.get("sort_by", "arrival")
+    try:
+        early_stop_dups = int(data.get("early_stop_dups", 30))
+    except (TypeError, ValueError):
+        early_stop_dups = 30
 
     # 이미 진행 중이면 즉시 알림
     if status["scraping"]:
         return jsonify({"ok": False, "message": "⚠️ 이미 스크래핑이 진행 중입니다. 리셋 후 다시 시도해주세요."})
 
-    push_log(f"🚀 수동 스크래핑 요청: site={site_id}, cat={category_id}, brand={brand_code}")
+    push_log(f"🚀 수동 스크래핑 요청: site={site_id}, cat={category_id}, brand={brand_code}, sort={sort_by}, early_stop={early_stop_dups}")
     thread = threading.Thread(
         target=run_scrape,
         args=(site_id, category_id, keyword, pages, brand_code),
+        kwargs={"sort_by": sort_by, "early_stop_dups": early_stop_dups},
         daemon=True,
     )
     thread.start()
@@ -8034,6 +8042,8 @@ def api_scrape_sync():
     brand_code = request.args.get("brand", "")
     pages = request.args.get("pages", "")
     max_items = request.args.get("max_items", 0, type=int)
+    sort_by = request.args.get("sort_by", "arrival")
+    early_stop_dups = request.args.get("early_stop_dups", 30, type=int)
 
     if status["scraping"]:
         return jsonify({"ok": False, "message": "이미 수집 진행 중", "count": 0})
@@ -8041,7 +8051,7 @@ def api_scrape_sync():
     # 이전 중지 요청 리셋
     status["stop_requested"] = False
     status["paused"] = False
-    push_log(f"📋 작업리스트 수집 시작: {site_id} / {category_id} / {brand_code}")
+    push_log(f"📋 작업리스트 수집 시작: {site_id} / {category_id} / {brand_code} (sort={sort_by}, early_stop={early_stop_dups})")
     status["scraping"] = True
     count = 0
     try:
@@ -8053,9 +8063,12 @@ def api_scrape_sync():
             category=category_id,
             pages=pages,
             brand_code=brand_code,
+            sort_by=sort_by,
+            early_stop_dups=early_stop_dups,
         )
         if max_items > 0:
             kwargs["max_items"] = max_items
+            kwargs["early_stop_dups"] = 0  # 테스트(max_items)일 때는 조기종료 비활성
         result = asyncio.run(scrape_2ndstreet(**kwargs))
         if isinstance(result, dict):
             count = result.get("total_saved", 0)

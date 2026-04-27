@@ -605,7 +605,21 @@
             <span style="font-size:0.82rem;color:var(--muted);white-space:nowrap;">페이지 지정</span>
             <input type="text" id="scrape-pages" value="" autocomplete="off" placeholder="예: 2-10, 2,3,5, 2" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;width:180px;">
           </div>
-          <span style="font-size:0.72rem;color:var(--muted);">&#x203b; 비우면 전체 | 2-10: 2~10페이지 | 2,3,5: 특정페이지 | 2: 단일페이지</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-size:0.82rem;color:var(--muted);white-space:nowrap;">정렬</span>
+            <select id="scrape-sort-by" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;">
+              <option value="arrival" selected>신착순 (조기종료)</option>
+              <option value="recommend">추천순 (전체수집)</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-size:0.82rem;color:var(--muted);white-space:nowrap;">조기종료</span>
+            <input type="number" id="scrape-early-stop" value="30" min="0" max="999" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:0.82rem;width:70px;">
+            <span style="font-size:0.72rem;color:var(--muted);">개 (0=끝까지)</span>
+          </div>
+        </div>
+        <div style="font-size:0.72rem;color:var(--muted);margin-bottom:6px;">
+          &#x203b; 페이지: 비우면 전체 | 2-10: 2~10페이지 | 2,3,5: 특정페이지 &nbsp;&nbsp;&#x2502;&nbsp;&nbsp; 신착순 + 연속 N개 동일가격 중복이면 조기종료 (대량 DB일 때 권장)
         </div>
         <div id="sel-preview" style="font-size:0.75rem;color:var(--yellow);margin-bottom:6px;"></div>
 
@@ -1859,15 +1873,25 @@
             </select>
           </div>
           <div>
-            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">페이지 단위</label>
+            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">페이지 단위 (분할용)</label>
             <select id="task-chunk" style="background:#0d0d0a;border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:0.82rem;">
               <option value="5" selected>5페이지씩</option>
               <option value="10">10페이지씩</option>
               <option value="20">20페이지씩</option>
             </select>
           </div>
-          <button class="btn b-green" onclick="addScrapeTaskAuto()" style="padding:7px 16px;font-size:0.82rem;" id="btn-add-task">+ 자동 분할 추가</button>
+          <div>
+            <label style="font-size:0.72rem;color:var(--muted);display:block;margin-bottom:4px;">수집 모드</label>
+            <label id="newer-mode-pill" style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border:1px solid var(--accent);border-radius:6px;background:rgba(255,200,80,0.1);cursor:pointer;font-size:0.82rem;user-select:none;">
+              <input type="checkbox" id="task-newer-mode" checked onchange="updateTaskModeUI()" style="cursor:pointer;width:14px;height:14px;accent-color:var(--accent);">
+              <span id="newer-mode-label" style="font-weight:600;color:var(--accent);">&#x2b50; 신착 모드 ON</span>
+            </label>
+          </div>
+          <button class="btn b-green" onclick="addScrapeTaskByMode()" style="padding:7px 16px;font-size:0.82rem;" id="btn-add-task">+ 작업 추가</button>
           <button class="btn b-yellow" onclick="runTestScrape()" style="padding:7px 14px;font-size:0.82rem;" id="btn-test-task">&#x1f9ea; 테스트</button>
+        </div>
+        <div id="task-mode-help" style="font-size:0.72rem;color:var(--muted);margin-top:6px;">
+          &#x2b50; <b>신착 모드 ON</b>: 브랜드당 task 1개, 신착순 + 연속 30개 동일가격 중복 시 조기 종료 (빠름, 매일 갱신용)
         </div>
       </div>
 
@@ -3543,7 +3567,10 @@ async function runScrape() {
   const keyword = document.getElementById("scrape-keyword").value.trim();
   const pagesRaw = document.getElementById("scrape-pages").value.trim();
   const brandCode = document.getElementById("sel-brand").value;
-  addLog(`📋 파라미터: site=${siteId}, cat=${catId}, brand=${brandCode}, keyword=${keyword}, pages=${pagesRaw}`, "info");
+  const sortBy = document.getElementById("scrape-sort-by")?.value || "arrival";
+  const earlyStopRaw = document.getElementById("scrape-early-stop")?.value;
+  const earlyStop = earlyStopRaw === "" || earlyStopRaw == null ? 30 : parseInt(earlyStopRaw);
+  addLog(`📋 파라미터: site=${siteId}, cat=${catId}, brand=${brandCode}, keyword=${keyword}, pages=${pagesRaw}, sort=${sortBy}, early_stop=${earlyStop}`, "info");
   checkedIndices.clear();
   updateSelCount();
   startTimer(3000);
@@ -3553,6 +3580,8 @@ async function runScrape() {
   if (brandCode) body.brand_code = brandCode;
   if (keyword) body.keyword = keyword;
   if (pagesRaw) body.pages = pagesRaw;
+  body.sort_by = sortBy;
+  body.early_stop_dups = earlyStop;
   await post("/run/scrape", body);
 }
 
@@ -4420,6 +4449,122 @@ async function runTestScrape() {
   btn.disabled = false; btn.textContent = "\uD83E\uDDEA 테스트";
 }
 
+// 모드 토글 UI 업데이트 (체크박스 ↔ pill 색상/라벨 + 페이지 단위 활성/비활성)
+function updateTaskModeUI() {
+  const cb = document.getElementById("task-newer-mode");
+  const pill = document.getElementById("newer-mode-pill");
+  const label = document.getElementById("newer-mode-label");
+  const chunk = document.getElementById("task-chunk");
+  const help = document.getElementById("task-mode-help");
+  if (!cb) return;
+  if (cb.checked) {
+    pill.style.borderColor = "var(--accent)";
+    pill.style.background = "rgba(255,200,80,0.1)";
+    label.textContent = "⭐ 신착 모드 ON";
+    label.style.color = "var(--accent)";
+    if (chunk) { chunk.disabled = true; chunk.style.opacity = "0.4"; }
+    if (help) help.innerHTML = "⭐ <b>신착 모드 ON</b>: 브랜드당 task 1개, 신착순 + 연속 30개 동일가격 중복 시 조기 종료 (빠름, 매일 갱신용)";
+  } else {
+    pill.style.borderColor = "var(--border)";
+    pill.style.background = "transparent";
+    label.textContent = "⚙ 자동 분할 모드";
+    label.style.color = "var(--muted)";
+    if (chunk) { chunk.disabled = false; chunk.style.opacity = "1"; }
+    if (help) help.innerHTML = "⚙ <b>자동 분할 모드</b>: 전체 페이지를 N페이지씩 task 여러 개로 분할 (전체 수집, 초기 1회용)";
+  }
+}
+
+// 모드에 따라 분기 — 체크박스 ON이면 신착, OFF면 자동분할
+// 브랜드 미지정(전체)이면 전체 브랜드로 순환 추가
+async function addScrapeTaskByMode() {
+  const cb = document.getElementById("task-newer-mode");
+  const isNewer = !!(cb && cb.checked);
+  const brandSel = document.getElementById("task-brand");
+  const brand = brandSel.value;
+
+  // 브랜드 미지정 → 전체 브랜드로 순환
+  if (!brand) {
+    const allBrands = [...brandSel.options]
+      .filter(o => o.value)
+      .map(o => ({value: o.value, text: o.textContent.trim()}));
+    if (allBrands.length === 0) {
+      addLog("⚠️ 브랜드 목록이 비어있습니다", "err");
+      return;
+    }
+    const modeLabel = isNewer ? "신착 모드" : "자동 분할";
+    if (!confirm(`브랜드 미지정 — 전체 ${allBrands.length}개 브랜드로 task를 생성합니다.\n모드: ${modeLabel}\n진행할까요?`)) {
+      return;
+    }
+    const btn = document.getElementById("btn-add-task");
+    if (btn) { btn.disabled = true; btn.textContent = `0/${allBrands.length} 추가 중...`; }
+    addLog(`🔄 전체 ${allBrands.length}개 브랜드 순환 추가 시작 (${modeLabel})`, "info");
+    let ok = 0, fail = 0;
+    for (let i = 0; i < allBrands.length; i++) {
+      const b = allBrands[i];
+      brandSel.value = b.value;
+      if (btn) btn.textContent = `${i+1}/${allBrands.length} ${b.text}`;
+      try {
+        if (isNewer) await addScrapeTaskNewer();
+        else await addScrapeTaskAuto();
+        ok++;
+      } catch(e) {
+        addLog(`❌ ${b.text} 추가 실패: ${e}`, "err");
+        fail++;
+      }
+    }
+    brandSel.value = "";
+    if (btn) { btn.disabled = false; btn.textContent = "+ 작업 추가"; }
+    addLog(`✅ 전체 브랜드 추가 완료 — 성공 ${ok}, 실패 ${fail}`, "ok");
+    return;
+  }
+
+  // 단일 브랜드 — 기존 동작
+  if (isNewer) return await addScrapeTaskNewer();
+  return await addScrapeTaskAuto();
+}
+
+// DOM 로드 후 초기 UI 상태 적용
+if (document.readyState !== "loading") {
+  setTimeout(updateTaskModeUI, 0);
+} else {
+  document.addEventListener("DOMContentLoaded", updateTaskModeUI);
+}
+
+// 신착 모드 추가 — 브랜드+카테고리 조합당 task 1개 (pages="", 신착순+조기종료는 크롤러 기본값)
+async function addScrapeTaskNewer() {
+  const btn = document.getElementById("btn-add-task");
+  const site = document.getElementById("task-site").value;
+  const cat = document.getElementById("task-cat").value;
+  const brand = document.getElementById("task-brand").value;
+  const catName = catNames[cat] || cat || "전체";
+  const brandName = brandNames[brand] || brand || "전체";
+
+  btn.disabled = true; btn.textContent = "추가 중...";
+  try {
+    let totalItems = 0, totalPages = 0;
+    try {
+      const params = new URLSearchParams({site, category: cat, brand});
+      const res = await fetch(PREFIX + "/scrape/check-count?" + params);
+      if (res.status === 401) { alert("로그인이 필요합니다"); return; }
+      const d = await res.json();
+      if (d.ok) { totalItems = d.total_items; totalPages = d.total_pages; }
+    } catch(e) {}
+
+    const r = await fetch(PREFIX + "/scrape/tasks", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({site, siteName:"세컨드스트리트", cat, catName, brand, brandName,
+                            pages:"", totalItems, totalPages})
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    addLog(`⭐ 신착 모드 추가: ${catName} / ${brandName} (총 ${totalItems.toLocaleString()}개, 신착순+조기종료)`, "ok");
+    if (typeof loadScrapeTasks === "function") loadScrapeTasks();
+  } catch(e) {
+    addLog(`❌ 신착 모드 추가 오류: ${e}`, "err");
+  } finally {
+    btn.disabled = false; btn.textContent = "+ 작업 추가";
+  }
+}
+
 async function addScrapeTaskAuto() {
   const btn = document.getElementById("btn-add-task");
   const site = document.getElementById("task-site").value;
@@ -4437,7 +4582,7 @@ async function addScrapeTaskAuto() {
     const params = new URLSearchParams({site, category: cat, brand});
     addLog(`🔍 ${catName} / ${brandName} 상품 수량 조회 중...`, "info");
     const res = await fetch(PREFIX + "/scrape/check-count?" + params);
-    if (res.status === 401) { alert("로그인이 필요합니다"); btn.disabled = false; btn.textContent = "+ 자동 분할 추가"; return; }
+    if (res.status === 401) { alert("로그인이 필요합니다"); btn.disabled = false; btn.textContent = "+ 작업 추가"; return; }
     const d = await res.json();
     if (d.ok) { totalItems = d.total_items; totalPages = d.total_pages; }
     else { addLog(`⚠️ 조회 응답: ${d.message || JSON.stringify(d)}`, "err"); }
@@ -4445,7 +4590,7 @@ async function addScrapeTaskAuto() {
 
   if (totalPages <= 0) {
     addLog("\u274C 상품이 없거나 조회 실패 — 카테고리/브랜드를 확인해주세요", "err");
-    btn.disabled = false; btn.textContent = "+ 자동 분할 추가";
+    btn.disabled = false; btn.textContent = "+ 작업 추가";
     return;
   }
 
@@ -4468,7 +4613,7 @@ async function addScrapeTaskAuto() {
     } catch(e) {}
   }
 
-  btn.disabled = false; btn.textContent = "+ 자동 분할 추가";
+  btn.disabled = false; btn.textContent = "+ 작업 추가";
   loadScrapeTasks();
 }
 

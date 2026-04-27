@@ -195,7 +195,10 @@ async function runScrape() {
   const keyword = document.getElementById("scrape-keyword").value.trim();
   const pagesRaw = document.getElementById("scrape-pages").value.trim();
   const brandCode = document.getElementById("sel-brand").value;
-  addLog(`📋 파라미터: site=${siteId}, cat=${catId}, brand=${brandCode}, keyword=${keyword}, pages=${pagesRaw}`, "info");
+  const sortBy = document.getElementById("scrape-sort-by")?.value || "arrival";
+  const earlyStopRaw = document.getElementById("scrape-early-stop")?.value;
+  const earlyStop = earlyStopRaw === "" || earlyStopRaw == null ? 30 : parseInt(earlyStopRaw);
+  addLog(`📋 파라미터: site=${siteId}, cat=${catId}, brand=${brandCode}, keyword=${keyword}, pages=${pagesRaw}, sort=${sortBy}, early_stop=${earlyStop}`, "info");
   checkedIndices.clear();
   updateSelCount();
   startTimer(3000);
@@ -205,6 +208,8 @@ async function runScrape() {
   if (brandCode) body.brand_code = brandCode;
   if (keyword) body.keyword = keyword;
   if (pagesRaw) body.pages = pagesRaw;
+  body.sort_by = sortBy;
+  body.early_stop_dups = earlyStop;
   await post("/run/scrape", body);
 }
 
@@ -1060,6 +1065,40 @@ async function runTestScrape() {
     addLog(`\u274C 테스트 오류: ${e}`, "err");
   }
   btn.disabled = false; btn.textContent = "\uD83E\uDDEA 테스트";
+}
+
+// 신착 모드 추가 — 브랜드+카테고리 조합당 task 1개 (pages="", 신착순+조기종료는 크롤러 기본값)
+async function addScrapeTaskNewer() {
+  const btn = document.getElementById("btn-add-task-newer");
+  const site = document.getElementById("task-site").value;
+  const cat = document.getElementById("task-cat").value;
+  const brand = document.getElementById("task-brand").value;
+  const catName = catNames[cat] || cat || "전체";
+  const brandName = brandNames[brand] || brand || "전체";
+
+  btn.disabled = true; btn.textContent = "추가 중...";
+  try {
+    let totalItems = 0, totalPages = 0;
+    try {
+      const params = new URLSearchParams({site, category: cat, brand});
+      const res = await fetch(PREFIX + "/scrape/check-count?" + params);
+      if (res.status === 401) { alert("로그인이 필요합니다"); return; }
+      const d = await res.json();
+      if (d.ok) { totalItems = d.total_items; totalPages = d.total_pages; }
+    } catch(e) {}
+
+    await fetch(PREFIX + "/scrape/tasks", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({site, siteName:"세컨드스트리트", cat, catName, brand, brandName,
+                            pages:"", totalItems, totalPages})
+    });
+    addLog(`⭐ 신착 모드 추가: ${catName} / ${brandName} (총 ${totalItems.toLocaleString()}개, 신착순+조기종료)`, "ok");
+    loadScrapeTasks();
+  } catch(e) {
+    addLog(`❌ 신착 모드 추가 오류: ${e}`, "err");
+  } finally {
+    btn.disabled = false; btn.textContent = "⭐ 신착 모드 추가";
+  }
 }
 
 async function addScrapeTaskAuto() {

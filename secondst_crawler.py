@@ -119,12 +119,22 @@ async def scrape_2ndstreet(
     batch_size=10,
     batch_rest=96,
     max_items=0,
+    sort_by="arrival",
+    early_stop_dups=30,
 ):
     """
     2ndstreet.jp에서 빈티지 상품 수집 (대량 안전 수집)
 
     pages 미입력 시 → 검색 결과 수 확인 후 전체 페이지 자동 수집
     batch_size 페이지마다 batch_rest초 휴식
+
+    sort_by: 2ndstreet.jp 검색 정렬 파라미터
+             "arrival"  → 新着順 (신착순, 권장)
+             "recommend"→ おすすめ順 (추천순, 사이트 기본)
+             "cost-low" → 価格が安い順
+             "cost-high"→ 価格が高い順
+    early_stop_dups: 연속 N개가 DB에 동일가격으로 이미 있으면 페이지 루프 조기 종료.
+                     0이면 비활성화. 신착순(arrival) 정렬일 때만 의미가 있음.
     """
     global _browser, _playwright
 
@@ -146,6 +156,8 @@ async def scrape_2ndstreet(
     total_saved = 0    # 전체 누적 저장 수
     total_skipped = 0  # 중복 스킵 수
     CHUNK_SIZE = 5     # 5페이지씩 끊어서 수집 + 상세처리
+    consecutive_dups = 0   # 연속 동일가격 중복 카운터 (신착순 조기 종료용)
+    early_stopped = False
 
     async def _open_browser():
         """브라우저 시작 (재시작 포함)"""
@@ -207,7 +219,7 @@ async def scrape_2ndstreet(
             elif brand_code:
                 params.append(f"brand%5B%5D={brand_code}")
             # 컨디션: 전체 (제한 없음)
-            params.append("sortBy=recommend")
+            params.append(f"sortBy={sort_by}")
             if _brand_keyword:
                 params.append(f"keyword={_brand_keyword}")
             elif keyword:
@@ -456,6 +468,26 @@ async def scrape_2ndstreet(
 
             log(f"   📦 페이지 {page_num}/{len(page_list)}: {len(page_products)}개 수집 (누적 {len(products) + len(page_products)}개)")
             products.extend(page_products)
+
+            # ── 신착순 조기 종료 체크: 연속 N개 동일가격 중복이면 페이지 루프 종료 ──
+            if early_stop_dups > 0 and page_products:
+                from product_db import bulk_check_price
+                page_db_prices = bulk_check_price("2ndstreet", page_products)
+                for p in page_products:
+                    code = p.get("product_code", "")
+                    if code in page_db_prices and page_db_prices[code] == p.get("price_jpy", 0):
+                        consecutive_dups += 1
+                        if consecutive_dups >= early_stop_dups:
+                            early_stopped = True
+                            log(f"   🛑 연속 {consecutive_dups}개 동일가격 중복 감지 — 신착 갱신 완료, 조기 종료")
+                            break
+                    else:
+                        consecutive_dups = 0
+                if not early_stopped and consecutive_dups > 0:
+                    log(f"   📊 현재 연속 중복: {consecutive_dups}/{early_stop_dups}")
+
+            if early_stopped:
+                break
 
             # 다음 페이지 전 대기 (3~5초 랜덤)
             delay = _random.uniform(3, 5)
