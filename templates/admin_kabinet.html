@@ -296,6 +296,7 @@
         <option value="메모">메모</option>
       </select>
       <button class="btn b-gray" onclick="loadArchive()">🔄</button>
+      <button class="btn b-blue" onclick="sendArchiveSms()" style="font-size:0.72rem;">📩 문자 전송</button>
     </div>
     <!-- 목록 -->
     <div id="archive-list" style="font-size:0.82rem;">
@@ -712,6 +713,21 @@ async function saveArchive() {
   }
 }
 
+async function sendArchiveSms() {
+  const phone = prompt('수신 전화번호를 입력하세요', '01086531030');
+  if (!phone) return;
+  const msg = prompt('전송할 메시지를 입력하세요', '캐비넷 아카이빙 게시판에 댓글이 등록되었습니다.');
+  if (!msg) return;
+  try {
+    const r = await fetch(PREFIX+'/api/kabinet/archive/send-sms', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({phone, message: msg})
+    });
+    const d = await r.json();
+    alert(d.message || (d.ok ? '전송 완료' : '전송 실패'));
+  } catch(e) { alert('전송 오류: '+e); }
+}
+
 async function loadArchive() {
   const q = document.getElementById("archive-search")?.value || "";
   const cat = document.getElementById("archive-cat-filter")?.value || "";
@@ -726,16 +742,26 @@ async function loadArchive() {
     }
     const catColors = {"바이마":"var(--blue)","무신사":"var(--green)","리서치":"var(--yellow)","메모":"var(--dim)"};
     el.innerHTML = d.posts.map(p => `
-      <div style="padding:12px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="openArchiveDetail(${p.id})">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-          <div>
-            <span style="font-size:0.65rem;padding:2px 6px;border-radius:3px;background:${catColors[p.category]||'var(--accent)'};color:#000;font-weight:600;margin-right:6px;">${p.category||'일반'}</span>
-            <b style="font-size:0.85rem;">${p.title}</b>
+      <div style="padding:12px;border-bottom:1px solid var(--border);">
+        <div style="cursor:pointer;" onclick="openArchiveDetail(${p.id})">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <div>
+              <span style="font-size:0.65rem;padding:2px 6px;border-radius:3px;background:${catColors[p.category]||'var(--accent)'};color:#000;font-weight:600;margin-right:6px;">${p.category||'일반'}</span>
+              <b style="font-size:0.85rem;">${p.title}</b>
+              ${p.comment_count ? `<span style="font-size:0.68rem;color:var(--blue);margin-left:6px;">💬 ${p.comment_count}</span>` : ''}
+            </div>
+            <span style="font-size:0.68rem;color:var(--dim);">${(p.created_at||'').slice(0,16)}</span>
           </div>
-          <span style="font-size:0.68rem;color:var(--dim);">${(p.created_at||'').slice(0,16)}</span>
+          <div style="font-size:0.72rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(p.content||'').slice(0,80)}</div>
+          ${p.tags ? `<div style="margin-top:4px;">${p.tags.split(',').map(t=>`<span style="font-size:0.62rem;color:var(--accent);margin-right:6px;">#${t.trim()}</span>`).join('')}</div>` : ''}
         </div>
-        <div style="font-size:0.72rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(p.content||'').slice(0,80)}</div>
-        ${p.tags ? `<div style="margin-top:4px;">${p.tags.split(',').map(t=>`<span style="font-size:0.62rem;color:var(--accent);margin-right:6px;">#${t.trim()}</span>`).join('')}</div>` : ''}
+        ${p.comments && p.comments.length ? `<div style="margin-top:8px;padding-left:16px;border-left:3px solid var(--border);">
+          ${p.comments.map(c => `<div style="padding:6px 0;font-size:0.75rem;">
+            <span style="font-weight:600;color:var(--text);">${c.author||'관리자'}</span>
+            <span style="color:var(--dim);margin-left:6px;">${(c.created_at||'').slice(0,16)}</span>
+            <div style="color:var(--muted);margin-top:2px;">${c.content}</div>
+          </div>`).join('')}
+        </div>` : ''}
       </div>
     `).join('');
     // 페이지네이션
@@ -756,7 +782,7 @@ async function openArchiveDetail(id) {
     const catColors = {"바이마":"var(--blue)","무신사":"var(--green)","리서치":"var(--yellow)","메모":"var(--dim)"};
     document.body.insertAdjacentHTML("beforeend",`
       <div id="archive-detail-modal" style="position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:rgba(0,0,0,0.7);display:flex;justify-content:center;align-items:center;" onclick="if(event.target===this)this.remove()">
-        <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;max-width:600px;width:92%;max-height:85vh;overflow-y:auto;padding:24px;">
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;max-width:1200px;width:96%;max-height:90vh;overflow-y:auto;padding:28px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
             <div>
               <span style="font-size:0.68rem;padding:2px 6px;border-radius:3px;background:${catColors[p.category]||'var(--accent)'};color:#000;font-weight:600;margin-right:6px;">${p.category||'일반'}</span>
@@ -772,9 +798,64 @@ async function openArchiveDetail(id) {
             <button onclick="document.getElementById('archive-detail-modal').remove();toggleArchiveForm({id:${p.id},title:'${(p.title||'').replace(/'/g,"\\'")}',category:'${p.category||''}',tags:'${(p.tags||'').replace(/'/g,"\\'")}',content:document.querySelector('#archive-detail-modal [style*=pre-wrap]').textContent})" class="btn b-blue" style="font-size:0.75rem;">✏️ 수정</button>
             <button onclick="if(confirm('삭제?')){fetch(PREFIX+'/api/kabinet/archive/${p.id}',{method:'DELETE'}).then(()=>{document.getElementById('archive-detail-modal').remove();loadArchive();})}" class="btn b-red" style="font-size:0.75rem;">🗑 삭제</button>
           </div>
+
+          <!-- 댓글 영역 -->
+          <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px;">
+            <div style="font-size:0.85rem;font-weight:700;margin-bottom:12px;">💬 댓글</div>
+            <div id="archive-comments-${p.id}" style="margin-bottom:12px;"></div>
+            <div style="display:flex;gap:8px;">
+              <input id="archive-comment-input-${p.id}" placeholder="댓글을 입력하세요..." style="flex:1;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:0.82rem;color:var(--text);outline:none;" onkeydown="if(event.key==='Enter')addArchiveComment(${p.id})">
+              <button onclick="addArchiveComment(${p.id})" class="btn b-blue" style="font-size:0.75rem;white-space:nowrap;">등록</button>
+            </div>
+          </div>
         </div>
       </div>`);
+    // 댓글 로드
+    loadArchiveComments(p.id);
   } catch(e) {}
+}
+
+async function loadArchiveComments(aid) {
+  try {
+    const r = await fetch(PREFIX+"/api/kabinet/archive/"+aid+"/comments");
+    const d = await r.json();
+    const el = document.getElementById("archive-comments-"+aid);
+    if (!el) return;
+    if (!d.ok || !d.comments.length) {
+      el.innerHTML = '<div style="font-size:0.78rem;color:var(--dim);padding:8px 0;">댓글이 없습니다.</div>';
+      return;
+    }
+    el.innerHTML = d.comments.map(c => `
+      <div style="padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:0.78rem;font-weight:600;">${c.author||'관리자'}</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:0.68rem;color:var(--dim);">${(c.created_at||'').slice(0,16)}</span>
+            <button onclick="deleteArchiveComment(${c.id},${aid})" style="border:none;background:none;color:var(--dim);cursor:pointer;font-size:0.75rem;">✕</button>
+          </div>
+        </div>
+        <div style="font-size:0.82rem;color:var(--text);margin-top:4px;white-space:pre-wrap;">${c.content}</div>
+      </div>
+    `).join('');
+  } catch(e) {}
+}
+
+async function addArchiveComment(aid) {
+  const input = document.getElementById("archive-comment-input-"+aid);
+  const content = input.value.trim();
+  if (!content) return;
+  await fetch(PREFIX+"/api/kabinet/archive/"+aid+"/comments", {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({content})
+  });
+  input.value = '';
+  loadArchiveComments(aid);
+}
+
+async function deleteArchiveComment(cid, aid) {
+  if (!confirm('댓글을 삭제하시겠습니까?')) return;
+  await fetch(PREFIX+"/api/kabinet/archive/comment/"+cid, {method:'DELETE'});
+  loadArchiveComments(aid);
 }
 
 // ── 바이마 마스터 데이터 (브랜드/카테고리 검색) ──

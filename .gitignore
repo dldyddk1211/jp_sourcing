@@ -5,6 +5,26 @@ logs/
 data_path.json
 pc_role.json
 naver_cookies.json
+naver_cookies_2.json
+blog_cookies_*.json
 article_tg_map.json
 *.db
 .env
+
+# Mac/시스템
+.DS_Store
+.bot_lock
+
+# 잘못 생성된 윈도우 경로 폴더
+Z:\\*
+E:/
+
+# 디버그 이미지 및 임시 테스트 스크립트
+debug_*.png
+debug_*.py
+test_*.py
+
+# 설정/인증 파일 (API 키 포함 가능)
+aligo_config.json
+naver_ad_config.json
+

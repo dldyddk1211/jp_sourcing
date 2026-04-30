@@ -1245,6 +1245,14 @@ def create_review():
                      (username, data.get("product_code",""), data.get("product_name",""),
                       data.get("brand",""), rating, title, content, img_url))
         conn.commit()
+        # 텔레그램 알림
+        try:
+            import requests as _req
+            tg_token = os.environ.get("TELEGRAM_BOT_TOKEN", "8771610716:AAEVKdw6GU97fNzir18rbWrVeA_ItD2be0E")
+            tg_chat = os.environ.get("TELEGRAM_CHAT_ID", "6382036414")
+            _req.post(f"https://api.telegram.org/bot{tg_token}/sendMessage",
+                      json={"chat_id": tg_chat, "text": f"⭐ 후기 등록\n작성자: {username}\n제목: {title}\n평점: {'★'*rating}{'☆'*(5-rating)}\n{content[:100]}"}, timeout=5)
+        except: pass
         return jsonify({"ok": True, "message": "후기 등록 완료"})
     finally:
         conn.close()
@@ -6877,6 +6885,14 @@ def kabinet_archive_list():
             params + [per_page, (page-1)*per_page]
         ).fetchall()
         posts = [{c: r[c] for c in r.keys()} for r in rows]
+        # 댓글 수 + 최근 댓글 추가
+        _init_archive_comment_db()
+        for p in posts:
+            comments = conn.execute(
+                "SELECT * FROM kabinet_archive_comments WHERE archive_id=? ORDER BY created_at ASC", (p["id"],)
+            ).fetchall()
+            p["comment_count"] = len(comments)
+            p["comments"] = [{c: r[c] for c in r.keys()} for r in comments]
         return jsonify({"ok": True, "posts": posts, "total": total, "page": page, "pages": (total+per_page-1)//per_page})
     finally:
         conn.close()
@@ -6942,6 +6958,17 @@ def kabinet_archive_save(aid=None):
         else:
             conn.execute("INSERT INTO kabinet_archive (title,content,category,tags,author,file_name) VALUES (?,?,?,?,?,?)",
                          (title, content, category, tags, author, file_name))
+            # 텔레그램 알림
+            try:
+                import requests as _req
+                tg_token = os.environ.get("TELEGRAM_BOT_TOKEN", "8771610716:AAEVKdw6GU97fNzir18rbWrVeA_ItD2be0E")
+                tg_chat = os.environ.get("TELEGRAM_CHAT_ID", "6382036414")
+                new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                site_url = "https://yaglobal.iptime.org:3002/admin/vintage#kabinet"
+                tg_msg = f"📂 아카이빙 새 글\n[{category}] {title}\n작성자: {author}\n{content[:100]}{'...' if len(content)>100 else ''}\n\n👉 {site_url}"
+                _req.post(f"https://api.telegram.org/bot{tg_token}/sendMessage",
+                          json={"chat_id": tg_chat, "text": tg_msg}, timeout=5)
+            except: pass
         conn.commit()
         return jsonify({"ok": True})
     finally:
@@ -6961,6 +6988,110 @@ def kabinet_archive_delete(aid):
         return jsonify({"ok": True})
     finally:
         conn.close()
+
+
+# ── 아카이빙 댓글 ──
+
+def _init_archive_comment_db():
+    from product_db import _conn
+    conn = _conn()
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS kabinet_archive_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            archive_id INTEGER NOT NULL,
+            author TEXT DEFAULT '',
+            content TEXT NOT NULL DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime'))
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_kac_aid ON kabinet_archive_comments(archive_id)")
+        conn.commit()
+    except: pass
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/api/kabinet/archive/<int:aid>/comments")
+@admin_required
+def kabinet_archive_comments(aid):
+    """댓글 목록 조회"""
+    _init_archive_comment_db()
+    from product_db import _conn
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM kabinet_archive_comments WHERE archive_id=? ORDER BY created_at ASC", (aid,)
+        ).fetchall()
+        comments = [{c: r[c] for c in r.keys()} for r in rows]
+        return jsonify({"ok": True, "comments": comments})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/api/kabinet/archive/<int:aid>/comments", methods=["POST"])
+@admin_required
+def kabinet_archive_comment_add(aid):
+    """댓글 작성"""
+    _init_archive_comment_db()
+    data = request.json or {}
+    content = data.get("content", "").strip()
+    if not content:
+        return jsonify({"ok": False, "message": "댓글 내용을 입력해주세요"})
+
+    author = session.get("username", "관리자")
+    from product_db import _conn
+    conn = _conn()
+    try:
+        conn.execute(
+            "INSERT INTO kabinet_archive_comments (archive_id, author, content) VALUES (?,?,?)",
+            (aid, author, content)
+        )
+        conn.commit()
+        # 텔레그램 알림
+        try:
+            import requests as _req
+            post = conn.execute("SELECT title FROM kabinet_archive WHERE id=?", (aid,)).fetchone()
+            post_title = post["title"] if post else f"#{aid}"
+            tg_token = os.environ.get("TELEGRAM_BOT_TOKEN", "8771610716:AAEVKdw6GU97fNzir18rbWrVeA_ItD2be0E")
+            tg_chat = os.environ.get("TELEGRAM_CHAT_ID", "6382036414")
+            site_url = "https://yaglobal.iptime.org:3002/admin/vintage#kabinet"
+            _req.post(f"https://api.telegram.org/bot{tg_token}/sendMessage",
+                      json={"chat_id": tg_chat, "text": f"💬 아카이빙 댓글\n[{post_title}]\n{author}: {content[:100]}\n\n👉 {site_url}"}, timeout=5)
+        except: pass
+        return jsonify({"ok": True, "message": "댓글 등록 완료"})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/api/kabinet/archive/comment/<int:cid>", methods=["DELETE"])
+@admin_required
+def kabinet_archive_comment_delete(cid):
+    """댓글 삭제"""
+    _init_archive_comment_db()
+    from product_db import _conn
+    conn = _conn()
+    try:
+        conn.execute("DELETE FROM kabinet_archive_comments WHERE id=?", (cid,))
+        conn.commit()
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
+
+
+@app.route(f"{URL_PREFIX}/api/kabinet/archive/send-sms", methods=["POST"])
+@admin_required
+def kabinet_archive_send_sms():
+    """아카이빙 문자 전송"""
+    data = request.json or {}
+    phone = data.get("phone", "").strip().replace("-", "")
+    message = data.get("message", "").strip()
+    if not phone or not message:
+        return jsonify({"ok": False, "message": "전화번호와 메시지를 입력해주세요"})
+    try:
+        from aligo_sms import send_sms
+        send_sms(phone, f"[TheOne Vintage] {message}")
+        return jsonify({"ok": True, "message": f"{phone}으로 문자 전송 완료"})
+    except Exception as e:
+        return jsonify({"ok": False, "message": f"전송 실패: {str(e)}"})
 
 
 @app.route(f"{URL_PREFIX}/api/kabinet/archive/file/<path:filename>")
@@ -7061,11 +7192,18 @@ def kabinet_csv():
             # 商品コメント (テンプレートのみ)
             comment = comment_tpl or name
 
-            # 이미지 리스트 (최대 20개)
-            all_images = [img] if img else []
-            for di in detail_images[:19]:
-                if isinstance(di, str) and di:
+            # 이미지 리스트 (최대 20개, 중복 URL 제거)
+            all_images = []
+            seen_urls = set()
+            if img and img not in seen_urls:
+                all_images.append(img)
+                seen_urls.add(img)
+            for di in detail_images:
+                if isinstance(di, str) and di and di not in seen_urls:
                     all_images.append(di)
+                    seen_urls.add(di)
+                if len(all_images) >= 20:
+                    break
             while len(all_images) < 20:
                 all_images.append("")
 
